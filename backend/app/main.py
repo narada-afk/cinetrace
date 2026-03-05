@@ -6,6 +6,7 @@
 #   uvicorn app.main:app --reload
 
 from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -21,6 +22,15 @@ app = FastAPI(
     title="South Cinema Analytics API",
     description="Compare South Indian actors by movies, ratings, and box office performance.",
     version="1.0.0",
+)
+
+# Allow the frontend (localhost:3000) to call the backend (localhost:8000).
+# Without this, the browser blocks cross-origin requests (CORS policy).
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
