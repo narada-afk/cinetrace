@@ -1,0 +1,68 @@
+# docker-compose.yml
+# Defines three services:
+#   1. postgres  — the PostgreSQL database
+#   2. backend   — the FastAPI application
+#   3. frontend  — the Next.js dashboard
+#
+# To start everything:
+#   docker compose up --build
+#
+# To seed demo data (run after containers are up):
+#   docker compose exec backend python -m app.seed_data
+
+version: "3.9"
+
+services:
+
+  # -------------------------------------------------------------------------
+  # PostgreSQL Database
+  # -------------------------------------------------------------------------
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: sca          # Database username
+      POSTGRES_PASSWORD: sca      # Database password
+      POSTGRES_DB: sca            # Database name
+    ports:
+      - "5432:5432"               # Expose locally for tools like pgAdmin or DBeaver
+    volumes:
+      - postgres_data:/var/lib/postgresql/data  # Persist data between restarts
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sca"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # -------------------------------------------------------------------------
+  # FastAPI Backend
+  # -------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend           # Build from the backend/ folder
+    ports:
+      - "8000:8000"               # API available at http://localhost:8000
+    environment:
+      DATABASE_URL: postgresql://sca:sca@postgres:5432/sca
+    depends_on:
+      postgres:
+        condition: service_healthy  # Wait for Postgres to be ready before starting
+    volumes:
+      - ./backend:/app            # Mount local code so changes reflect without rebuild
+
+  # -------------------------------------------------------------------------
+  # Next.js Frontend
+  # -------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend          # Build from the frontend/ folder
+    ports:
+      - "3000:3000"                # Dashboard available at http://localhost:3000
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app            # Mount local code for hot reload
+      - /app/node_modules          # Keep node_modules inside container
+
+# Named volume to persist Postgres data
+volumes:
+  postgres_data:
