@@ -3,3 +3,9 @@ uvicorn
 sqlalchemy
 psycopg2-binary
 pydantic
+requests
+beautifulsoup4
+# Sprint 4: HTTP caching for Wikipedia enrichment (Task 3)
+requests-cache
+# Sprint 4: Retry / backoff already bundled in urllib3 (pulled in by requests)
+# urllib3 is a transitive dependency — no explicit pin needed.
