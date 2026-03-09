@@ -84,7 +84,8 @@ class MovieOut(MovieBase):
 class ActorMovieOut(BaseModel):
     """
     Enriched movie row returned by GET /actors/{actor_id}/movies.
-    Uses the richer fields added by the Wikipedia enrichment pipeline.
+    Combines Wikipedia fields (runtime, production_company, language) with
+    TMDB fields (poster_url, backdrop_url, vote_average, popularity, tmdb_id).
     Ordered by release_year DESC on the server so no client-side sorting needed.
     """
     title: str
@@ -93,6 +94,12 @@ class ActorMovieOut(BaseModel):
     runtime: Optional[int] = None               # minutes
     production_company: Optional[str] = None
     language: Optional[str] = None
+    # TMDB fields (Sprint 7)
+    tmdb_id: Optional[int] = None
+    poster_url: Optional[str] = None
+    backdrop_url: Optional[str] = None
+    vote_average: Optional[float] = None
+    popularity: Optional[float] = None
 
     class Config:
         from_attributes = True
