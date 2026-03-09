@@ -147,64 +147,86 @@ def _finish_run(run_id: Optional[int], status: str, details: dict) -> None:
 # ---------------------------------------------------------------------------
 
 _SQL_ACTOR_STATS = text("""
+    WITH all_credits AS (
+        -- Wikidata-sourced cast links (Sprints 1-5, original 13 actors)
+        SELECT actor_id, movie_id FROM "cast"
+        UNION
+        -- TMDB-sourced cast links (Sprints 8-9, supporting + Malayalam actors)
+        SELECT actor_id, movie_id FROM actor_movies
+    )
     INSERT INTO actor_stats
         (actor_id, film_count, first_film_year, last_film_year, avg_runtime)
     SELECT
         a.id                                                   AS actor_id,
-        COUNT(DISTINCT c.movie_id)                             AS film_count,
+        COUNT(DISTINCT ac.movie_id)                            AS film_count,
         MIN(CASE WHEN m.release_year > 0
                  THEN m.release_year END)                      AS first_film_year,
         MAX(CASE WHEN m.release_year > 0
                  THEN m.release_year END)                      AS last_film_year,
         AVG(m.runtime)                                         AS avg_runtime
     FROM   actors a
-    JOIN   "cast" c ON a.id  = c.actor_id
-    JOIN   movies m ON m.id  = c.movie_id
+    JOIN   all_credits ac ON a.id  = ac.actor_id
+    JOIN   movies m       ON m.id  = ac.movie_id
     GROUP  BY a.id
 """)
 
 # Stores BOTH (A→B) and (B→A) so queries can use a simple WHERE actor1_id = ?
 # without needing to know which id is numerically smaller.
 _SQL_ACTOR_COLLABORATIONS = text("""
+    WITH all_credits AS (
+        SELECT actor_id, movie_id FROM "cast"
+        UNION
+        SELECT actor_id, movie_id FROM actor_movies
+    )
     INSERT INTO actor_collaborations
         (actor1_id, actor2_id, collaboration_count)
     SELECT
         c1.actor_id                      AS actor1_id,
         c2.actor_id                      AS actor2_id,
         COUNT(DISTINCT c1.movie_id)      AS collaboration_count
-    FROM   "cast" c1
-    JOIN   "cast" c2
+    FROM   all_credits c1
+    JOIN   all_credits c2
            ON  c1.movie_id = c2.movie_id
            AND c1.actor_id != c2.actor_id
     GROUP  BY c1.actor_id, c2.actor_id
 """)
 
 _SQL_ACTOR_DIRECTOR_STATS = text("""
+    WITH all_credits AS (
+        SELECT actor_id, movie_id FROM "cast"
+        UNION
+        SELECT actor_id, movie_id FROM actor_movies
+    )
     INSERT INTO actor_director_stats
         (actor_id, director, film_count)
     SELECT
-        c.actor_id                           AS actor_id,
+        ac.actor_id                          AS actor_id,
         m.director                           AS director,
-        COUNT(DISTINCT c.movie_id)           AS film_count
-    FROM   "cast" c
-    JOIN   movies m ON m.id = c.movie_id
+        COUNT(DISTINCT ac.movie_id)          AS film_count
+    FROM   all_credits ac
+    JOIN   movies m ON m.id = ac.movie_id
     WHERE  m.director IS NOT NULL
       AND  m.director <> ''
-    GROUP  BY c.actor_id, m.director
+    GROUP  BY ac.actor_id, m.director
 """)
 
 _SQL_ACTOR_PRODUCTION_STATS = text("""
+    WITH all_credits AS (
+        SELECT actor_id, movie_id FROM "cast"
+        UNION
+        SELECT actor_id, movie_id FROM actor_movies
+    )
     INSERT INTO actor_production_stats
         (actor_id, production_company, film_count)
     SELECT
-        c.actor_id                           AS actor_id,
+        ac.actor_id                          AS actor_id,
         m.production_company                 AS production_company,
-        COUNT(DISTINCT c.movie_id)           AS film_count
-    FROM   "cast" c
-    JOIN   movies m ON m.id = c.movie_id
+        COUNT(DISTINCT ac.movie_id)          AS film_count
+    FROM   all_credits ac
+    JOIN   movies m ON m.id = ac.movie_id
     WHERE  m.production_company IS NOT NULL
       AND  m.production_company <> ''
-    GROUP  BY c.actor_id, m.production_company
+    GROUP  BY ac.actor_id, m.production_company
 """)
 
 

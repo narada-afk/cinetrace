@@ -109,15 +109,27 @@ def get_movies_by_actor(db: Session, actor_id: int):
 def get_actor_movies_enriched(db: Session, actor_id: int) -> list:
     """
     Return all movies for an actor, ordered by release_year DESC.
-    Joins cast → movies and returns full Movie objects so Pydantic can
-    read the enriched fields (runtime, production_company, language).
 
-    Uses the idx_cast_actor index for an efficient cast scan.
+    Unions two sources so every pipeline path is covered:
+      • "cast"        — Wikidata-sourced links (Sprints 1-5, original 13 actors)
+      • actor_movies  — TMDB-sourced links   (Sprints 8-9, supporting + Malayalam)
+
+    Returns full Movie objects so Pydantic can read enriched fields
+    (runtime, production_company, language, poster_url, etc.).
     """
+    from sqlalchemy import union, select
+
+    cast_ids        = select(models.Cast.movie_id).where(
+        models.Cast.actor_id == actor_id
+    )
+    actor_movie_ids = select(models.ActorMovie.movie_id).where(
+        models.ActorMovie.actor_id == actor_id
+    )
+    all_movie_ids   = union(cast_ids, actor_movie_ids).scalar_subquery()
+
     return (
         db.query(models.Movie)
-        .join(models.Cast, models.Cast.movie_id == models.Movie.id)
-        .filter(models.Cast.actor_id == actor_id)
+        .filter(models.Movie.id.in_(all_movie_ids))
         .order_by(models.Movie.release_year.desc())
         .all()
     )
