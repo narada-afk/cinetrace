@@ -75,6 +75,13 @@ class Movie(Base):
     runtime            = Column(Integer, nullable=True)            # duration in minutes
     language           = Column(String,  nullable=True)            # e.g. "Telugu", "Tamil"
 
+    # TMDB enrichment fields (Sprint 7 — populated by enrich_tmdb_movies.py)
+    # NULL means this movie has not been looked up on TMDB yet.
+    # tmdb_id is the "enriched" sentinel: skip row if tmdb_id IS NOT NULL.
+    tmdb_id            = Column(Integer, nullable=True, unique=True)  # TMDB movie ID
+    vote_average       = Column(Float,   nullable=True)               # TMDB vote avg (0–10)
+    popularity         = Column(Float,   nullable=True)               # TMDB popularity score
+
     # Relationship: Movie → Cast → Actor
     cast_entries = relationship("Cast", back_populates="movie")
 
