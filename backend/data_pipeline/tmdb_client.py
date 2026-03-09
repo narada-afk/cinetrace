@@ -3,12 +3,15 @@ tmdb_client.py
 ==============
 TMDB (The Movie Database) API client for South Cinema Analytics.
 
-Provides a single public function:
-
+Public functions
+----------------
     search_movie_tmdb(title, year) -> dict | None
+        Search for a movie by title/year and return poster, rating, etc.
 
-which calls the TMDB search/movie endpoint and returns structured metadata
-for the best-matching film.
+    fetch_movie_credits(tmdb_id, top_n=10) -> list[dict]
+        Fetch the top-billed cast for a movie using its TMDB ID.
+        Returns up to top_n members with name, character and billing order.
+        Added in Sprint 8 to power ingest_supporting_actors.py.
 
 Authentication
 --------------
@@ -61,9 +64,11 @@ from urllib3.util.retry import Retry
 # Constants
 # ---------------------------------------------------------------------------
 
-_SEARCH_URL        = "https://api.themoviedb.org/3/search/movie"
-_POSTER_BASE_URL   = "https://image.tmdb.org/t/p/w500"
-_BACKDROP_BASE_URL = "https://image.tmdb.org/t/p/w780"
+_TMDB_BASE          = "https://api.themoviedb.org/3"
+_SEARCH_URL         = f"{_TMDB_BASE}/search/movie"
+_CREDITS_URL        = f"{_TMDB_BASE}/movie/{{tmdb_id}}/credits"  # .format(tmdb_id=…)
+_POSTER_BASE_URL    = "https://image.tmdb.org/t/p/w500"
+_BACKDROP_BASE_URL  = "https://image.tmdb.org/t/p/w780"
 
 REQUEST_DELAY = 0.25   # minimum seconds between API calls
 
@@ -110,13 +115,13 @@ def _get_api_key() -> str:
     return key
 
 
-def _rate_limited_get(params: dict) -> dict:
+def _api_get(url: str, params: dict) -> dict:
     """
-    Fire a GET to _SEARCH_URL with rate limiting enforced.
+    Rate-limited GET to any TMDB API endpoint.
 
-    Sleeps for the remaining fraction of REQUEST_DELAY since the last call
-    before sending the next request.  Raises requests.HTTPError on 4xx/5xx
-    after retries are exhausted.
+    Enforces REQUEST_DELAY between consecutive calls so we stay well
+    under TMDB's 40 req/10 s free-tier limit.  Raises requests.HTTPError
+    on 4xx/5xx after the configured retries are exhausted.
     """
     global _last_request_ts
 
@@ -124,10 +129,18 @@ def _rate_limited_get(params: dict) -> dict:
     if elapsed < REQUEST_DELAY:
         time.sleep(REQUEST_DELAY - elapsed)
 
-    resp = _SESSION.get(_SEARCH_URL, params=params, timeout=10)
+    resp = _SESSION.get(url, params=params, timeout=10)
     _last_request_ts = time.monotonic()
     resp.raise_for_status()
     return resp.json()
+
+
+def _rate_limited_get(params: dict) -> dict:
+    """
+    Backward-compatible wrapper — calls _api_get against _SEARCH_URL.
+    New code should call _api_get directly with an explicit URL.
+    """
+    return _api_get(_SEARCH_URL, params)
 
 
 def _build_image_url(base: str, path: Optional[str]) -> Optional[str]:
@@ -213,3 +226,67 @@ def search_movie_tmdb(title: str, year: int) -> Optional[dict]:
 
     # Both attempts returned zero results
     return None
+
+
+# ---------------------------------------------------------------------------
+# Sprint 8 — Cast credits
+# ---------------------------------------------------------------------------
+
+def fetch_movie_credits(tmdb_id: int, top_n: int = 10) -> list[dict]:
+    """
+    Fetch the cast credits for a movie from TMDB.
+
+    Calls:
+        GET https://api.themoviedb.org/3/movie/{tmdb_id}/credits
+
+    TMDB returns cast members pre-sorted by billing order (``order`` field,
+    0-based).  This function returns the first ``top_n`` entries.
+
+    Parameters
+    ----------
+    tmdb_id : int
+        The TMDB numeric movie ID (stored in movies.tmdb_id after Sprint 7).
+    top_n   : int
+        Maximum number of cast members to return (default 10).
+
+    Returns
+    -------
+    list of dict, each containing:
+        tmdb_person_id : int   — TMDB's unique ID for this person
+        name           : str   — actor's full name
+        character      : str | None  — character name in this film
+        cast_order     : int   — billing position (0 = top-billed)
+
+    Returns an empty list on API error or if no cast data is available.
+
+    Example
+    -------
+    >>> credits = fetch_movie_credits(1153399)   # Coolie (2025)
+    >>> credits[0]
+    {'tmdb_person_id': 120983, 'name': 'Rajinikanth', 'character': 'Coolie', 'cast_order': 0}
+    """
+    api_key = _get_api_key()
+    url     = _CREDITS_URL.format(tmdb_id=tmdb_id)
+    params  = {"api_key": api_key, "language": "en-US"}
+
+    try:
+        data = _api_get(url, params)
+    except requests.RequestException:
+        return []
+
+    raw_cast = data.get("cast") or []
+
+    results: list[dict] = []
+    for member in raw_cast[:top_n]:
+        person_id = member.get("id")
+        name      = (member.get("name") or "").strip()
+        if not person_id or not name:
+            continue                         # skip malformed entries
+        results.append({
+            "tmdb_person_id": person_id,
+            "name":           name,
+            "character":      member.get("character") or None,
+            "cast_order":     member.get("order", 0),
+        })
+
+    return results

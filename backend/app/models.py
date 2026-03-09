@@ -14,7 +14,7 @@
 # replacing the legacy movies.director TEXT column which is kept for backward
 # compatibility but should not be used for new analytics queries.
 
-from sqlalchemy import Column, DateTime, Integer, String, Float, ForeignKey, Text
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, Float, ForeignKey, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .database import Base
@@ -31,13 +31,25 @@ class Actor(Base):
     """
     __tablename__ = "actors"
 
-    id          = Column(Integer, primary_key=True, index=True)
-    name        = Column(String,  unique=True, nullable=False)   # e.g. "Allu Arjun"
-    industry    = Column(String,  nullable=False)                 # e.g. "Telugu", "Tamil"
-    debut_year  = Column(Integer, nullable=True)                  # e.g. 2003
+    id               = Column(Integer, primary_key=True, index=True)
+    name             = Column(String,  unique=True, nullable=False)   # e.g. "Allu Arjun"
+    industry         = Column(String,  nullable=False)                 # e.g. "Telugu", "Tamil"
+    debut_year       = Column(Integer, nullable=True)                  # e.g. 2003
 
-    # Relationship: Actor → Cast → Movie
+    # Sprint 8 — TMDB identity + primary/supporting flag
+    tmdb_person_id   = Column(Integer, nullable=True, unique=True)    # TMDB person ID
+    is_primary_actor = Column(Boolean, nullable=False, default=False)  # True for the 13 seeded actors
+    created_at       = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    # Relationship: Actor → Cast → Movie  (Wikidata-sourced)
     cast_entries = relationship("Cast", back_populates="actor")
+
+    # Relationship: Actor → ActorMovie  (TMDB-sourced, Sprint 8)
+    actor_movie_entries = relationship("ActorMovie", back_populates="actor")
 
 
 # ---------------------------------------------------------------------------
@@ -82,8 +94,11 @@ class Movie(Base):
     vote_average       = Column(Float,   nullable=True)               # TMDB vote avg (0–10)
     popularity         = Column(Float,   nullable=True)               # TMDB popularity score
 
-    # Relationship: Movie → Cast → Actor
+    # Relationship: Movie → Cast → Actor  (Wikidata-sourced)
     cast_entries = relationship("Cast", back_populates="movie")
+
+    # Relationship: Movie → ActorMovie  (TMDB-sourced, Sprint 8)
+    actor_movie_entries = relationship("ActorMovie", back_populates="movie")
 
     # Relationship: Movie → MovieDirector → Director  (normalized, Sprint 2)
     # Navigate via:  movie.movie_director_entries[n].director
@@ -349,3 +364,44 @@ class ActorProductionStat(Base):
     actor_id           = Column(Integer, primary_key=True, nullable=False)
     production_company = Column(String,  primary_key=True, nullable=False)
     film_count         = Column(Integer, nullable=False, default=0)
+
+
+# ---------------------------------------------------------------------------
+# ActorMovie  (Sprint 8 — TMDB-sourced actor ↔ movie relationship table)
+# ---------------------------------------------------------------------------
+
+class ActorMovie(Base):
+    """
+    TMDB-sourced join table linking actors (both primary and supporting)
+    to movies, populated by ingest_supporting_actors.py.
+
+    This table is intentionally separate from the existing `cast` table
+    (which stores Wikidata-sourced relationships) so neither pipeline
+    interferes with the other.
+
+    Columns
+    -------
+    actor_id       : FK to actors.id
+    movie_id       : FK to movies.id
+    character_name : character the actor played (from TMDB credits)
+    billing_order  : 0-based cast billing position from TMDB
+    role_type      : 'primary'   — one of the 13 seeded primary actors
+                     'supporting' — newly discovered supporting actor
+
+    Composite PK (actor_id, movie_id) enforces one row per actor-film pair
+    and enables ON CONFLICT DO NOTHING for idempotent inserts.
+
+    Requires migration: backend/migrations/sprint8_supporting_actor_schema.sql
+    """
+    __tablename__ = "actor_movies"
+
+    actor_id       = Column(Integer, ForeignKey("actors.id"), primary_key=True, nullable=False)
+    movie_id       = Column(Integer, ForeignKey("movies.id"), primary_key=True, nullable=False)
+    character_name = Column(String,  nullable=True)
+    billing_order  = Column(Integer, nullable=True)
+    role_type      = Column(String(16), nullable=False, default="supporting")
+    # role_type CHECK constraint is enforced at DB level by the migration
+
+    # Back-references
+    actor = relationship("Actor", back_populates="actor_movie_entries")
+    movie = relationship("Movie", back_populates="actor_movie_entries")
