@@ -6,7 +6,10 @@ import Header from '@/components/Header'
 import ActorAvatar from '@/components/ActorAvatar'
 import MissingData from '@/components/MissingData'
 import ShareButton from '@/components/ShareButton'
+import ShareSheet from '@/components/ShareSheet'
 import VerdictCard from '@/components/VerdictCard'
+import CareerTimeline from '@/components/CareerTimeline'
+import FilmGrid from '@/components/FilmGrid'
 import { calcYearsActive, calcAvgRating } from '@/lib/metrics'
 import {
   searchActors,
@@ -421,162 +424,6 @@ function DidYouKnow({ insights }: { insights: string[] }) {
   )
 }
 
-// ── TASK 5: Career Timeline ───────────────────────────────────────────────────
-
-function CareerTimeline({
-  movies1,
-  movies2,
-  name1,
-  name2,
-}: {
-  movies1: ActorMovie[]
-  movies2: ActorMovie[]
-  name1: string
-  name2: string
-}) {
-  const c1 = buildTimeline(movies1)
-  const c2 = buildTimeline(movies2)
-  const allYears = [...new Set([...c1.keys(), ...c2.keys()])].sort()
-
-  if (allYears.length < 3) return null
-
-  const minYear = allYears[0]
-  const maxYear = allYears[allYears.length - 1]
-  const yearSpan = maxYear - minYear || 1
-
-  const maxCount = Math.max(...allYears.flatMap((y) => [c1.get(y) ?? 0, c2.get(y) ?? 0]))
-  if (maxCount === 0) return null
-
-  const W = 600
-  const H = 150
-  const PAD = { t: 10, r: 16, b: 28, l: 24 }
-  const cW = W - PAD.l - PAD.r
-  const cH = H - PAD.t - PAD.b
-
-  const toX = (y: number) => PAD.l + ((y - minYear) / yearSpan) * cW
-  const toY = (c: number) => PAD.t + cH - (c / maxCount) * cH
-
-  const pts1 = allYears.map((y) => `${toX(y)},${toY(c1.get(y) ?? 0)}`).join(' ')
-  const pts2 = allYears.map((y) => `${toX(y)},${toY(c2.get(y) ?? 0)}`).join(' ')
-
-  // X labels: every 5 years, starting from the nearest multiple of 5
-  const firstLabel = Math.ceil(minYear / 5) * 5
-  const xLabels: number[] = []
-  for (let y = firstLabel; y <= maxYear; y += 5) xLabels.push(y)
-
-  // Y labels: 0, mid, max
-  const yLabels = [0, Math.ceil(maxCount / 2), maxCount]
-
-  return (
-    <div className="glass rounded-3xl p-6">
-      {/* Legend */}
-      <div className="flex gap-6 mb-4">
-        <div className="flex items-center gap-2">
-          <div className="w-5 h-0.5 rounded-full" style={{ background: '#f59e0b' }} />
-          <span className="text-xs text-white/45">{name1}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-5 h-0.5 rounded-full" style={{ background: '#06b6d4' }} />
-          <span className="text-xs text-white/45">{name2}</span>
-        </div>
-      </div>
-
-      <svg
-        viewBox={`0 0 ${W} ${H}`}
-        className="w-full h-auto"
-        aria-label={`Career timeline: ${name1} vs ${name2}`}
-      >
-        {/* Horizontal grid */}
-        {yLabels.map((v) => (
-          <line
-            key={v}
-            x1={PAD.l}
-            y1={toY(v)}
-            x2={W - PAD.r}
-            y2={toY(v)}
-            stroke="rgba(255,255,255,0.05)"
-            strokeWidth="1"
-          />
-        ))}
-
-        {/* Y-axis labels */}
-        {yLabels.map((v) => (
-          <text
-            key={v}
-            x={PAD.l - 3}
-            y={toY(v) + 4}
-            textAnchor="end"
-            fill="rgba(255,255,255,0.2)"
-            fontSize="8"
-          >
-            {v}
-          </text>
-        ))}
-
-        {/* X-axis labels */}
-        {xLabels.map((y) => (
-          <text
-            key={y}
-            x={toX(y)}
-            y={H - 4}
-            textAnchor="middle"
-            fill="rgba(255,255,255,0.2)"
-            fontSize="8"
-          >
-            {y}
-          </text>
-        ))}
-
-        {/* Actor 1 area shadow (subtle) */}
-        <polyline
-          points={pts1}
-          fill="none"
-          stroke="#f59e0b"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeOpacity="0.75"
-        />
-        {allYears
-          .filter((y) => (c1.get(y) ?? 0) > 0)
-          .map((y) => (
-            <circle
-              key={y}
-              cx={toX(y)}
-              cy={toY(c1.get(y)!)}
-              r="3.5"
-              fill="#f59e0b"
-              fillOpacity="0.9"
-            />
-          ))}
-
-        {/* Actor 2 line */}
-        <polyline
-          points={pts2}
-          fill="none"
-          stroke="#06b6d4"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeOpacity="0.75"
-        />
-        {allYears
-          .filter((y) => (c2.get(y) ?? 0) > 0)
-          .map((y) => (
-            <circle
-              key={y}
-              cx={toX(y)}
-              cy={toY(c2.get(y)!)}
-              r="3.5"
-              fill="#06b6d4"
-              fillOpacity="0.9"
-            />
-          ))}
-      </svg>
-    </div>
-  )
-}
-
 // ── TASK 6: Improved Collaborators ────────────────────────────────────────────
 
 function CollaboratorList({
@@ -626,91 +473,7 @@ function CollaboratorList({
   )
 }
 
-// ── TASK 7: Filmography Grid with badges ──────────────────────────────────────
-
-function FilmBadge({ label, emoji }: { label: string; emoji: string }) {
-  return (
-    <span className="absolute top-1.5 left-1.5 flex items-center gap-0.5 bg-black/75 backdrop-blur-sm rounded-full px-1.5 py-0.5 text-[9px] font-bold text-white">
-      {emoji} {label}
-    </span>
-  )
-}
-
-function FilmGrid({
-  actorName,
-  movies,
-  highlightedRatedId,
-  highlightedPopId,
-  latestId,
-}: {
-  actorName: string
-  movies: ActorMovie[]
-  highlightedRatedId: string | null
-  highlightedPopId: string | null
-  latestId: string | null
-}) {
-  if (!movies.length) return <MissingData type="cast" />
-
-  return (
-    <div className="flex flex-col gap-3">
-      <SectionLabel>{actorName}</SectionLabel>
-      <div className="grid grid-cols-3 sm:grid-cols-3 gap-3">
-        {movies.map((movie, i) => {
-          const key = `${movie.title}-${movie.release_year}`
-          const isTopRated = key === highlightedRatedId
-          const isMostPop = key === highlightedPopId
-          const isLatest = key === latestId
-          const hasRating = (movie.vote_average ?? 0) > 0
-          const isVintage = movie.release_year > 0 && movie.release_year < 1980
-
-          return (
-            <div
-              key={`${key}-${i}`}
-              className="flex flex-col gap-1.5 hover:scale-[1.03] transition-transform duration-200 cursor-default"
-            >
-              <div className="relative aspect-[2/3] rounded-xl overflow-hidden bg-[#1a1a24]">
-                {movie.poster_url ? (
-                  <Image
-                    src={movie.poster_url}
-                    alt={movie.title}
-                    fill
-                    sizes="(max-width: 768px) 33vw, 15vw"
-                    className="object-cover"
-                  />
-                ) : isVintage ? (
-                  <MissingData type="poster_old" title={movie.title} />
-                ) : (
-                  <MissingData type="poster" title={movie.title} />
-                )}
-
-                {/* Rating badge */}
-                {hasRating && (
-                  <div className="absolute top-1.5 right-1.5 bg-black/70 backdrop-blur-sm rounded-full px-1.5 py-0.5 text-[10px] font-semibold text-yellow-400">
-                    ★ {movie.vote_average!.toFixed(1)}
-                  </div>
-                )}
-
-                {/* Special badges */}
-                {isTopRated && <FilmBadge emoji="⭐" label="Top Rated" />}
-                {!isTopRated && isMostPop && <FilmBadge emoji="🔥" label="Popular" />}
-                {!isTopRated && !isMostPop && isLatest && <FilmBadge emoji="🆕" label="Latest" />}
-              </div>
-
-              <div className="flex flex-col gap-0.5 px-0.5">
-                <span className="text-xs font-medium text-white/80 leading-snug line-clamp-2">
-                  {movie.title}
-                </span>
-                <span className="text-[10px] text-white/35">
-                  {movie.release_year > 0 ? movie.release_year : 'Coming Soon'}
-                </span>
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
+// ── TASK 7: Filmography Grid — extracted to components/FilmGrid.tsx ───────────
 
 // ── Task 8: Rivalry Story ─────────────────────────────────────────────────────
 
@@ -918,6 +681,26 @@ export default async function ComparePage({ params }: PageProps) {
   const winner = wins1 > wins2 ? p1.name : wins2 > wins1 ? p2.name : null
   const winnerLeads = Math.max(wins1, wins2)
 
+  // Shared props for both ShareSheet (popup) and ShareButton (card download)
+  const shareProps = {
+    name1:        p1.name,
+    name2:        p2.name,
+    industry1:    p1.industry,
+    industry2:    p2.industry,
+    films1:       p1.film_count,
+    films2:       p2.film_count,
+    yearsActive1: shareYrs1,
+    yearsActive2: shareYrs2,
+    avgRating1:   shareRat1,
+    avgRating2:   shareRat2,
+    uniqueDirs1:  data1.directors.length,
+    uniqueDirs2:  data2.directors.length,
+    coStars1:     data1.collaborators.length,
+    coStars2:     data2.collaborators.length,
+    winner,
+    winnerLeads,
+  }
+
   return (
     <div className="min-h-screen bg-[#0a0a0f]">
       <Header />
@@ -938,6 +721,10 @@ export default async function ComparePage({ params }: PageProps) {
         <section>
           <SectionLabel>🏆 Verdict</SectionLabel>
           <VerdictCard data1={data1} data2={data2} />
+          {/* Share button near verdict so users can share right after seeing the result */}
+          <div className="flex justify-center mt-5">
+            <ShareSheet {...shareProps} />
+          </div>
         </section>
 
         {/* ── TASK 4: Did You Know ─────────────────────────────── */}
@@ -999,20 +786,31 @@ export default async function ComparePage({ params }: PageProps) {
           </div>
         </section>
 
-        {/* ── TASK 7: Filmography with badges ─────────────────── */}
+        {/* ── TASK 7: Top Films Showdown ───────────────────────── */}
         <section>
-          <SectionLabel>🎥 Top Films</SectionLabel>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <SectionLabel>🎥 Top Films Showdown</SectionLabel>
+          <div className="relative grid grid-cols-1 md:grid-cols-2 gap-8">
             <FilmGrid
               actorName={p1.name}
               movies={topFilms1}
+              accentColor="#f59e0b"
               highlightedRatedId={topRated1 ? `${topRated1.title}-${topRated1.release_year}` : null}
               highlightedPopId={mostPop1 ? `${mostPop1.title}-${mostPop1.release_year}` : null}
               latestId={latest1 ? `${latest1.title}-${latest1.release_year}` : null}
             />
+            {/* Subtle vertical divider — visible on md+ */}
+            <div
+              aria-hidden="true"
+              className="hidden md:block absolute inset-y-0 left-1/2 w-px -translate-x-1/2 pointer-events-none"
+              style={{
+                background: 'linear-gradient(to bottom, transparent 0%, rgba(255,255,255,0.07) 20%, rgba(255,255,255,0.07) 80%, transparent 100%)',
+                boxShadow:  '0 0 6px rgba(255,255,255,0.04)',
+              }}
+            />
             <FilmGrid
               actorName={p2.name}
               movies={topFilms2}
+              accentColor="#06b6d4"
               highlightedRatedId={topRated2 ? `${topRated2.title}-${topRated2.release_year}` : null}
               highlightedPopId={mostPop2 ? `${mostPop2.title}-${mostPop2.release_year}` : null}
               latestId={latest2 ? `${latest2.title}-${latest2.release_year}` : null}
@@ -1102,31 +900,34 @@ export default async function ComparePage({ params }: PageProps) {
             <p className="text-center text-[11px] text-white/20 mt-4">southcinemaanalytics.com</p>
           </div>
 
-          {/* Generate button */}
-          <div className="flex flex-col items-center gap-3">
-            <ShareButton
-              name1={p1.name}
-              name2={p2.name}
-              industry1={p1.industry}
-              industry2={p2.industry}
-              films1={p1.film_count}
-              films2={p2.film_count}
-              yearsActive1={shareYrs1}
-              yearsActive2={shareYrs2}
-              avgRating1={shareRat1}
-              avgRating2={shareRat2}
-              uniqueDirs1={data1.directors.length}
-              uniqueDirs2={data2.directors.length}
-              coStars1={data1.collaborators.length}
-              coStars2={data2.collaborators.length}
-              winner={winner}
-              winnerLeads={winnerLeads}
-            />
+          {/* Share actions */}
+          <div className="flex flex-col items-center gap-4">
+            <ShareSheet {...shareProps} />
+            <div className="flex items-center gap-3 w-full max-w-xs">
+              <div className="flex-1 h-px bg-white/8" />
+              <span className="text-[11px] text-white/20">or</span>
+              <div className="flex-1 h-px bg-white/8" />
+            </div>
+            <ShareButton {...shareProps} />
             <p className="text-xs text-white/20">
               Downloads a 1200×630 PNG — ready for social media
             </p>
           </div>
         </section>
+
+        {/* ── Data attribution note ─────────────────────────────── */}
+        <p className="text-center text-[11px] text-white/20 pb-2">
+          Data for filmographies, ratings and collaborations is aggregated from{' '}
+          <a
+            href="https://www.themoviedb.org/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[#01b4e4]/60 hover:text-[#01b4e4] transition-colors"
+          >
+            TMDB
+          </a>
+          , Wikidata and Wikipedia.
+        </p>
 
       </main>
     </div>

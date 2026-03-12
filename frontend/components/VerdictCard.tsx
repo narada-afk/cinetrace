@@ -13,6 +13,12 @@
  *
  * Amber fills left → right; cyan fills right → left.
  * Both animate 0 → target on first IntersectionObserver trigger.
+ *
+ * Victory reveal sequence (all triggered once by IntersectionObserver):
+ *  ① Bars grow          0.1 – ~1.4s
+ *  ② Winner bar sweeps  bar.delay + 0.7s each
+ *  ③ Trophy glow        1.0s delay, 900ms
+ *  ④ Verdict pulse      1.2s delay, 800ms
  */
 
 import { useRef, useEffect, useState } from 'react'
@@ -63,82 +69,163 @@ export default function VerdictCard({ data1, data2 }: { data1: ActorData; data2:
   const winnerLeads = Math.max(wins1, wins2)
   const winnerColor = winner?.name === p1.name ? '#f59e0b' : '#06b6d4'
 
+  // ── Animation styles (applied only after IO fires) ──────────────────────────
+
+  // ④ Verdict text: scale 0.96→1.05→1, opacity 0.7→1 — delayed until bars settle
+  const verdictStyle = animated
+    ? { animation: 'verdictPulse 800ms ease-out 1.2s both' }
+    : { opacity: 0.8, transform: 'scale(0.96)' }
+
+  // ③ Trophy: drop-shadow glow burst then settles to a whisper
+  const trophyStyle = animated
+    ? { animation: 'trophyGlow 900ms ease-out 1.0s both', display: 'inline-block' }
+    : { display: 'inline-block' }
+
   return (
-    <div ref={containerRef} className="glass rounded-3xl p-6 sm:p-8 flex flex-col gap-8">
+    <>
+      {/* ── Keyframes injected once alongside the component ─────────────── */}
+      <style>{`
+        @keyframes verdictPulse {
+          0%   { transform: scale(0.96); opacity: 0.7; }
+          55%  { transform: scale(1.05); opacity: 1;   }
+          100% { transform: scale(1);   opacity: 1;   }
+        }
+        @keyframes trophyGlow {
+          0%   { filter: drop-shadow(0 0 0px  rgba(255,215,0,0));    }
+          40%  { filter: drop-shadow(0 0 14px rgba(255,215,0,0.85)); }
+          100% { filter: drop-shadow(0 0 4px  rgba(255,215,0,0.2));  }
+        }
+        @keyframes barSweep {
+          0%   { transform: translateX(-100%); opacity: 1; }
+          100% { transform: translateX(200%);  opacity: 0; }
+        }
+      `}</style>
 
-      {/* Trophy header */}
-      <div className="flex flex-col items-center gap-2 text-center">
-        <p className="text-2xl">🏆</p>
-        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/30">Verdict</p>
-        {winner ? (
-          <p className="text-lg font-bold" style={{ color: winnerColor }}>
-            {winner.name} leads in {winnerLeads} of 5 metrics
-          </p>
-        ) : (
-          <p className="text-lg font-bold text-white/60">All square — perfectly matched</p>
-        )}
-      </div>
+      <div ref={containerRef} className="glass rounded-3xl p-6 sm:p-8 flex flex-col gap-8">
 
-      {/* One split bar per metric */}
-      <div className="flex flex-col gap-5">
-        {METRICS.map((m) => {
-          const total = m.v1 + m.v2 || 1            // avoid ÷0
-          const pct1  = (m.v1 / total) * 100        // actor 1 share (left)
-          const pct2  = (m.v2 / total) * 100        // actor 2 share (right)
+        {/* Trophy header */}
+        <div className="flex flex-col items-center gap-2 text-center">
+          {/* ③ Trophy glow */}
+          <p className="text-2xl" style={trophyStyle}>🏆</p>
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/30">Verdict</p>
+          {/* ④ Verdict pulse */}
+          {winner ? (
+            <p className="text-lg font-bold" style={{ color: winnerColor, ...verdictStyle }}>
+              {winner.name} leads in {winnerLeads} of 5 metrics
+            </p>
+          ) : (
+            <p className="text-lg font-bold text-white/60" style={verdictStyle}>
+              All square — perfectly matched
+            </p>
+          )}
+        </div>
 
-          return (
-            <div key={m.label} className="flex flex-col gap-2">
+        {/* One split bar per metric */}
+        <div className="flex flex-col gap-5">
+          {METRICS.map((m) => {
+            const total = m.v1 + m.v2 || 1            // avoid ÷0
+            const pct1  = (m.v1 / total) * 100        // actor 1 share (left)
+            const pct2  = (m.v2 / total) * 100        // actor 2 share (right)
 
-              {/* Metric label */}
-              <p className="text-[11px] text-white/35 uppercase tracking-widest text-center">
-                {m.label}
-              </p>
+            // 0 = tie, 1 = actor1 wins, 2 = actor2 wins
+            const lead = m.v1 > m.v2 ? 1 : m.v2 > m.v1 ? 2 : 0
 
-              {/* ── Single split bar ───────────────────────────────── */}
-              <div
-                className="relative h-11 rounded-xl overflow-hidden"
-                style={{ background: 'rgba(255,255,255,0.06)' }}
-              >
-                {/* Actor 1 — amber, grows left → right */}
+            const fill1 = (lead === 0 || lead === 1) ? '#f59e0b' : 'rgba(255,255,255,0.15)'
+            const fill2 = (lead === 0 || lead === 2) ? '#06b6d4' : 'rgba(255,255,255,0.15)'
+            const dur1  = lead === 1 ? '0.7s' : lead === 2 ? '0.9s' : '0.8s'
+            const dur2  = lead === 2 ? '0.7s' : lead === 1 ? '0.9s' : '0.8s'
+
+            const glow =
+              lead === 1 ? '0 0 12px rgba(245,158,11,0.35)' :
+              lead === 2 ? '0 0 12px rgba(6,182,212,0.35)'  : 'none'
+
+            // Text colours: full white on accent fills; muted on grey fills
+            const text1 = lead === 2 ? 'rgba(255,255,255,0.45)' : '#ffffff'
+            const text2 = lead === 1 ? 'rgba(255,255,255,0.45)' : '#ffffff'
+
+            // ② Sweep shimmer: fires right after the winning bar finishes growing
+            //    Winner bar duration is always 0.7s, so sweep delay = bar delay + 0.7s
+            const sweepDelay1 = `${m.delay + 0.7}s`
+            const sweepDelay2 = `${m.delay + 0.7}s`
+
+            return (
+              <div key={m.label} className="flex flex-col gap-2">
+
+                {/* Metric label */}
+                <p className="text-[11px] text-white/35 uppercase tracking-widest text-center">
+                  {m.label}
+                </p>
+
+                {/* ── Single split bar ───────────────────────────────── */}
                 <div
-                  className="absolute left-0 top-0 bottom-0 flex items-center overflow-hidden"
-                  style={{
-                    width: animated ? `${pct1}%` : '0%',
-                    background: '#f59e0b',
-                    transition: `width 0.8s ease-out ${m.delay}s`,
-                  }}
+                  className="relative h-11 rounded-xl overflow-hidden"
+                  style={{ background: 'rgba(255,255,255,0.06)', boxShadow: animated ? glow : 'none' }}
                 >
-                  <span className="pl-4 text-sm font-semibold text-white whitespace-nowrap leading-none">
-                    {p1.name}
-                  </span>
-                  <span className="ml-auto pr-3 text-sm font-bold text-white tabular-nums leading-none">
-                    {m.d1}
-                  </span>
-                </div>
+                  {/* Actor 1 — amber when winning, grey when losing */}
+                  <div
+                    className="absolute left-0 top-0 bottom-0 flex items-center overflow-hidden"
+                    style={{
+                      width: animated ? `${pct1}%` : '0%',
+                      background: fill1,
+                      transition: `width ${dur1} ease-out ${m.delay}s`,
+                    }}
+                  >
+                    <span className="pl-4 text-sm font-semibold whitespace-nowrap leading-none" style={{ color: text1 }}>
+                      {p1.name}
+                    </span>
+                    <span className="ml-auto pr-3 text-sm font-bold tabular-nums leading-none" style={{ color: text1 }}>
+                      {m.d1}
+                    </span>
 
-                {/* Actor 2 — cyan, grows right → left */}
-                <div
-                  className="absolute right-0 top-0 bottom-0 flex items-center overflow-hidden"
-                  style={{
-                    width: animated ? `${pct2}%` : '0%',
-                    background: '#06b6d4',
-                    transition: `width 0.8s ease-out ${m.delay}s`,
-                  }}
-                >
-                  <span className="pl-3 text-sm font-semibold text-white whitespace-nowrap leading-none">
-                    {m.d2}
-                  </span>
-                  <span className="mr-auto pl-1 pr-4 text-sm font-bold text-white tabular-nums leading-none">
-                    {p2.name}
-                  </span>
+                    {/* ② Sweep shimmer on winner bar only */}
+                    {animated && lead === 1 && (
+                      <div
+                        aria-hidden="true"
+                        className="absolute inset-0 pointer-events-none"
+                        style={{
+                          background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.28) 50%, transparent 100%)',
+                          animation: `barSweep 900ms ease-in-out ${sweepDelay1} both`,
+                        }}
+                      />
+                    )}
+                  </div>
+
+                  {/* Actor 2 — cyan when winning, grey when losing */}
+                  <div
+                    className="absolute right-0 top-0 bottom-0 flex items-center overflow-hidden"
+                    style={{
+                      width: animated ? `${pct2}%` : '0%',
+                      background: fill2,
+                      transition: `width ${dur2} ease-out ${m.delay}s`,
+                    }}
+                  >
+                    <span className="pl-3 text-sm font-semibold whitespace-nowrap leading-none" style={{ color: text2 }}>
+                      {m.d2}
+                    </span>
+                    <span className="mr-auto pl-1 pr-4 text-sm font-bold tabular-nums leading-none" style={{ color: text2 }}>
+                      {p2.name}
+                    </span>
+
+                    {/* ② Sweep shimmer on winner bar only */}
+                    {animated && lead === 2 && (
+                      <div
+                        aria-hidden="true"
+                        className="absolute inset-0 pointer-events-none"
+                        style={{
+                          background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.28) 50%, transparent 100%)',
+                          animation: `barSweep 900ms ease-in-out ${sweepDelay2} both`,
+                        }}
+                      />
+                    )}
+                  </div>
                 </div>
+                {/* ─────────────────────────────────────────────────────── */}
+
               </div>
-              {/* ─────────────────────────────────────────────────────── */}
-
-            </div>
-          )
-        })}
+            )
+          })}
+        </div>
       </div>
-    </div>
+    </>
   )
 }

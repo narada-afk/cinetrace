@@ -6,6 +6,7 @@
       "runtimeExecutable": "/bin/sh",
       "runtimeArgs": ["-c", "PATH=/usr/local/opt/node@20/bin:$PATH npm run dev"],
       "port": 3000,
+      "autoPort": true,
       "cwd": "frontend"
     }
   ]
