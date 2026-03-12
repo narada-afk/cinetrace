@@ -6,6 +6,8 @@ import Header from '@/components/Header'
 import ActorAvatar from '@/components/ActorAvatar'
 import MissingData from '@/components/MissingData'
 import ShareButton from '@/components/ShareButton'
+import VerdictCard from '@/components/VerdictCard'
+import { calcYearsActive, calcAvgRating } from '@/lib/metrics'
 import {
   searchActors,
   getActor,
@@ -92,22 +94,6 @@ function findSharedCollaborators(
     .map((c) => ({ name: c.actor, films1: c.films, films2: map2.get(c.actor.toLowerCase())! }))
     .sort((a, b) => b.films1 + b.films2 - (a.films1 + a.films2))
     .slice(0, limit)
-}
-
-/** Years active = (last film year − first film year) + 1. */
-function calcYearsActive(profile: ActorProfile): number {
-  const first = profile.first_film_year
-  const last  = profile.last_film_year
-  if (!first || !last) return 0
-  return (last - first) + 1
-}
-
-/** Average vote_average across all films that have a rating > 0, rounded to 1 dp. */
-function calcAvgRating(movies: ActorMovie[]): number {
-  const rated = movies.filter((m) => (m.vote_average ?? 0) > 0)
-  if (!rated.length) return 0
-  const sum = rated.reduce((acc, m) => acc + (m.vote_average ?? 0), 0)
-  return Math.round((sum / rated.length) * 10) / 10
 }
 
 /** Count films per release year (1975–2026 window). */
@@ -351,147 +337,6 @@ function HeroBanner({ data1, data2 }: { data1: ActorData; data2: ActorData }) {
 }
 
 // ── TASK 2: Verdict Card ───────────────────────────────────────────────────────
-
-function VerdictBar({
-  label,
-  v1, v2,
-  name1, name2,
-  display1, display2,
-}: {
-  label: string
-  v1: number
-  v2: number
-  name1: string
-  name2: string
-  /** Override the displayed value (e.g. "6.8" for ratings). Bar width still uses v1/v2. */
-  display1?: string
-  display2?: string
-}) {
-  const maxV = Math.max(v1, v2) || 1
-  const pct1 = Math.round((v1 / maxV) * 100)
-  const pct2 = Math.round((v2 / maxV) * 100)
-  const lead = v1 > v2 ? 1 : v2 > v1 ? 2 : 0
-
-  return (
-    <div className="flex flex-col gap-3">
-      <p className="text-xs text-white/35 uppercase tracking-widest text-center">{label}</p>
-
-      {/* Actor 1 */}
-      <div className="flex items-center gap-3">
-        <span className="text-xs text-white/40 w-28 truncate text-right hidden sm:block">
-          {name1}
-        </span>
-        <div className="flex-1 h-2.5 bg-white/[0.06] rounded-full overflow-hidden">
-          <div
-            className="h-full rounded-full transition-all duration-500"
-            style={{
-              width: `${pct1}%`,
-              background: lead === 1 ? '#f59e0b' : 'rgba(255,255,255,0.18)',
-            }}
-          />
-        </div>
-        <span
-          className="text-sm font-bold w-10 text-right tabular-nums"
-          style={{ color: lead === 1 ? '#f59e0b' : 'rgba(255,255,255,0.4)' }}
-        >
-          {display1 ?? v1}
-        </span>
-      </div>
-
-      {/* Actor 2 */}
-      <div className="flex items-center gap-3">
-        <span className="text-xs text-white/40 w-28 truncate text-right hidden sm:block">
-          {name2}
-        </span>
-        <div className="flex-1 h-2.5 bg-white/[0.06] rounded-full overflow-hidden">
-          <div
-            className="h-full rounded-full transition-all duration-500"
-            style={{
-              width: `${pct2}%`,
-              background: lead === 2 ? '#06b6d4' : 'rgba(255,255,255,0.18)',
-            }}
-          />
-        </div>
-        <span
-          className="text-sm font-bold w-10 text-right tabular-nums"
-          style={{ color: lead === 2 ? '#06b6d4' : 'rgba(255,255,255,0.4)' }}
-        >
-          {display2 ?? v2}
-        </span>
-      </div>
-    </div>
-  )
-}
-
-function VerdictCard({ data1, data2 }: { data1: ActorData; data2: ActorData }) {
-  const p1 = data1.profile
-  const p2 = data2.profile
-
-  const yrs1 = calcYearsActive(p1)
-  const yrs2 = calcYearsActive(p2)
-  const rat1 = calcAvgRating(data1.movies)
-  const rat2 = calcAvgRating(data2.movies)
-
-  const metrics = [
-    { label: 'Films',            v1: p1.film_count,              v2: p2.film_count },
-    { label: 'Years Active',     v1: yrs1,                       v2: yrs2 },
-    { label: 'Avg Rating',       v1: rat1,                       v2: rat2,
-      display1: rat1.toFixed(1), display2: rat2.toFixed(1) },
-    { label: 'Unique Directors', v1: data1.directors.length,     v2: data2.directors.length },
-    { label: 'Co-Stars',         v1: data1.collaborators.length, v2: data2.collaborators.length },
-  ]
-
-  const wins1 = metrics.filter((m) => m.v1 > m.v2).length
-  const wins2 = metrics.filter((m) => m.v2 > m.v1).length
-  const winner = wins1 > wins2 ? p1 : wins2 > wins1 ? p2 : null
-  const winnerLeads = Math.max(wins1, wins2)
-  const winnerColor = winner?.name === p1.name ? '#f59e0b' : '#06b6d4'
-
-  return (
-    <div className="glass rounded-3xl p-6 sm:p-8 flex flex-col gap-8">
-      {/* Trophy header */}
-      <div className="flex flex-col items-center gap-2 text-center">
-        <p className="text-2xl">🏆</p>
-        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/30">Verdict</p>
-        {winner ? (
-          <p className="text-lg font-bold" style={{ color: winnerColor }}>
-            {winner.name} leads in {winnerLeads} of 5 metrics
-          </p>
-        ) : (
-          <p className="text-lg font-bold text-white/60">All square — perfectly matched</p>
-        )}
-      </div>
-
-      {/* Bar charts */}
-      <div className="flex flex-col gap-6">
-        {metrics.map((m) => (
-          <VerdictBar
-            key={m.label}
-            label={m.label}
-            v1={m.v1}
-            v2={m.v2}
-            name1={p1.name}
-            name2={p2.name}
-            display1={'display1' in m ? m.display1 : undefined}
-            display2={'display2' in m ? m.display2 : undefined}
-          />
-        ))}
-      </div>
-
-      {/* Actor name legend for mobile */}
-      <div className="flex justify-between items-center sm:hidden text-xs px-1">
-        <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded-full" style={{ background: '#f59e0b' }} />
-          <span className="text-white/50">{p1.name}</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded-full" style={{ background: '#06b6d4' }} />
-          <span className="text-white/50">{p2.name}</span>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 // ── TASK 3: Shared Collaborators ──────────────────────────────────────────────
 
