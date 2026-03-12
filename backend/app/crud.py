@@ -367,9 +367,13 @@ def get_insights(db: Session, industry: Optional[str] = None) -> list:
         else None
     )
 
-    # Relax the director co-film threshold for industry-specific views so
-    # smaller industries (Kannada, etc.) still return results.
-    dir_threshold = 2 if ind else 4
+    # Relax thresholds for industry-specific views so smaller industries
+    # (Kannada, etc.) still return results.
+    dir_threshold  = 2  if ind else 4   # director co-film minimum
+    supp_threshold = 5  if ind else 10  # supporting actor minimum films
+    # 10+ globally means a genuinely prolific character actor (e.g. Brahmanandam
+    # with 58 films, Nassar with 79).  5+ for a single industry is still
+    # meaningful without letting 1- or 2-film cameos pollute the cards.
 
     # ── Query 1: Top actor-actor collaborations ──────────────────────────────
     collab_rows = db.execute(text("""
@@ -434,6 +438,10 @@ def get_insights(db: Session, industry: Optional[str] = None) -> list:
     ]
 
     # ── Query 3: Prolific supporting actors ──────────────────────────────────
+    # Minimum threshold keeps low-count cameos (1–9 films) off the homepage.
+    # The HAVING guard is the key quality gate:
+    #   - globally:          10+ films  →  genuinely prolific character actor
+    #   - industry-specific:  5+ films  →  meaningful within a smaller pool
     supporting_rows = db.execute(text("""
         SELECT
             a.name,
@@ -444,14 +452,15 @@ def get_insights(db: Session, industry: Optional[str] = None) -> list:
         WHERE  am.role_type = 'supporting'
           AND  (:ind IS NULL OR LOWER(a.industry) = :ind)
         GROUP  BY a.name, a.id
+        HAVING COUNT(*) >= :supp_threshold
         ORDER  BY films DESC
         LIMIT  5
-    """), {"ind": ind}).fetchall()
+    """), {"ind": ind, "supp_threshold": supp_threshold}).fetchall()
 
     supporting_insights = [
         {
             "type":      "supporting",
-            "headline":  f"{row.name} appears in",
+            "headline":  f"A defining face in South Indian cinema, {row.name} has appeared in",
             "value":     row.films,
             "unit":      "films",
             "actors":    [row.name],

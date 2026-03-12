@@ -78,7 +78,7 @@ const INSIGHT_META: Record<
 > = {
   collaboration: { emoji: '🔥', label: 'Iconic Duo' },
   director:      { emoji: '🎬', label: 'Director Partnership' },
-  supporting:    { emoji: '⭐', label: 'Supporting Legend' },
+  supporting:    { emoji: '⭐', label: 'Character Icon' },
 }
 
 async function fetchInsightCards(industry?: string): Promise<InsightCardData[]> {
@@ -111,7 +111,7 @@ async function fetchInsightCards(industry?: string): Promise<InsightCardData[]> 
         emoji:    meta.emoji,
         label:    meta.label,
         headline: insight.headline,
-        stat:     `${insight.value} ${insight.unit}`,
+        stat:     `${insight.value} ${insight.value === 1 ? 'film' : insight.unit}`,
         subtext,
         // Show up to 2 actor avatars; for director cards show only the actor (index 0)
         actors:   insight.actors
