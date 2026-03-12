@@ -13,10 +13,14 @@ interface ShareCardData {
   industry2: string
   films1: number
   films2: number
-  collabs1: number
-  collabs2: number
-  dirs1: number
-  dirs2: number
+  yearsActive1: number
+  yearsActive2: number
+  avgRating1: number
+  avgRating2: number
+  uniqueDirs1: number
+  uniqueDirs2: number
+  coStars1: number
+  coStars2: number
   /** null = tie */
   winner: string | null
   winnerLeads: number
@@ -85,7 +89,7 @@ function buildCanvas(d: ShareCardData): HTMLCanvasElement {
   ctx.setLineDash([4, 4])
   ctx.beginPath()
   ctx.moveTo(600, 40)
-  ctx.lineTo(600, 560)
+  ctx.lineTo(600, 540)
   ctx.stroke()
   ctx.setLineDash([])
 
@@ -105,9 +109,9 @@ function buildCanvas(d: ShareCardData): HTMLCanvasElement {
   ctx.fillText((d.industry1 || '').toUpperCase(), 60, 98)
 
   ctx.fillStyle = '#ffffff'
-  const f1 = d.name1.length > 16 ? 44 : d.name1.length > 12 ? 52 : 60
+  const f1 = d.name1.length > 16 ? 38 : d.name1.length > 12 ? 46 : 54
   ctx.font = `bold ${f1}px -apple-system, system-ui, sans-serif`
-  ctx.fillText(d.name1, 60, 165)
+  ctx.fillText(d.name1, 60, 152)
 
   // ── Actor 2 (right) ────────────────────────────────────────────
   ctx.textAlign = 'right'
@@ -116,21 +120,23 @@ function buildCanvas(d: ShareCardData): HTMLCanvasElement {
   ctx.fillText((d.industry2 || '').toUpperCase(), 1140, 98)
 
   ctx.fillStyle = '#ffffff'
-  const f2 = d.name2.length > 16 ? 44 : d.name2.length > 12 ? 52 : 60
+  const f2 = d.name2.length > 16 ? 38 : d.name2.length > 12 ? 46 : 54
   ctx.font = `bold ${f2}px -apple-system, system-ui, sans-serif`
-  ctx.fillText(d.name2, 1140, 165)
+  ctx.fillText(d.name2, 1140, 152)
 
   // ── Stat bars ──────────────────────────────────────────────────
   const stats = [
-    { label: 'Films',         v1: d.films1,   v2: d.films2 },
-    { label: 'Collaborators', v1: d.collabs1, v2: d.collabs2 },
-    { label: 'Directors',     v1: d.dirs1,    v2: d.dirs2 },
+    { label: 'FILMS',            v1: d.films1,        v2: d.films2,        fmt: (v: number) => String(v) },
+    { label: 'YEARS ACTIVE',     v1: d.yearsActive1,  v2: d.yearsActive2,  fmt: (v: number) => String(v) },
+    { label: 'AVG RATING',       v1: d.avgRating1,    v2: d.avgRating2,    fmt: (v: number) => v.toFixed(1) },
+    { label: 'UNIQUE DIRECTORS', v1: d.uniqueDirs1,   v2: d.uniqueDirs2,   fmt: (v: number) => String(v) },
+    { label: 'CO-STARS',         v1: d.coStars1,      v2: d.coStars2,      fmt: (v: number) => String(v) },
   ]
 
   const BAR_W = 430      // max bar width (per side)
-  const BAR_H = 12
-  const ROW_H = 80
-  let rowY = 240
+  const BAR_H = 10
+  const ROW_H = 62       // tighter rows to fit 5 metrics
+  let rowY = 192
 
   for (const stat of stats) {
     const lead = stat.v1 > stat.v2 ? 1 : stat.v2 > stat.v1 ? 2 : 0
@@ -138,39 +144,39 @@ function buildCanvas(d: ShareCardData): HTMLCanvasElement {
 
     // Stat label (center)
     ctx.fillStyle = 'rgba(255,255,255,0.3)'
-    ctx.font = '12px -apple-system, system-ui, sans-serif'
+    ctx.font = '11px -apple-system, system-ui, sans-serif'
     ctx.textAlign = 'center'
-    ctx.fillText(stat.label.toUpperCase(), 600, rowY + 6)
+    ctx.fillText(stat.label, 600, rowY + 6)
 
     // Actor 1 bar (grows left-to-right toward center)
     const w1 = Math.round((stat.v1 / maxV) * BAR_W)
     ctx.fillStyle = 'rgba(255,255,255,0.07)'
-    drawRoundRect(ctx, 600 - BAR_W - 10, rowY + 16, BAR_W, BAR_H, 6)
+    drawRoundRect(ctx, 600 - BAR_W - 10, rowY + 14, BAR_W, BAR_H, 5)
     ctx.fill()
     ctx.fillStyle = lead === 1 ? '#f59e0b' : 'rgba(255,255,255,0.18)'
-    drawRoundRect(ctx, 600 - w1 - 10, rowY + 16, w1, BAR_H, 6)
+    drawRoundRect(ctx, 600 - w1 - 10, rowY + 14, w1, BAR_H, 5)
     ctx.fill()
 
     // Actor 1 value
     ctx.fillStyle = lead === 1 ? '#f59e0b' : 'rgba(255,255,255,0.45)'
-    ctx.font = `bold ${lead === 1 ? 26 : 22}px -apple-system, system-ui, sans-serif`
+    ctx.font = `bold ${lead === 1 ? 22 : 18}px -apple-system, system-ui, sans-serif`
     ctx.textAlign = 'right'
-    ctx.fillText(stat.v1.toLocaleString(), 600 - BAR_W - 20, rowY + 30)
+    ctx.fillText(stat.fmt(stat.v1), 600 - BAR_W - 20, rowY + 28)
 
     // Actor 2 bar (grows right from center)
     const w2 = Math.round((stat.v2 / maxV) * BAR_W)
     ctx.fillStyle = 'rgba(255,255,255,0.07)'
-    drawRoundRect(ctx, 610, rowY + 16, BAR_W, BAR_H, 6)
+    drawRoundRect(ctx, 610, rowY + 14, BAR_W, BAR_H, 5)
     ctx.fill()
     ctx.fillStyle = lead === 2 ? '#06b6d4' : 'rgba(255,255,255,0.18)'
-    drawRoundRect(ctx, 610, rowY + 16, w2, BAR_H, 6)
+    drawRoundRect(ctx, 610, rowY + 14, w2, BAR_H, 5)
     ctx.fill()
 
     // Actor 2 value
     ctx.fillStyle = lead === 2 ? '#06b6d4' : 'rgba(255,255,255,0.45)'
-    ctx.font = `bold ${lead === 2 ? 26 : 22}px -apple-system, system-ui, sans-serif`
+    ctx.font = `bold ${lead === 2 ? 22 : 18}px -apple-system, system-ui, sans-serif`
     ctx.textAlign = 'left'
-    ctx.fillText(stat.v2.toLocaleString(), 610 + BAR_W + 20, rowY + 30)
+    ctx.fillText(stat.fmt(stat.v2), 610 + BAR_W + 20, rowY + 28)
 
     rowY += ROW_H
   }
@@ -179,22 +185,22 @@ function buildCanvas(d: ShareCardData): HTMLCanvasElement {
   if (d.winner) {
     const verdictColor = d.winner === d.name1 ? '#f59e0b' : '#06b6d4'
     ctx.fillStyle = 'rgba(255,255,255,0.05)'
-    drawRoundRect(ctx, 100, rowY + 8, 1000, 52, 12)
+    drawRoundRect(ctx, 100, rowY + 6, 1000, 48, 12)
     ctx.fill()
 
     ctx.fillStyle = verdictColor
-    ctx.font = 'bold 19px -apple-system, system-ui, sans-serif'
+    ctx.font = 'bold 18px -apple-system, system-ui, sans-serif'
     ctx.textAlign = 'center'
     ctx.fillText(
-      `\u{1F3C6} ${d.winner} leads in ${d.winnerLeads} of 3 metrics`,
+      `\u{1F3C6} ${d.winner} leads in ${d.winnerLeads} of 5 metrics`,
       600,
-      rowY + 40,
+      rowY + 36,
     )
   } else {
     ctx.fillStyle = 'rgba(255,255,255,0.3)'
-    ctx.font = '17px -apple-system, system-ui, sans-serif'
+    ctx.font = '16px -apple-system, system-ui, sans-serif'
     ctx.textAlign = 'center'
-    ctx.fillText('All square \u2014 perfectly matched', 600, rowY + 40)
+    ctx.fillText('All square \u2014 perfectly matched', 600, rowY + 36)
   }
 
   // ── Branding ───────────────────────────────────────────────────

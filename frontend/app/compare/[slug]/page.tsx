@@ -94,6 +94,22 @@ function findSharedCollaborators(
     .slice(0, limit)
 }
 
+/** Years active = (last film year − first film year) + 1. */
+function calcYearsActive(profile: ActorProfile): number {
+  const first = profile.first_film_year
+  const last  = profile.last_film_year
+  if (!first || !last) return 0
+  return (last - first) + 1
+}
+
+/** Average vote_average across all films that have a rating > 0, rounded to 1 dp. */
+function calcAvgRating(movies: ActorMovie[]): number {
+  const rated = movies.filter((m) => (m.vote_average ?? 0) > 0)
+  if (!rated.length) return 0
+  const sum = rated.reduce((acc, m) => acc + (m.vote_average ?? 0), 0)
+  return Math.round((sum / rated.length) * 10) / 10
+}
+
 /** Count films per release year (1975–2026 window). */
 function buildTimeline(movies: ActorMovie[]): Map<number, number> {
   const map = new Map<number, number>()
@@ -340,12 +356,16 @@ function VerdictBar({
   label,
   v1, v2,
   name1, name2,
+  display1, display2,
 }: {
   label: string
   v1: number
   v2: number
   name1: string
   name2: string
+  /** Override the displayed value (e.g. "6.8" for ratings). Bar width still uses v1/v2. */
+  display1?: string
+  display2?: string
 }) {
   const maxV = Math.max(v1, v2) || 1
   const pct1 = Math.round((v1 / maxV) * 100)
@@ -374,7 +394,7 @@ function VerdictBar({
           className="text-sm font-bold w-10 text-right tabular-nums"
           style={{ color: lead === 1 ? '#f59e0b' : 'rgba(255,255,255,0.4)' }}
         >
-          {v1}
+          {display1 ?? v1}
         </span>
       </div>
 
@@ -396,7 +416,7 @@ function VerdictBar({
           className="text-sm font-bold w-10 text-right tabular-nums"
           style={{ color: lead === 2 ? '#06b6d4' : 'rgba(255,255,255,0.4)' }}
         >
-          {v2}
+          {display2 ?? v2}
         </span>
       </div>
     </div>
@@ -407,10 +427,18 @@ function VerdictCard({ data1, data2 }: { data1: ActorData; data2: ActorData }) {
   const p1 = data1.profile
   const p2 = data2.profile
 
+  const yrs1 = calcYearsActive(p1)
+  const yrs2 = calcYearsActive(p2)
+  const rat1 = calcAvgRating(data1.movies)
+  const rat2 = calcAvgRating(data2.movies)
+
   const metrics = [
-    { label: 'Films',         v1: p1.film_count,           v2: p2.film_count },
-    { label: 'Collaborators', v1: data1.collaborators.length, v2: data2.collaborators.length },
-    { label: 'Directors',     v1: data1.directors.length,   v2: data2.directors.length },
+    { label: 'Films',            v1: p1.film_count,              v2: p2.film_count },
+    { label: 'Years Active',     v1: yrs1,                       v2: yrs2 },
+    { label: 'Avg Rating',       v1: rat1,                       v2: rat2,
+      display1: rat1.toFixed(1), display2: rat2.toFixed(1) },
+    { label: 'Unique Directors', v1: data1.directors.length,     v2: data2.directors.length },
+    { label: 'Co-Stars',         v1: data1.collaborators.length, v2: data2.collaborators.length },
   ]
 
   const wins1 = metrics.filter((m) => m.v1 > m.v2).length
@@ -427,7 +455,7 @@ function VerdictCard({ data1, data2 }: { data1: ActorData; data2: ActorData }) {
         <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/30">Verdict</p>
         {winner ? (
           <p className="text-lg font-bold" style={{ color: winnerColor }}>
-            {winner.name} leads in {winnerLeads} of 3 metrics
+            {winner.name} leads in {winnerLeads} of 5 metrics
           </p>
         ) : (
           <p className="text-lg font-bold text-white/60">All square — perfectly matched</p>
@@ -444,6 +472,8 @@ function VerdictCard({ data1, data2 }: { data1: ActorData; data2: ActorData }) {
             v2={m.v2}
             name1={p1.name}
             name2={p2.name}
+            display1={'display1' in m ? m.display1 : undefined}
+            display2={'display2' in m ? m.display2 : undefined}
           />
         ))}
       </div>
@@ -1025,13 +1055,21 @@ export default async function ComparePage({ params }: PageProps) {
   const p1 = data1.profile
   const p2 = data2.profile
 
-  const metrics = [
+  // Pre-compute the 5 verdict metrics so Share Card stays in sync
+  const shareYrs1 = calcYearsActive(p1)
+  const shareYrs2 = calcYearsActive(p2)
+  const shareRat1 = calcAvgRating(data1.movies)
+  const shareRat2 = calcAvgRating(data2.movies)
+
+  const metrics5 = [
     { v1: p1.film_count,                  v2: p2.film_count },
-    { v1: data1.collaborators.length,     v2: data2.collaborators.length },
+    { v1: shareYrs1,                      v2: shareYrs2 },
+    { v1: shareRat1,                      v2: shareRat2 },
     { v1: data1.directors.length,         v2: data2.directors.length },
+    { v1: data1.collaborators.length,     v2: data2.collaborators.length },
   ]
-  const wins1 = metrics.filter((m) => m.v1 > m.v2).length
-  const wins2 = metrics.filter((m) => m.v2 > m.v1).length
+  const wins1 = metrics5.filter((m) => m.v1 > m.v2).length
+  const wins2 = metrics5.filter((m) => m.v2 > m.v1).length
   const winner = wins1 > wins2 ? p1.name : wins2 > wins1 ? p2.name : null
   const winnerLeads = Math.max(wins1, wins2)
 
@@ -1173,29 +1211,31 @@ export default async function ComparePage({ params }: PageProps) {
             </div>
 
             {/* Stats grid */}
-            <div className="grid grid-cols-3 gap-3 mb-6">
+            <div className="grid grid-cols-5 gap-2 mb-6">
               {[
-                { label: 'Films',         v1: p1.film_count,              v2: p2.film_count },
-                { label: 'Collaborators', v1: data1.collaborators.length, v2: data2.collaborators.length },
-                { label: 'Directors',     v1: data1.directors.length,     v2: data2.directors.length },
-              ].map(({ label, v1, v2 }) => {
+                { label: 'Films',            v1: p1.film_count,              v2: p2.film_count,              d1: String(p1.film_count),         d2: String(p2.film_count) },
+                { label: 'Years Active',     v1: shareYrs1,                  v2: shareYrs2,                  d1: String(shareYrs1),             d2: String(shareYrs2) },
+                { label: 'Avg Rating',       v1: shareRat1,                  v2: shareRat2,                  d1: shareRat1.toFixed(1),          d2: shareRat2.toFixed(1) },
+                { label: 'Unique Directors', v1: data1.directors.length,     v2: data2.directors.length,     d1: String(data1.directors.length), d2: String(data2.directors.length) },
+                { label: 'Co-Stars',         v1: data1.collaborators.length, v2: data2.collaborators.length, d1: String(data1.collaborators.length), d2: String(data2.collaborators.length) },
+              ].map(({ label, v1, v2, d1, d2 }) => {
                 const lead = v1 > v2 ? 1 : v2 > v1 ? 2 : 0
                 return (
                   <div key={label} className="glass rounded-2xl p-3 text-center">
-                    <p className="text-[9px] text-white/30 uppercase tracking-widest mb-2">{label}</p>
-                    <div className="flex items-center justify-center gap-1.5">
+                    <p className="text-[8px] text-white/30 uppercase tracking-widest mb-2 leading-tight">{label}</p>
+                    <div className="flex items-center justify-center gap-1">
                       <span
-                        className="text-lg font-bold tabular-nums"
+                        className="text-base font-bold tabular-nums"
                         style={{ color: lead === 1 ? '#f59e0b' : 'rgba(255,255,255,0.5)' }}
                       >
-                        {v1}
+                        {d1}
                       </span>
-                      <span className="text-white/15 text-xs">—</span>
+                      <span className="text-white/15 text-[10px]">—</span>
                       <span
-                        className="text-lg font-bold tabular-nums"
+                        className="text-base font-bold tabular-nums"
                         style={{ color: lead === 2 ? '#06b6d4' : 'rgba(255,255,255,0.5)' }}
                       >
-                        {v2}
+                        {d2}
                       </span>
                     </div>
                   </div>
@@ -1207,7 +1247,7 @@ export default async function ComparePage({ params }: PageProps) {
             {winner ? (
               <p className="text-center text-sm font-semibold"
                 style={{ color: winner === p1.name ? '#f59e0b' : '#06b6d4' }}>
-                🏆 {winner} leads in {winnerLeads} of 3 metrics
+                🏆 {winner} leads in {winnerLeads} of 5 metrics
               </p>
             ) : (
               <p className="text-center text-sm text-white/40">All square — perfectly matched</p>
@@ -1226,10 +1266,14 @@ export default async function ComparePage({ params }: PageProps) {
               industry2={p2.industry}
               films1={p1.film_count}
               films2={p2.film_count}
-              collabs1={data1.collaborators.length}
-              collabs2={data2.collaborators.length}
-              dirs1={data1.directors.length}
-              dirs2={data2.directors.length}
+              yearsActive1={shareYrs1}
+              yearsActive2={shareYrs2}
+              avgRating1={shareRat1}
+              avgRating2={shareRat2}
+              uniqueDirs1={data1.directors.length}
+              uniqueDirs2={data2.directors.length}
+              coStars1={data1.collaborators.length}
+              coStars2={data2.collaborators.length}
               winner={winner}
               winnerLeads={winnerLeads}
             />
