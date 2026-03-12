@@ -156,3 +156,6 @@ env/
 # Claude worktrees
 .claude/worktrees/
 
+# Claude local settings (may contain API keys in permissions log)
+.claude/settings.local.json
+
