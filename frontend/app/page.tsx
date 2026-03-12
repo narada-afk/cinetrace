@@ -16,11 +16,6 @@ const GRADIENTS: InsightCardData['gradient'][] = [
   'blue',
 ]
 
-// Slugify a name for compare URL
-function toSlug(name: string) {
-  return name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
-}
-
 // Static fallback cards shown even when API is unavailable
 const FALLBACK_CARDS: InsightCardData[] = [
   {
@@ -94,17 +89,30 @@ async function fetchInsightCards(industry?: string): Promise<InsightCardData[]> 
     return insights.map((insight, i) => {
       const meta = INSIGHT_META[insight.type] ?? { emoji: '🎭', label: 'Cinema Fact' }
 
-      // Build a compare URL for actor pairs; fall back to # for director/supporting
-      const href =
-        insight.type === 'collaboration' && insight.actors.length === 2
-          ? `/compare/${toSlug(insight.actors[0])}-vs-${toSlug(insight.actors[1])}`
-          : '#'
+      // Build URL using actor IDs — avoids name→slug roundtrip issues
+      // (e.g. "N. T. Rama Rao Jr." loses dots when slugified → search fails)
+      // collaboration → /compare/id1-vs-id2
+      // director      → /actors/actor_id  (profile shows filmography + directors)
+      // supporting    → /actors/actor_id
+      let href = '#'
+      if (insight.type === 'collaboration' && insight.actor_ids.length === 2) {
+        href = `/compare/${insight.actor_ids[0]}-vs-${insight.actor_ids[1]}`
+      } else if (insight.actor_ids.length > 0) {
+        href = `/actors/${insight.actor_ids[0]}`
+      }
+
+      // For director cards, surface the director's name in the subtext
+      const subtext =
+        insight.type === 'director' && insight.actors.length >= 2
+          ? `With director ${insight.actors[1]}`
+          : undefined
 
       return {
         emoji:    meta.emoji,
         label:    meta.label,
         headline: insight.headline,
         stat:     `${insight.value} ${insight.unit}`,
+        subtext,
         // Show up to 2 actor avatars; for director cards show only the actor (index 0)
         actors:   insight.actors
           .slice(0, insight.type === 'director' ? 1 : 2)

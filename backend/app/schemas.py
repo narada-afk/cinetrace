@@ -160,17 +160,22 @@ class Insight(BaseModel):
 
     Fields
     ------
-    type     : category — "collaboration" | "director" | "supporting"
-    headline : sentence fragment describing the fact (value + unit appended by UI)
-    value    : the numeric stat (film count, collaboration count, etc.)
-    unit     : label for the value — always "films" in Sprint 15
-    actors   : names involved; 2 entries for collaborations/directors, 1 for supporting
+    type      : category — "collaboration" | "director" | "supporting"
+    headline  : sentence fragment describing the fact (value + unit appended by UI)
+    value     : the numeric stat (film count, collaboration count, etc.)
+    unit      : label for the value — always "films" in Sprint 15
+    actors    : names involved; 2 entries for collaborations/directors, 1 for supporting
+    actor_ids : database IDs for the actors in `actors` (same order).
+                For director insights only the actor's ID is included (directors
+                are not in the actors table).  Use these IDs to build compare or
+                actor-profile URLs without name→slug conversion.
     """
     type: str
     headline: str
     value: int
     unit: str
     actors: List[str]
+    actor_ids: List[int] = []
 
 
 class InsightsOut(BaseModel):

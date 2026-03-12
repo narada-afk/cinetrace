@@ -65,6 +65,9 @@ export interface Insight {
   value: number
   unit: string
   actors: string[]
+  /** Database IDs for the actors[] array — same order. Use for building URLs
+   *  without any name→slug conversion (avoids issues with special chars like dots). */
+  actor_ids: number[]
 }
 
 export interface SharedFilm {

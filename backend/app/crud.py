@@ -376,6 +376,8 @@ def get_insights(db: Session, industry: Optional[str] = None) -> list:
         SELECT
             a1.name                AS actor1,
             a2.name                AS actor2,
+            a1.id                  AS actor1_id,
+            a2.id                  AS actor2_id,
             ac.collaboration_count
         FROM   actor_collaborations ac
         JOIN   actors a1 ON ac.actor1_id = a1.id
@@ -389,11 +391,12 @@ def get_insights(db: Session, industry: Optional[str] = None) -> list:
 
     collab_insights = [
         {
-            "type":     "collaboration",
-            "headline": f"{row.actor1} and {row.actor2} have appeared together in",
-            "value":    row.collaboration_count,
-            "unit":     "films",
-            "actors":   [row.actor1, row.actor2],
+            "type":      "collaboration",
+            "headline":  f"{row.actor1} and {row.actor2} have appeared together in",
+            "value":     row.collaboration_count,
+            "unit":      "films",
+            "actors":    [row.actor1, row.actor2],
+            "actor_ids": [row.actor1_id, row.actor2_id],
         }
         for row in collab_rows
     ]
@@ -402,6 +405,7 @@ def get_insights(db: Session, industry: Optional[str] = None) -> list:
     director_rows = db.execute(text("""
         SELECT
             a.name       AS actor,
+            a.id         AS actor_id,
             m.director,
             COUNT(*)     AS films
         FROM   actor_movies am
@@ -410,7 +414,7 @@ def get_insights(db: Session, industry: Optional[str] = None) -> list:
         WHERE  m.director IS NOT NULL
           AND  m.director <> ''
           AND  (:ind IS NULL OR LOWER(a.industry) = :ind)
-        GROUP  BY a.name, m.director
+        GROUP  BY a.name, a.id, m.director
         HAVING COUNT(*) >= :threshold
         ORDER  BY films DESC
         LIMIT  5
@@ -418,11 +422,13 @@ def get_insights(db: Session, industry: Optional[str] = None) -> list:
 
     director_insights = [
         {
-            "type":     "director",
-            "headline": f"{row.actor}'s most frequent director is",
-            "value":    row.films,
-            "unit":     "films",
-            "actors":   [row.actor, row.director],
+            "type":      "director",
+            "headline":  f"{row.actor}'s most frequent director is",
+            "value":     row.films,
+            "unit":      "films",
+            "actors":    [row.actor, row.director],
+            # Director is not in the actors table — only the actor's ID is returned
+            "actor_ids": [row.actor_id],
         }
         for row in director_rows
     ]
@@ -431,23 +437,25 @@ def get_insights(db: Session, industry: Optional[str] = None) -> list:
     supporting_rows = db.execute(text("""
         SELECT
             a.name,
+            a.id,
             COUNT(*) AS films
         FROM   actor_movies am
         JOIN   actors a ON am.actor_id = a.id
         WHERE  am.role_type = 'supporting'
           AND  (:ind IS NULL OR LOWER(a.industry) = :ind)
-        GROUP  BY a.name
+        GROUP  BY a.name, a.id
         ORDER  BY films DESC
         LIMIT  5
     """), {"ind": ind}).fetchall()
 
     supporting_insights = [
         {
-            "type":     "supporting",
-            "headline": f"{row.name} appears in",
-            "value":    row.films,
-            "unit":     "films",
-            "actors":   [row.name],
+            "type":      "supporting",
+            "headline":  f"{row.name} appears in",
+            "value":     row.films,
+            "unit":      "films",
+            "actors":    [row.name],
+            "actor_ids": [row.id],
         }
         for row in supporting_rows
     ]

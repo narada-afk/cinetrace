@@ -36,12 +36,24 @@ interface PageProps {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
- * "rajinikanth-vs-kamal-haasan" → ["rajinikanth", "kamal haasan"]
- * Splits on the literal "-vs-" token; hyphens within names become spaces.
+ * Parse a compare slug into two lookup keys.
+ *
+ * Two formats are supported:
+ *   "6-vs-5"                    → ["6", "5"]          (numeric actor IDs)
+ *   "rajinikanth-vs-kamal-haasan" → ["rajinikanth", "kamal haasan"]  (names)
+ *
+ * Numeric IDs are returned as-is; name slugs have hyphens converted to spaces
+ * for the subsequent searchActors() call.
  */
 function parseSlug(slug: string): [string, string] | null {
   const parts = slug.split('-vs-')
   if (parts.length !== 2) return null
+
+  // If both parts are purely numeric, treat them as direct actor IDs
+  if (/^\d+$/.test(parts[0]) && /^\d+$/.test(parts[1])) {
+    return [parts[0], parts[1]]
+  }
+
   return [
     parts[0].replace(/-/g, ' '),
     parts[1].replace(/-/g, ' '),
@@ -60,12 +72,18 @@ function topMovies(movies: ActorMovie[], n: number): ActorMovie[] {
     .slice(0, n)
 }
 
-async function fetchActorData(name: string): Promise<ActorData | null> {
+async function fetchActorData(nameOrId: string): Promise<ActorData | null> {
   try {
-    const results = await searchActors(name)
-    if (!results.length) return null
+    // Numeric string → direct ID lookup (no search needed, avoids name→slug issues)
+    let id: number | string
+    if (/^\d+$/.test(nameOrId)) {
+      id = parseInt(nameOrId, 10)
+    } else {
+      const results = await searchActors(nameOrId)
+      if (!results.length) return null
+      id = results[0].id
+    }
 
-    const id = results[0].id
     const [profile, movies, collaborators, directors] = await Promise.all([
       getActor(id).catch(() => null),
       getActorMovies(id).catch(() => [] as ActorMovie[]),
