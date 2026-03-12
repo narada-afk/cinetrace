@@ -384,15 +384,21 @@ def _process_movie(
                 elif action == "backfilled":
                     actors_backfilled += backfilled
 
-                # Determine role_type: primary if the actor is flagged
-                role_type = _get_role_type(db, actor_id, dry_run)
+                # Determine role_type from billing_order, not from is_primary_actor.
+                # billing_order 0-2 (top 3 billed) → 'primary' (lead / co-lead).
+                # billing_order 3+               → 'supporting'.
+                # This correctly marks cameos and guest appearances even when the
+                # actor is a primary actor in the system (e.g. Adivi Sesh billing=12
+                # in HIT 3 → supporting, even though he is a primary actor).
+                cast_order = member.get("cast_order", 0) or 0
+                role_type  = "primary" if cast_order <= 2 else "supporting"
 
                 inserted = _upsert_actor_movie(
                     db=db,
                     actor_id=actor_id,
                     movie_id=movie.id,
                     character_name=member.get("character"),
-                    billing_order=member.get("cast_order", 0),
+                    billing_order=cast_order,
                     role_type=role_type,
                     dry_run=dry_run,
                 )
@@ -424,15 +430,19 @@ def _process_movie(
     }
 
 
-def _get_role_type(db: Session, actor_id: int, dry_run: bool) -> str:
-    """Return 'primary' if the actor is flagged is_primary_actor, else 'supporting'."""
-    if dry_run:
-        return "supporting"   # conservative default for dry-run display
-    row = db.execute(
-        text("SELECT is_primary_actor FROM actors WHERE id = :id"),
-        {"id": actor_id},
-    ).fetchone()
-    return "primary" if (row and row[0]) else "supporting"
+def _role_type_from_billing(cast_order: int) -> str:
+    """
+    Return role_type based on billing position in the film's cast list.
+
+    billing_order 0-2 (top 3 billed) → 'primary'  (lead / co-lead)
+    billing_order 3+                  → 'supporting'
+
+    Using billing_order as the source of truth instead of the actor's
+    is_primary_actor flag ensures correctness for cameos and guest
+    appearances: e.g. Adivi Sesh at billing=12 in HIT 3 is correctly
+    marked 'supporting', even though he is a primary actor in the system.
+    """
+    return "primary" if cast_order <= 2 else "supporting"
 
 
 # ---------------------------------------------------------------------------

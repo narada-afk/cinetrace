@@ -426,18 +426,28 @@ def _upsert_actor_movie(
     dry_run: bool,
 ) -> bool:
     """
-    Insert an actor_movies row with role_type='primary'.
+    Insert an actor_movies row with role_type derived from billing_order.
+
+    billing_order 0-2 (top 3 billed) → 'primary'  (lead / co-lead)
+    billing_order 3+                  → 'supporting'
+
+    This correctly handles cases where a primary actor has a cameo in another
+    actor's film (e.g. billing=17 → 'supporting'), rather than hardcoding
+    'primary' for every film in an actor's TMDB filmography.
+
     Returns True if a new row was created, False if it already existed.
     """
     if dry_run:
         return True   # pretend inserted
+
+    role_type = "primary" if billing_order <= 2 else "supporting"
 
     result = db.execute(
         text("""
             INSERT INTO actor_movies
                 (actor_id, movie_id, character_name, billing_order, role_type)
             VALUES
-                (:actor_id, :movie_id, :character_name, :billing_order, 'primary')
+                (:actor_id, :movie_id, :character_name, :billing_order, :role_type)
             ON CONFLICT (actor_id, movie_id) DO NOTHING
             RETURNING actor_id
         """),
@@ -446,6 +456,7 @@ def _upsert_actor_movie(
             "movie_id":       movie_id,
             "character_name": character_name,
             "billing_order":  billing_order,
+            "role_type":      role_type,
         },
     ).fetchone()
 
