@@ -80,7 +80,7 @@ export default async function StatsPage({ searchParams }: PageProps) {
     getIndustryDistribution(),
     getTopPartnerships(14),
     getTopCoStars(15),
-    getCinemaUniverse(3),
+    getCinemaUniverse(2),
     getGravityCenter(25),
   ])
 

@@ -1,23 +1,22 @@
 'use client'
 
 /**
- * CinemaUniverse — Force-Directed Collaboration Graph
+ * CinemaUniverse v2 — Force-Directed Collaboration Graph
  *
- * Shows all 142 ingested actors as nodes connected by edges representing
- * shared films. Uses a Fruchterman-Reingold force simulation implemented
- * directly on canvas (no external lib required).
- *
- * Node size  → proportional to costar_count
- * Node color → industry
- * Edge width → proportional to shared film count
- * Hover      → shows actor name, industry, film/costar counts
- * Click      → highlights node + its direct connections, dims the rest
+ * Improvements over v1:
+ *  - Industry cluster layout  → Tamil ↖ · Telugu ↙ · Malayalam ↗ · Kannada ↘
+ *  - √ node sizing            → costar_count on a sqrt scale (no giant nodes)
+ *  - Edge opacity 0.08        → very subtle at rest, brightens on hover
+ *  - Hover                    → highlight actor + direct co-stars, fade everything else
+ *  - Click zoom               → viewport scales to fit the actor's neighborhood
+ *  - Initial view             → top-80 actors, toggle to show all
  */
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { type CinemaUniverse as UniverseData, type UniverseNode, type UniverseEdge } from '@/lib/api'
 
-// ── Industry colors ────────────────────────────────────────────────────────────
+// ── Colors ─────────────────────────────────────────────────────────────────────
+
 const IND_COLOR: Record<string, string> = {
   Tamil:     '#f43f5e',
   Telugu:    '#f59e0b',
@@ -26,71 +25,110 @@ const IND_COLOR: Record<string, string> = {
   Unknown:   '#6b7280',
 }
 
-// ── Force simulation (Fruchterman-Reingold) ────────────────────────────────────
+// ── Cluster centers (0–1 normalised) ──────────────────────────────────────────
 
-interface SimNode extends UniverseNode {
-  x: number; y: number; vx: number; vy: number
+const CLUSTER_NX: Record<string, number> = {
+  Tamil: 0.24, Telugu: 0.24, Malayalam: 0.76, Kannada: 0.76, Unknown: 0.50,
+}
+const CLUSTER_NY: Record<string, number> = {
+  Tamil: 0.28, Telugu: 0.74, Malayalam: 0.28, Kannada: 0.74, Unknown: 0.50,
 }
 
-function runForceLayout(nodes: SimNode[], edges: UniverseEdge[], W: number, H: number, iters = 250) {
+const INITIAL_LIMIT = 80
+
+// ── Simulation ─────────────────────────────────────────────────────────────────
+
+interface SimNode extends UniverseNode {
+  x: number; y: number
+}
+
+function runForceLayout(
+  nodes: SimNode[],
+  edges: UniverseEdge[],
+  W: number,
+  H: number,
+  iters = 300,
+) {
   const N = nodes.length
   if (N === 0) return
 
-  // Build index map
-  const idxMap: Record<number, number> = {}
-  nodes.forEach((n, i) => { idxMap[n.id] = i })
+  const idx: Record<number, number> = {}
+  nodes.forEach((n, i) => { idx[n.id] = i })
 
-  // Optimal distance
-  const K = Math.sqrt((W * H) / N) * 1.4
-  const maxDisp = Math.min(W, H) / 8
+  const K    = Math.sqrt((W * H) / N) * 1.45
+  const maxD = Math.min(W, H) / 8
+  const fdx  = new Float64Array(N)
+  const fdy  = new Float64Array(N)
 
-  const dx = new Float64Array(N)
-  const dy = new Float64Array(N)
+  for (let it = 0; it < iters; it++) {
+    const temp = maxD * (1 - it / iters)
+    // Cluster pull fades over iterations but keeps a floor
+    const clF = 0.025 * Math.max(0.3, 1 - (it / iters) * 0.7)
+    fdx.fill(0); fdy.fill(0)
 
-  for (let iter = 0; iter < iters; iter++) {
-    const temp = maxDisp * (1 - iter / iters)
-    dx.fill(0); dy.fill(0)
-
-    // Repulsion (all pairs — O(n²))
+    // Repulsion (all pairs O(n²))
     for (let i = 0; i < N; i++) {
       for (let j = i + 1; j < N; j++) {
-        const ddx = nodes[j].x - nodes[i].x
-        const ddy = nodes[j].y - nodes[i].y
-        const d = Math.sqrt(ddx * ddx + ddy * ddy) || 0.1
+        const ex = nodes[j].x - nodes[i].x
+        const ey = nodes[j].y - nodes[i].y
+        const d = Math.sqrt(ex * ex + ey * ey) || 0.1
         const f = (K * K) / d
-        dx[i] -= (f * ddx) / d
-        dy[i] -= (f * ddy) / d
-        dx[j] += (f * ddx) / d
-        dy[j] += (f * ddy) / d
+        fdx[i] -= f * ex / d;  fdy[i] -= f * ey / d
+        fdx[j] += f * ex / d;  fdy[j] += f * ey / d
       }
     }
 
     // Attraction (edges)
     for (const e of edges) {
-      const si = idxMap[e.source], ti = idxMap[e.target]
-      if (si === undefined || ti === undefined) continue
-      const ddx = nodes[ti].x - nodes[si].x
-      const ddy = nodes[ti].y - nodes[si].y
-      const d = Math.sqrt(ddx * ddx + ddy * ddy) || 0.1
-      const f = (d * d) / (K * (1 + Math.log1p(e.weight) * 0.3))
-      dx[si] += (f * ddx) / d
-      dy[si] += (f * ddy) / d
-      dx[ti] -= (f * ddx) / d
-      dy[ti] -= (f * ddy) / d
+      const si = idx[e.source], ti = idx[e.target]
+      if (si == null || ti == null) continue
+      const ex = nodes[ti].x - nodes[si].x
+      const ey = nodes[ti].y - nodes[si].y
+      const d = Math.sqrt(ex * ex + ey * ey) || 0.1
+      const f = (d * d) / (K * (1 + Math.log1p(e.weight) * 0.25))
+      fdx[si] += f * ex / d;  fdy[si] += f * ey / d
+      fdx[ti] -= f * ex / d;  fdy[ti] -= f * ey / d
     }
 
-    // Apply with cooling + center gravity
+    // Apply displacement + cluster pull + clamp
     for (let i = 0; i < N; i++) {
-      const disp = Math.sqrt(dx[i] * dx[i] + dy[i] * dy[i]) || 0.1
-      nodes[i].x += (dx[i] / disp) * Math.min(disp, temp)
-      nodes[i].y += (dy[i] / disp) * Math.min(disp, temp)
-      // gentle center pull
-      nodes[i].x += (W / 2 - nodes[i].x) * 0.008
-      nodes[i].y += (H / 2 - nodes[i].y) * 0.008
-      // clamp
-      nodes[i].x = Math.max(24, Math.min(W - 24, nodes[i].x))
-      nodes[i].y = Math.max(24, Math.min(H - 24, nodes[i].y))
+      const disp = Math.sqrt(fdx[i] * fdx[i] + fdy[i] * fdy[i]) || 0.1
+      nodes[i].x += (fdx[i] / disp) * Math.min(disp, temp)
+      nodes[i].y += (fdy[i] / disp) * Math.min(disp, temp)
+
+      const ind = CLUSTER_NX[nodes[i].industry] !== undefined ? nodes[i].industry : 'Unknown'
+      nodes[i].x += (CLUSTER_NX[ind] * W - nodes[i].x) * clF
+      nodes[i].y += (CLUSTER_NY[ind] * H - nodes[i].y) * clF
+
+      nodes[i].x = Math.max(22, Math.min(W - 22, nodes[i].x))
+      nodes[i].y = Math.max(22, Math.min(H - 22, nodes[i].y))
     }
+  }
+}
+
+// ── Zoom transform ─────────────────────────────────────────────────────────────
+
+interface ZoomT { scale: number; tx: number; ty: number }
+
+function zoomForNodes(nodes: SimNode[], nodeIds: Set<number>, W: number, H: number): ZoomT | null {
+  const vis = nodes.filter(n => nodeIds.has(n.id))
+  if (!vis.length) return null
+
+  if (vis.length === 1) {
+    const scale = 2.5
+    return { scale, tx: W / 2 - vis[0].x * scale, ty: H / 2 - vis[0].y * scale }
+  }
+
+  const pad  = 72
+  const xs   = vis.map(n => n.x)
+  const ys   = vis.map(n => n.y)
+  const minX = Math.min(...xs) - pad, maxX = Math.max(...xs) + pad
+  const minY = Math.min(...ys) - pad, maxY = Math.max(...ys) + pad
+  const scale = Math.min(W / (maxX - minX), H / (maxY - minY), 2.8)
+  return {
+    scale,
+    tx: W / 2 - ((minX + maxX) / 2) * scale,
+    ty: H / 2 - ((minY + maxY) / 2) * scale,
   }
 }
 
@@ -100,86 +138,96 @@ function drawGraph(
   ctx: CanvasRenderingContext2D,
   nodes: SimNode[],
   edges: UniverseEdge[],
-  idxMap: Record<number, number>,
+  idx: Record<number, number>,
   W: number,
   H: number,
   hovered: number | null,
-  selected: number | null,
+  zoomed: { actorId: number; nodeIds: Set<number> } | null,
   dpr: number,
 ) {
   ctx.clearRect(0, 0, W * dpr, H * dpr)
   ctx.save()
   ctx.scale(dpr, dpr)
 
-  const maxCostar = Math.max(...nodes.map(n => n.costar_count)) || 1
-  const nodeR = (n: SimNode) => 4 + (n.costar_count / maxCostar) * 16
-  const maxWeight = Math.max(...edges.map(e => e.weight)) || 1
+  const maxCS = Math.max(...nodes.map(n => n.costar_count), 1)
+  const maxWt = Math.max(...edges.map(e => e.weight), 1)
+  const nodeR = (n: SimNode) => 3 + Math.sqrt(n.costar_count / maxCS) * 16
 
-  // Which node IDs are neighbours of the selected/hovered node?
-  const focusId = selected ?? hovered
-  const neighbourSet = new Set<number>()
-  if (focusId !== null) {
+  const focusId = zoomed?.actorId ?? hovered
+  const visIds  = zoomed?.nodeIds ?? null
+
+  // Neighbour set of focused node
+  const nbrs = new Set<number>()
+  if (focusId != null) {
     for (const e of edges) {
-      if (e.source === focusId) neighbourSet.add(e.target)
-      if (e.target === focusId) neighbourSet.add(e.source)
+      if (e.source === focusId) nbrs.add(e.target)
+      if (e.target === focusId) nbrs.add(e.source)
     }
   }
 
-  // Draw edges
+  // Apply zoom transform
+  if (zoomed) {
+    const zt = zoomForNodes(nodes, zoomed.nodeIds, W, H)
+    if (zt) ctx.transform(zt.scale, 0, 0, zt.scale, zt.tx, zt.ty)
+  }
+
+  // ── Edges ──────────────────────────────────────────────────────────────────
   for (const e of edges) {
-    const si = idxMap[e.source], ti = idxMap[e.target]
-    if (si === undefined || ti === undefined) continue
+    if (visIds && !(visIds.has(e.source) && visIds.has(e.target))) continue
+    const si = idx[e.source], ti = idx[e.target]
+    if (si == null || ti == null) continue
     const sn = nodes[si], tn = nodes[ti]
-    const isActive = focusId === null ||
-      e.source === focusId || e.target === focusId
-    const alpha = isActive ? 0.15 + (e.weight / maxWeight) * 0.4 : 0.03
+
+    const isConn = focusId != null && (e.source === focusId || e.target === focusId)
+    const alpha = focusId == null
+      ? 0.07 + (e.weight / maxWt) * 0.10      // at rest: very subtle
+      : isConn
+        ? 0.55 + (e.weight / maxWt) * 0.35    // focused: vivid
+        : 0.012                                 // non-connected: nearly invisible
+
     ctx.beginPath()
     ctx.moveTo(sn.x, sn.y)
     ctx.lineTo(tn.x, tn.y)
     ctx.strokeStyle = `rgba(255,255,255,${alpha})`
-    ctx.lineWidth = 0.5 + (e.weight / maxWeight) * 2
+    ctx.lineWidth   = 0.4 + (e.weight / maxWt) * 2.0
     ctx.stroke()
   }
 
-  // Draw nodes
+  // ── Nodes ──────────────────────────────────────────────────────────────────
   for (const n of nodes) {
-    const r = nodeR(n)
-    const color = IND_COLOR[n.industry] ?? IND_COLOR.Unknown
-    const isHovered  = n.id === hovered
-    const isFocused  = n.id === focusId
-    const isNeighbor = neighbourSet.has(n.id)
-    const dimmed = focusId !== null && !isFocused && !isNeighbor
+    if (visIds && !visIds.has(n.id)) continue
 
-    ctx.globalAlpha = dimmed ? 0.18 : 1
+    const r       = nodeR(n)
+    const color   = IND_COLOR[n.industry] ?? IND_COLOR.Unknown
+    const isFocus = n.id === focusId
+    const isNbr   = nbrs.has(n.id)
+    const dimmed  = focusId != null && !isFocus && !isNbr
 
-    // Glow for highlighted nodes
-    if (isFocused || isHovered) {
-      ctx.shadowColor = color
-      ctx.shadowBlur = 16
-    }
+    ctx.globalAlpha = dimmed ? 0.10 : 1
+
+    if (isFocus) { ctx.shadowColor = color; ctx.shadowBlur = 22 }
 
     ctx.beginPath()
     ctx.arc(n.x, n.y, r, 0, Math.PI * 2)
     ctx.fillStyle = color
     ctx.fill()
 
-    // Ring for hovered/selected
-    if (isFocused || isHovered) {
-      ctx.strokeStyle = 'white'
-      ctx.lineWidth = 1.5
+    if (isFocus) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)'
+      ctx.lineWidth   = 2
       ctx.stroke()
+      ctx.shadowBlur  = 0
     }
 
-    ctx.shadowBlur = 0
     ctx.globalAlpha = 1
 
-    // Labels for large nodes or focused
-    if (r > 9 || isFocused || (isNeighbor && focusId !== null)) {
-      const alpha = dimmed ? 0 : (isFocused || r > 9 ? 1 : 0.7)
-      ctx.globalAlpha = alpha
-      ctx.font = `${isFocused ? 600 : 400} ${Math.max(9, Math.min(r * 0.85, 13))}px Inter, sans-serif`
-      ctx.fillStyle = 'white'
-      ctx.textAlign = 'center'
+    // Show label for focused, neighbours (when in focus mode), or large nodes
+    const showLabel = isFocus || (isNbr && focusId != null) || r > 9
+    if (showLabel && !dimmed) {
+      ctx.globalAlpha = isFocus ? 1 : r > 10 ? 0.85 : 0.65
+      ctx.font        = `${isFocus ? 600 : 400} ${Math.max(9, Math.min(r * 0.85, 13))}px Inter,sans-serif`
+      ctx.fillStyle   = 'white'
+      ctx.textAlign   = 'center'
       ctx.fillText(n.name.split(' ')[0], n.x, n.y + r + 11)
       ctx.globalAlpha = 1
     }
@@ -188,7 +236,7 @@ function drawGraph(
   ctx.restore()
 }
 
-// ── Tooltip ─────────────────────────────────────────────────────────────────────
+// ── Tooltip ───────────────────────────────────────────────────────────────────
 
 function Tooltip({ node, x, y }: { node: UniverseNode; x: number; y: number }) {
   return (
@@ -196,7 +244,7 @@ function Tooltip({ node, x, y }: { node: UniverseNode; x: number; y: number }) {
       className="absolute pointer-events-none z-20 px-3 py-2 rounded-xl text-xs text-white shadow-xl"
       style={{
         left: Math.min(x + 14, window.innerWidth - 200),
-        top: Math.max(y - 56, 8),
+        top:  Math.max(y - 56, 8),
         background: 'rgba(15,15,28,0.95)',
         border: `1px solid ${IND_COLOR[node.industry] ?? '#444'}55`,
       }}
@@ -211,7 +259,7 @@ function Tooltip({ node, x, y }: { node: UniverseNode; x: number; y: number }) {
   )
 }
 
-// ── Legend ─────────────────────────────────────────────────────────────────────
+// ── Legend ────────────────────────────────────────────────────────────────────
 
 function GraphLegend() {
   return (
@@ -222,99 +270,166 @@ function GraphLegend() {
           {ind}
         </div>
       ))}
-      <div className="ml-auto text-white/30">Node size = co-star count · Edge width = shared films</div>
+      <div className="ml-auto text-white/30">Node size = √collaborators · Click to zoom into neighborhood</div>
     </div>
   )
 }
 
-// ── Main Component ─────────────────────────────────────────────────────────────
+// ── Cluster zone corner labels ─────────────────────────────────────────────────
+
+const ZONE_LABELS = [
+  { ind: 'Tamil',     cls: 'top-3 left-3'    },
+  { ind: 'Telugu',    cls: 'bottom-3 left-3'  },
+  { ind: 'Malayalam', cls: 'top-3 right-3'   },
+  { ind: 'Kannada',   cls: 'bottom-3 right-3' },
+]
+
+// ── Main component ─────────────────────────────────────────────────────────────
+
+interface ZoomedState { actorId: number; nodeIds: Set<number> }
 
 export default function CinemaUniverse({ data }: { data: UniverseData }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const canvasRef    = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const [simNodes, setSimNodes] = useState<SimNode[] | null>(null)
-  const [idxMap, setIdxMap] = useState<Record<number, number>>({})
-  const [hovered, setHovered] = useState<number | null>(null)
-  const [selected, setSelected] = useState<number | null>(null)
-  const [tooltip, setTooltip] = useState<{ node: UniverseNode; x: number; y: number } | null>(null)
+
+  const [simNodes,   setSimNodes]   = useState<SimNode[] | null>(null)
+  const [idxMap,     setIdxMap]     = useState<Record<number, number>>({})
+  const [hovered,    setHovered]    = useState<number | null>(null)
+  const [zoomed,     setZoomed]     = useState<ZoomedState | null>(null)
+  const [tooltip,    setTooltip]    = useState<{ node: UniverseNode; x: number; y: number } | null>(null)
   const [simulating, setSimulating] = useState(true)
+  const [showAll,    setShowAll]    = useState(false)
 
   const W = 900, H = 560
 
-  // Run force simulation once
+  // ── Visible subset (top-80 or all) ─────────────────────────────────────────
+
+  const visibleNodes = useMemo(() => {
+    const sorted = [...data.nodes].sort((a, b) => b.costar_count - a.costar_count)
+    return showAll ? sorted : sorted.slice(0, INITIAL_LIMIT)
+  }, [data.nodes, showAll])
+
+  const visibleNodeIds = useMemo(
+    () => new Set(visibleNodes.map(n => n.id)),
+    [visibleNodes],
+  )
+
+  const visibleEdges = useMemo(
+    () => data.edges.filter(e => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target)),
+    [data.edges, visibleNodeIds],
+  )
+
+  // ── Force simulation ────────────────────────────────────────────────────────
+
   useEffect(() => {
-    if (!data.nodes.length) return
+    if (!visibleNodes.length) return
     setSimulating(true)
+    setZoomed(null)
+    setHovered(null)
+
     setTimeout(() => {
-      const sn: SimNode[] = data.nodes.map((n, i) => {
-        const angle = (2 * Math.PI * i) / data.nodes.length
-        const radius = Math.min(W, H) * 0.35
-        return { ...n, x: W / 2 + radius * Math.cos(angle), y: H / 2 + radius * Math.sin(angle), vx: 0, vy: 0 }
+      const sn: SimNode[] = visibleNodes.map(n => {
+        const ind    = CLUSTER_NX[n.industry] !== undefined ? n.industry : 'Unknown'
+        const jitter = Math.min(W, H) * 0.10
+        return {
+          ...n,
+          x: CLUSTER_NX[ind] * W + (Math.random() - 0.5) * jitter,
+          y: CLUSTER_NY[ind] * H + (Math.random() - 0.5) * jitter,
+        }
       })
-      runForceLayout(sn, data.edges, W, H, 260)
+      runForceLayout(sn, visibleEdges, W, H, 300)
+
       const im: Record<number, number> = {}
       sn.forEach((n, i) => { im[n.id] = i })
       setSimNodes(sn)
       setIdxMap(im)
       setSimulating(false)
     }, 50)
-  }, [data])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleNodes, visibleEdges])
 
-  // Redraw whenever state changes
+  // ── Redraw ──────────────────────────────────────────────────────────────────
+
   useEffect(() => {
     if (!simNodes || !canvasRef.current) return
     const canvas = canvasRef.current
-    const ctx = canvas.getContext('2d')
+    const ctx    = canvas.getContext('2d')
     if (!ctx) return
-    const dpr = window.devicePixelRatio || 1
-    canvas.width = W * dpr
-    canvas.height = H * dpr
-    canvas.style.width = W + 'px'
+    const dpr           = window.devicePixelRatio || 1
+    canvas.width        = W * dpr
+    canvas.height       = H * dpr
+    canvas.style.width  = W + 'px'
     canvas.style.height = H + 'px'
-    drawGraph(ctx, simNodes, data.edges, idxMap, W, H, hovered, selected, dpr)
-  }, [simNodes, data.edges, idxMap, hovered, selected])
+    drawGraph(ctx, simNodes, visibleEdges, idxMap, W, H, hovered, zoomed, dpr)
+  }, [simNodes, visibleEdges, idxMap, hovered, zoomed])
 
-  // Mouse tracking
+  // ── Hit detection (zoom-aware) ──────────────────────────────────────────────
+
   const findNode = useCallback((ex: number, ey: number): SimNode | null => {
     if (!simNodes || !canvasRef.current) return null
     const rect = canvasRef.current.getBoundingClientRect()
-    const scaleX = W / rect.width
-    const scaleY = H / rect.height
-    const mx = (ex - rect.left) * scaleX
-    const my = (ey - rect.top) * scaleY
-    const maxCostar = Math.max(...simNodes.map(n => n.costar_count)) || 1
-    let best: SimNode | null = null, bestDist = 30
-    for (const n of simNodes) {
-      const r = 4 + (n.costar_count / maxCostar) * 16
+    let mx = (ex - rect.left) * (W / rect.width)
+    let my = (ey - rect.top)  * (H / rect.height)
+
+    if (zoomed) {
+      const zt = zoomForNodes(simNodes, zoomed.nodeIds, W, H)
+      if (zt) { mx = (mx - zt.tx) / zt.scale; my = (my - zt.ty) / zt.scale }
+    }
+
+    const maxCS = Math.max(...simNodes.map(n => n.costar_count), 1)
+    const pool  = zoomed ? simNodes.filter(n => zoomed.nodeIds.has(n.id)) : simNodes
+    let best: SimNode | null = null, bestD = 32
+
+    for (const n of pool) {
+      const r = 3 + Math.sqrt(n.costar_count / maxCS) * 16
       const d = Math.hypot(n.x - mx, n.y - my)
-      if (d < r + 4 && d < bestDist) { best = n; bestDist = d }
+      if (d < r + 6 && d < bestD) { best = n; bestD = d }
     }
     return best
-  }, [simNodes])
+  }, [simNodes, zoomed])
 
   const onMouseMove = useCallback((e: React.MouseEvent) => {
-    const node = findNode(e.clientX, e.clientY)
-    setHovered(node?.id ?? null)
-    setTooltip(node ? { node, x: e.clientX, y: e.clientY } : null)
+    const n = findNode(e.clientX, e.clientY)
+    setHovered(n?.id ?? null)
+    setTooltip(n ? { node: n, x: e.clientX, y: e.clientY } : null)
   }, [findNode])
 
   const onMouseLeave = useCallback(() => { setHovered(null); setTooltip(null) }, [])
 
   const onClick = useCallback((e: React.MouseEvent) => {
-    const node = findNode(e.clientX, e.clientY)
-    setSelected(prev => prev === node?.id ? null : (node?.id ?? null))
-  }, [findNode])
+    const n = findNode(e.clientX, e.clientY)
 
-  const industryStats = Object.entries(
-    data.nodes.reduce<Record<string, number>>((acc, n) => {
-      const k = n.industry in IND_COLOR && n.industry !== 'Unknown' ? n.industry : 'Other'
-      acc[k] = (acc[k] ?? 0) + 1
-      return acc
-    }, {})
-  ).filter(([k]) => k !== 'Other').sort((a, b) => b[1] - a[1])
+    if (!n)                          { setZoomed(null); return }     // empty area → exit zoom
+    if (zoomed?.actorId === n.id)    { setZoomed(null); return }     // same actor → toggle off
+
+    // Zoom into this actor's neighbourhood
+    const nbrs = new Set<number>([n.id])
+    for (const ed of visibleEdges) {
+      if (ed.source === n.id) nbrs.add(ed.target)
+      if (ed.target === n.id) nbrs.add(ed.source)
+    }
+    setZoomed({ actorId: n.id, nodeIds: nbrs })
+  }, [findNode, zoomed, visibleEdges])
+
+  // ── Derived UI data ─────────────────────────────────────────────────────────
+
+  const industryStats = useMemo(() =>
+    Object.entries(
+      visibleNodes.reduce<Record<string, number>>((acc, n) => {
+        const k = IND_COLOR[n.industry] && n.industry !== 'Unknown' ? n.industry : null
+        if (k) acc[k] = (acc[k] ?? 0) + 1
+        return acc
+      }, {}),
+    ).sort((a, b) => b[1] - a[1]),
+  [visibleNodes])
+
+  const zoomedActor = zoomed ? simNodes?.find(n => n.id === zoomed.actorId) : null
+
+  // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
     <div className="glass rounded-3xl p-6 sm:p-8">
+      {/* Header */}
       <div className="flex items-start justify-between mb-2">
         <div>
           <div className="flex items-center gap-3 mb-1">
@@ -322,29 +437,52 @@ export default function CinemaUniverse({ data }: { data: UniverseData }) {
             <h2 className="text-white font-bold text-lg">Cinema Universe</h2>
           </div>
           <p className="text-white/40 text-sm">
-            {data.nodes.length} actors · {data.edges.length} collaboration edges · hover or click to explore
+            {visibleNodes.length} actors · {visibleEdges.length} edges (2+ shared films) · hover or click to explore
           </p>
         </div>
-        {/* Industry breakdown pills */}
-        <div className="hidden sm:flex gap-2 flex-wrap justify-end">
-          {industryStats.map(([ind, cnt]) => (
-            <div key={ind} className="flex items-center gap-1.5 text-xs text-white/60 px-2 py-1 rounded-full"
-              style={{ background: (IND_COLOR[ind] ?? '#666') + '22', border: `1px solid ${(IND_COLOR[ind] ?? '#666')}44` }}>
-              <div className="w-1.5 h-1.5 rounded-full" style={{ background: IND_COLOR[ind] ?? '#666' }} />
-              {ind} ({cnt})
-            </div>
-          ))}
+
+        <div className="flex flex-col items-end gap-2">
+          {/* Industry pills */}
+          <div className="hidden sm:flex gap-2 flex-wrap justify-end">
+            {industryStats.map(([ind, cnt]) => (
+              <div
+                key={ind}
+                className="flex items-center gap-1.5 text-xs text-white/60 px-2 py-1 rounded-full"
+                style={{
+                  background: (IND_COLOR[ind] ?? '#666') + '22',
+                  border: `1px solid ${(IND_COLOR[ind] ?? '#666')}44`,
+                }}
+              >
+                <div className="w-1.5 h-1.5 rounded-full" style={{ background: IND_COLOR[ind] ?? '#666' }} />
+                {ind} ({cnt})
+              </div>
+            ))}
+          </div>
+
+          {/* Expand / collapse toggle */}
+          {data.nodes.length > INITIAL_LIMIT && (
+            <button
+              onClick={() => setShowAll(v => !v)}
+              className="text-xs px-3 py-1.5 rounded-full border border-white/[0.12] text-white/50 hover:text-white hover:border-white/25 transition-all"
+            >
+              {showAll ? `↩ Top ${INITIAL_LIMIT}` : `＋ Show all ${data.nodes.length} actors`}
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Canvas */}
-      <div ref={containerRef} className="relative mt-4 rounded-2xl overflow-hidden" style={{ background: '#0d0d1a' }}>
+      {/* Graph canvas */}
+      <div
+        ref={containerRef}
+        className="relative mt-4 rounded-2xl overflow-hidden"
+        style={{ background: '#0d0d1a' }}
+      >
         {simulating ? (
           <div className="flex items-center justify-center" style={{ height: H }}>
             <div className="text-center text-white/30">
               <div className="text-3xl mb-3">⚡</div>
-              <p className="text-sm">Simulating force layout…</p>
-              <p className="text-xs mt-1 text-white/20">Placing {data.nodes.length} actors in space</p>
+              <p className="text-sm">Clustering {visibleNodes.length} actors by industry…</p>
+              <p className="text-xs mt-1 text-white/20">Tamil ↖ · Telugu ↙ · Malayalam ↗ · Kannada ↘</p>
             </div>
           </div>
         ) : (
@@ -356,16 +494,42 @@ export default function CinemaUniverse({ data }: { data: UniverseData }) {
             onClick={onClick}
           />
         )}
+
         {tooltip && <Tooltip node={tooltip.node} x={tooltip.x} y={tooltip.y} />}
-        {selected && (
-          <button
-            onClick={() => setSelected(null)}
-            className="absolute top-3 right-3 text-xs px-3 py-1.5 rounded-full bg-white/10 text-white/60 hover:text-white hover:bg-white/15 transition-all"
-          >
-            Clear selection
-          </button>
+
+        {/* Zoom mode: actor info + back button */}
+        {zoomed && zoomedActor && (
+          <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none">
+            <div
+              className="text-xs text-white/80 px-3 py-1.5 rounded-full backdrop-blur-sm pointer-events-auto"
+              style={{
+                background: `${IND_COLOR[zoomedActor.industry] ?? '#888'}2a`,
+                border:     `1px solid ${IND_COLOR[zoomedActor.industry] ?? '#888'}44`,
+              }}
+            >
+              📍 {zoomedActor.name} · {zoomed.nodeIds.size - 1} direct co-stars
+            </div>
+            <button
+              onClick={() => setZoomed(null)}
+              className="text-xs px-3 py-1.5 rounded-full bg-white/10 text-white/60 hover:text-white hover:bg-white/15 transition-all pointer-events-auto"
+            >
+              ← Full graph
+            </button>
+          </div>
         )}
+
+        {/* Industry cluster zone corner labels */}
+        {!simulating && !zoomed && ZONE_LABELS.map(({ ind, cls }) => (
+          <div
+            key={ind}
+            className={`absolute ${cls} text-xs font-semibold tracking-widest pointer-events-none select-none`}
+            style={{ color: IND_COLOR[ind], opacity: 0.22 }}
+          >
+            {ind.toUpperCase()}
+          </div>
+        ))}
       </div>
+
       <GraphLegend />
     </div>
   )
