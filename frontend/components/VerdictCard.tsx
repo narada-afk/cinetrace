@@ -21,7 +21,7 @@
  *  ④ Verdict pulse      1.2s delay, 800ms
  */
 
-import { useRef, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ActorProfile, ActorMovie, Collaborator, DirectorCollab } from '@/lib/api'
 import { calcYearsActive, calcAvgRating } from '@/lib/metrics'
 
@@ -33,18 +33,17 @@ interface ActorData {
 }
 
 export default function VerdictCard({ data1, data2 }: { data1: ActorData; data2: ActorData }) {
-  const containerRef = useRef<HTMLDivElement>(null)
   const [animated, setAnimated] = useState(false)
 
   useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) { setAnimated(true); observer.disconnect() } },
-      { threshold: 0.2 },
-    )
-    observer.observe(el)
-    return () => observer.disconnect()
+    // VerdictCard is the second section on the page — it's above the fold and
+    // visible immediately on load. IntersectionObserver is the wrong trigger
+    // for above-fold content (it fires on mount, or only on re-entry from below).
+    //
+    // Instead: animate after a short page-load delay so the user has a moment
+    // to read the hero banner before the bars grow in.
+    const tid = setTimeout(() => setAnimated(true), 700)
+    return () => clearTimeout(tid)
   }, [])
 
   const p1 = data1.profile
@@ -101,7 +100,7 @@ export default function VerdictCard({ data1, data2 }: { data1: ActorData; data2:
         }
       `}</style>
 
-      <div ref={containerRef} className="glass rounded-3xl p-6 sm:p-8 flex flex-col gap-8">
+      <div className="glass rounded-3xl p-6 sm:p-8 flex flex-col gap-8">
 
         {/* Trophy header */}
         <div className="flex flex-col items-center gap-2 text-center">

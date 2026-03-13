@@ -38,7 +38,7 @@ function ActorPicker({ label, selected, onSelect, onClear }: ActorPickerProps) {
     setLoading(true)
     const tid = setTimeout(async () => {
       try {
-        const actors = await searchActors(query)
+        const actors = await searchActors(query, true)
         setResults(actors.slice(0, 8))
         setOpen(actors.length > 0)
       } catch {
@@ -126,14 +126,15 @@ function ActorPicker({ label, selected, onSelect, onClear }: ActorPickerProps) {
           {open && results.length > 0 && (
             <div
               ref={dropdownRef}
-              className="absolute top-full left-0 right-0 mt-2 glass rounded-2xl overflow-hidden z-50 shadow-2xl"
+              className="absolute top-full left-0 right-0 mt-2 rounded-2xl overflow-hidden z-50 shadow-2xl border border-white/[0.10]"
+              style={{ background: '#1e1e2c' }}
             >
               {results.map((actor) => (
                 <button
                   key={actor.id}
                   onMouseDown={(e) => e.preventDefault()} // keep focus on input
                   onClick={() => handleSelect(actor)}
-                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/[0.06] transition-colors text-left"
+                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/[0.08] transition-colors text-left border-b border-white/[0.05] last:border-0"
                 >
                   <ActorAvatar name={actor.name} size={36} />
                   <div className="min-w-0">
@@ -188,7 +189,7 @@ export default function ComparePicker() {
         </div>
 
         {/* Picker card */}
-        <div className="glass rounded-3xl p-8">
+        <div className="rounded-3xl p-8 border border-white/[0.08]" style={{ background: '#13131a' }}>
           {/* Two actor pickers */}
           <div className="flex flex-col sm:flex-row items-stretch gap-6">
             <ActorPicker

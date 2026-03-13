@@ -82,8 +82,12 @@ export default function CareerTimeline({
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
+    let initialCallbackDone = false
     const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) { setAnimated(true); observer.disconnect() } },
+      ([entry]) => {
+        if (!initialCallbackDone) { initialCallbackDone = true; return }
+        if (entry.isIntersecting) { setAnimated(true); observer.disconnect() }
+      },
       { threshold: 0.2 },
     )
     observer.observe(el)

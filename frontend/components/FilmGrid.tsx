@@ -58,8 +58,12 @@ export default function FilmGrid({
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
+    let initialCallbackDone = false
     const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) { setVisible(true); observer.disconnect() } },
+      ([entry]) => {
+        if (!initialCallbackDone) { initialCallbackDone = true; return }
+        if (entry.isIntersecting) { setVisible(true); observer.disconnect() }
+      },
       { threshold: 0.1 },
     )
     observer.observe(el)
