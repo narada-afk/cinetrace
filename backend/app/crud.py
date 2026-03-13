@@ -947,7 +947,7 @@ def get_chart_data(
     # ── y-axis SQL fragments ──────────────────────────────────────────────────
     Y_SQL = {
         "film_count":               "COUNT(DISTINCT am.movie_id)",
-        "avg_rating":               "ROUND(AVG(m.vote_average) FILTER (WHERE m.vote_average > 0), 2)",
+        "avg_rating":               "ROUND((AVG(m.vote_average) FILTER (WHERE m.vote_average > 0))::numeric, 2)",
         "director_collaborations":  "COUNT(DISTINCT m.director) FILTER (WHERE m.director IS NOT NULL)",
     }
     # unique_costars and total_collaborations need a different join
