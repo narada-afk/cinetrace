@@ -42,12 +42,18 @@ interface SimNode extends UniverseNode {
   x: number; y: number
 }
 
+// ── Force parameters ──────────────────────────────────────────────────────────
+const NODE_REPULSION = 10000  // Coulomb constant — how hard nodes push apart
+const LINK_DIST      = 150    // preferred edge length in pixels
+const LINK_STR       = 0.06   // spring stiffness (weak; many edges → keep low)
+const CLUSTER_STR    = 0.020  // industry cluster pull strength
+
 function runForceLayout(
   nodes: SimNode[],
   edges: UniverseEdge[],
   W: number,
   H: number,
-  iters = 300,
+  iters = 2000,
 ) {
   const N = nodes.length
   if (N === 0) return
@@ -55,42 +61,44 @@ function runForceLayout(
   const idx: Record<number, number> = {}
   nodes.forEach((n, i) => { idx[n.id] = i })
 
-  const K    = Math.sqrt((W * H) / N) * 1.45
-  const maxD = Math.min(W, H) / 8
+  // Larger initial max-displacement so nodes can travel further before cooling
+  const maxD = Math.min(W, H) / 5
   const fdx  = new Float64Array(N)
   const fdy  = new Float64Array(N)
 
   for (let it = 0; it < iters; it++) {
-    const temp = maxD * (1 - it / iters)
-    // Cluster pull fades over iterations but keeps a floor
-    const clF = 0.025 * Math.max(0.3, 1 - (it / iters) * 0.7)
+    // Power-1.5 cooling: fast at first, slow fine-tuning at the tail
+    const temp = maxD * Math.pow(Math.max(0, 1 - it / iters), 1.5)
+    // Cluster pull: strong early (holds industry groups apart), eases to a floor
+    const clF = CLUSTER_STR * Math.max(0.35, 1 - (it / iters) * 0.65)
     fdx.fill(0); fdy.fill(0)
 
-    // Repulsion (all pairs O(n²))
+    // ── Repulsion: F = NODE_REPULSION / d  (Coulomb 1/d, not 1/d²) ──────────
     for (let i = 0; i < N; i++) {
       for (let j = i + 1; j < N; j++) {
         const ex = nodes[j].x - nodes[i].x
         const ey = nodes[j].y - nodes[i].y
-        const d = Math.sqrt(ex * ex + ey * ey) || 0.1
-        const f = (K * K) / d
+        const d  = Math.sqrt(ex * ex + ey * ey) || 0.1
+        const f  = NODE_REPULSION / d
         fdx[i] -= f * ex / d;  fdy[i] -= f * ey / d
         fdx[j] += f * ex / d;  fdy[j] += f * ey / d
       }
     }
 
-    // Attraction (edges)
+    // ── Link spring: pulls toward LINK_DIST (attractive only when d > LINK_DIST)
     for (const e of edges) {
       const si = idx[e.source], ti = idx[e.target]
       if (si == null || ti == null) continue
       const ex = nodes[ti].x - nodes[si].x
       const ey = nodes[ti].y - nodes[si].y
-      const d = Math.sqrt(ex * ex + ey * ey) || 0.1
-      const f = (d * d) / (K * (1 + Math.log1p(e.weight) * 0.25))
+      const d  = Math.sqrt(ex * ex + ey * ey) || 0.1
+      if (d <= LINK_DIST) continue                 // already within ideal range
+      const f  = LINK_STR * (d - LINK_DIST)
       fdx[si] += f * ex / d;  fdy[si] += f * ey / d
       fdx[ti] -= f * ex / d;  fdy[ti] -= f * ey / d
     }
 
-    // Apply displacement + cluster pull + clamp
+    // ── Apply displacement + industry cluster pull + boundary clamp ───────────
     for (let i = 0; i < N; i++) {
       const disp = Math.sqrt(fdx[i] * fdx[i] + fdy[i] * fdy[i]) || 0.1
       nodes[i].x += (fdx[i] / disp) * Math.min(disp, temp)
@@ -151,7 +159,7 @@ function drawGraph(
 
   const maxCS = Math.max(...nodes.map(n => n.costar_count), 1)
   const maxWt = Math.max(...edges.map(e => e.weight), 1)
-  const nodeR = (n: SimNode) => 3 + Math.sqrt(n.costar_count / maxCS) * 16
+  const nodeR = (n: SimNode) => 3 + Math.sqrt(n.costar_count / maxCS) * 13
 
   const focusId = zoomed?.actorId ?? hovered
   const visIds  = zoomed?.nodeIds ?? null
@@ -180,7 +188,7 @@ function drawGraph(
 
     const isConn = focusId != null && (e.source === focusId || e.target === focusId)
     const alpha = focusId == null
-      ? 0.07 + (e.weight / maxWt) * 0.10      // at rest: very subtle
+      ? 0.05 + (e.weight / maxWt) * 0.07      // at rest: ~0.08 avg, very subtle
       : isConn
         ? 0.55 + (e.weight / maxWt) * 0.35    // focused: vivid
         : 0.012                                 // non-connected: nearly invisible
@@ -222,9 +230,9 @@ function drawGraph(
     ctx.globalAlpha = 1
 
     // Show label for focused, neighbours (when in focus mode), or large nodes
-    const showLabel = isFocus || (isNbr && focusId != null) || r > 9
+    const showLabel = isFocus || (isNbr && focusId != null) || r > 7.5
     if (showLabel && !dimmed) {
-      ctx.globalAlpha = isFocus ? 1 : r > 10 ? 0.85 : 0.65
+      ctx.globalAlpha = isFocus ? 1 : r > 8 ? 0.85 : 0.65
       ctx.font        = `${isFocus ? 600 : 400} ${Math.max(9, Math.min(r * 0.85, 13))}px Inter,sans-serif`
       ctx.fillStyle   = 'white'
       ctx.textAlign   = 'center'
