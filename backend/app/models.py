@@ -39,6 +39,10 @@ class Actor(Base):
     # Sprint 8 — TMDB identity + primary/supporting flag
     tmdb_person_id   = Column(Integer, nullable=True, unique=True)    # TMDB person ID
     is_primary_actor = Column(Boolean, nullable=False, default=False)  # True for the 13 seeded actors
+
+    # Sprint 21 — Actor tier for richer graph data
+    # Values: 'primary' | 'network' | NULL (supporting)
+    actor_tier       = Column(String, nullable=True)                   # e.g. 'primary', 'network'
     created_at       = Column(
         DateTime(timezone=True),
         nullable=False,
