@@ -24,14 +24,22 @@ from . import models, schemas
 # Core actor helpers  (used by multiple endpoints)
 # ===========================================================================
 
-def get_all_actors(db: Session, primary_only: bool = False):
+def get_all_actors(
+    db: Session,
+    primary_only: bool = False,
+    gender: Optional[str] = None,
+):
     """Return actors from the database (used by GET /actors).
 
-    When primary_only=True, only actors with is_primary_actor=True are returned.
+    primary_only=True  → only is_primary_actor=TRUE actors.
+    gender='M'         → lead actors only.
+    gender='F'         → lead actresses only.
     """
     query = db.query(models.Actor)
     if primary_only:
         query = query.filter(models.Actor.is_primary_actor == True)  # noqa: E712
+    if gender is not None:
+        query = query.filter(models.Actor.gender == gender)
     return query.all()
 
 

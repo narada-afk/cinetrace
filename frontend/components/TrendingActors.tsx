@@ -12,16 +12,18 @@ export interface TrendingActor {
 
 interface TrendingActorsProps {
   actors: TrendingActor[]
+  /** Section heading — defaults to "Trending Actors" */
+  title?: string
 }
 
-export default function TrendingActors({ actors }: TrendingActorsProps) {
+export default function TrendingActors({ actors, title = 'Trending Actors' }: TrendingActorsProps) {
   const valid = actors.filter((a) => !!a.name)
   if (!valid.length) return null
 
   return (
     <section className="w-full max-w-[1200px] mx-auto px-6 mt-10">
       <h2 className="text-xs font-semibold uppercase tracking-widest text-white/40 mb-4">
-        Trending Actors
+        {title}
       </h2>
       <div className="flex items-start gap-6 overflow-x-auto pb-2 scrollbar-hide">
         {valid.map((actor) => (

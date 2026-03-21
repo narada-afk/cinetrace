@@ -14,20 +14,28 @@ export interface InsightCardData {
   href?: string
 }
 
-const GRADIENTS: Record<InsightCardData['gradient'], string> = {
-  red: 'from-red-700/80 to-red-900/60',
-  purple: 'from-purple-700/80 to-purple-900/60',
-  orange: 'from-orange-600/80 to-orange-900/60',
-  blue: 'from-blue-700/80 to-blue-900/60',
-  green: 'from-green-700/80 to-green-900/60',
+const CARD_BG: Record<InsightCardData['gradient'], string> = {
+  red:    '#130507',
+  purple: '#0b0613',
+  orange: '#130904',
+  blue:   '#030f19',
+  green:  '#031308',
 }
 
-const BORDER_COLORS: Record<InsightCardData['gradient'], string> = {
-  red: 'border-red-500/20',
-  purple: 'border-purple-500/20',
-  orange: 'border-orange-500/20',
-  blue: 'border-blue-500/20',
-  green: 'border-green-500/20',
+const ACCENT: Record<InsightCardData['gradient'], string> = {
+  red:    '#f87171',
+  purple: '#c084fc',
+  orange: '#fb923c',
+  blue:   '#60a5fa',
+  green:  '#4ade80',
+}
+
+const GLOW: Record<InsightCardData['gradient'], string> = {
+  red:    'rgba(239,68,68,0.18)',
+  purple: 'rgba(168,85,247,0.18)',
+  orange: 'rgba(249,115,22,0.18)',
+  blue:   'rgba(59,130,246,0.18)',
+  green:  'rgba(34,197,94,0.18)',
 }
 
 export default function InsightCard({
@@ -36,68 +44,118 @@ export default function InsightCard({
   headline,
   stat,
   subtext,
-  actors,
+  actors = [],
   gradient,
   href = '#',
 }: InsightCardData) {
+  const accentColor = ACCENT[gradient]
+  const bgColor     = CARD_BG[gradient]
+  const glowColor   = GLOW[gradient]
+
+  const singleActor = actors.length === 1
+  const multiActor  = actors.length >= 2
+
   return (
-    <Link href={href} className="block">
+    <Link href={href} className="block h-full">
       <div
-        className={`
-          relative rounded-2xl p-6 flex flex-col gap-3 overflow-hidden h-full
-          bg-gradient-to-br ${GRADIENTS[gradient]}
-          border ${BORDER_COLORS[gradient]}
-          backdrop-blur-sm
-          hover:scale-[1.02] hover:shadow-xl transition-all duration-200
-          cursor-pointer
-        `}
+        className="relative rounded-2xl overflow-hidden h-[168px] flex cursor-pointer
+                   hover:scale-[1.02] hover:brightness-110 transition-all duration-200
+                   border border-white/5"
+        style={{ background: bgColor }}
       >
-        {/* Background texture */}
-        <div className="absolute inset-0 bg-[#0a0a0f]/30 pointer-events-none" />
+        {/* Left radial glow — colour bleed from the accent */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background: `radial-gradient(ellipse 90% 90% at 0% 50%, ${glowColor}, transparent 70%)`,
+          }}
+        />
 
-        <div className="relative z-10 flex flex-col gap-3 h-full">
-          {/* Label row */}
-          <div className="flex items-center gap-2">
-            <span className="text-xl">{emoji}</span>
-            <span className="text-xs font-semibold uppercase tracking-widest text-white/50">
-              {label}
-            </span>
-          </div>
+        {/* ── LEFT: text content ───────────────────────────── */}
+        <div className="relative z-10 flex flex-col justify-between p-5 flex-1 min-w-0 pr-2">
 
-          {/* BIG STAT NUMBER — primary focus */}
-          <div className="text-4xl font-bold text-white leading-none">
+          {/* Label */}
+          <span
+            className="text-[10px] font-bold uppercase tracking-widest"
+            style={{ color: accentColor }}
+          >
+            {emoji}&nbsp;&nbsp;{label}
+          </span>
+
+          {/* Big stat — primary visual focus */}
+          <div className="text-[2.75rem] font-black text-white leading-none tracking-tight">
             {stat}
           </div>
 
-          {/* Supporting text */}
-          <p className="text-sm text-white/80 leading-snug">
-            {headline}
-          </p>
+          {/* Headline + subtext */}
+          <div className="min-w-0">
+            <p className="text-[11px] text-white/60 leading-snug line-clamp-2">
+              {headline}
+            </p>
+            {subtext && (
+              <p className="text-[10px] mt-0.5" style={{ color: accentColor + '99' }}>
+                {subtext}
+              </p>
+            )}
+          </div>
+        </div>
 
-          {/* Subtext */}
-          {subtext && (
-            <p className="text-xs text-white/40">{subtext}</p>
-          )}
+        {/* ── RIGHT: actor portrait(s) ─────────────────────── */}
+        {actors.length > 0 && (
+          <div className="relative flex-shrink-0 flex items-center self-stretch">
 
-          {/* Avatars row */}
-          {actors && actors.length > 0 && (
-            <div className="flex items-center gap-2 mt-auto pt-2">
-              <div className="flex -space-x-2">
-                {actors.map((actor) => (
+            {/* Single actor — large portrait bleeding off bottom-right */}
+            {singleActor && (
+              <div className="relative self-end mb-[-20px] mr-[-16px]">
+                {/* Glow halo behind avatar */}
+                <div
+                  className="absolute inset-[-8px] rounded-full blur-2xl"
+                  style={{ background: glowColor }}
+                />
+                <div className="relative ring-2 ring-white/10 rounded-full">
                   <ActorAvatar
-                    key={actor.name}
-                    name={actor.name}
-                    avatarSlug={actor.avatarSlug}
-                    size={32}
+                    name={actors[0].name}
+                    avatarSlug={actors[0].avatarSlug}
+                    size={130}
                   />
+                </div>
+              </div>
+            )}
+
+            {/* Two actors — overlapping circles, football-card style */}
+            {multiActor && (
+              <div className="flex items-center pr-5">
+                {actors.slice(0, 2).map((actor, i) => (
+                  <div
+                    key={actor.name}
+                    className="relative rounded-full"
+                    style={{
+                      marginLeft: i === 0 ? 0 : -30,
+                      zIndex: actors.length - i,
+                    }}
+                  >
+                    {/* Glow behind each avatar */}
+                    <div
+                      className="absolute inset-0 rounded-full blur-lg"
+                      style={{ background: glowColor, opacity: 0.6 }}
+                    />
+                    <div
+                      className="relative rounded-full ring-2"
+                      style={{ boxShadow: '-4px 0 14px rgba(0,0,0,0.7)', ringColor: 'rgba(0,0,0,0.5)' }}
+                    >
+                      <ActorAvatar
+                        name={actor.name}
+                        avatarSlug={actor.avatarSlug}
+                        size={88}
+                      />
+                    </div>
+                  </div>
                 ))}
               </div>
-              <span className="text-xs text-white/40 ml-1">
-                {actors.map((a) => a.name).join(' + ')}
-              </span>
-            </div>
-          )}
-        </div>
+            )}
+
+          </div>
+        )}
       </div>
     </Link>
   )

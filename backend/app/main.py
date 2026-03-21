@@ -116,19 +116,26 @@ def search_actors(
 )
 def list_actors(
     primary_only: bool = Query(False, description="If true, return only primary actors"),
+    gender: Optional[str] = Query(None, description="Filter by gender: 'M' (lead actors) or 'F' (lead actresses)"),
     db: Session = Depends(get_db),
 ):
     """
-    Returns actors in the database (id, name, industry, debut_year).
+    Returns actors in the database (id, name, industry, debut_year, gender).
 
-    Pass `primary_only=true` to return only primary/lead actors.
+    Filters:
+    - `primary_only=true`  → lead actors + lead actresses (all is_primary_actor=TRUE)
+    - `gender=M`           → lead actors only
+    - `gender=F`           → lead actresses only
+    - both combined        → e.g. ?primary_only=true&gender=F
 
-    Example:
+    Examples:
     ```
     GET /actors?primary_only=true
+    GET /actors?gender=F
+    GET /actors?gender=M&primary_only=true
     ```
     """
-    return crud.get_all_actors(db, primary_only=primary_only)
+    return crud.get_all_actors(db, primary_only=primary_only, gender=gender)
 
 
 @app.get(

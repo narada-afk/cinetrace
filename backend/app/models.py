@@ -43,6 +43,10 @@ class Actor(Base):
     # Sprint 21 — Actor tier for richer graph data
     # Values: 'primary' | 'network' | NULL (supporting)
     actor_tier       = Column(String, nullable=True)                   # e.g. 'primary', 'network'
+
+    # Sprint 24 — Gender for 3-category classification
+    # 'M' = lead actor, 'F' = lead actress, NULL = unknown / supporting
+    gender           = Column(String(1), nullable=True)
     created_at       = Column(
         DateTime(timezone=True),
         nullable=False,

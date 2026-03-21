@@ -17,6 +17,7 @@ export interface Actor {
   name: string
   industry?: string
   debut_year?: number | null
+  gender?: 'M' | 'F' | null
 }
 
 export interface ActorProfile {
@@ -114,8 +115,12 @@ export async function getTopCollaborations(
   )
 }
 
-export async function getActors(): Promise<Actor[]> {
-  return apiFetch<Actor[]>('/actors')
+export async function getActors(primaryOnly = false, gender?: 'M' | 'F'): Promise<Actor[]> {
+  const params = new URLSearchParams()
+  if (primaryOnly) params.set('primary_only', 'true')
+  if (gender)      params.set('gender', gender)
+  const qs = params.toString()
+  return apiFetch<Actor[]>(`/actors${qs ? `?${qs}` : ''}`)
 }
 
 export async function searchActors(q: string, leadOnly = false): Promise<Actor[]> {
@@ -310,4 +315,29 @@ export async function getCinemaUniverse(minFilms = 3): Promise<CinemaUniverse> {
 
 export async function getGravityCenter(limit = 25): Promise<GravityActor[]> {
   return apiFetch<GravityActor[]>(`/stats/gravity-center?limit=${limit}`)
+}
+
+// ── Box Office  (Sprint 23) ───────────────────────────────────────────────────
+
+export interface BoxOfficeEntry {
+  title: string
+  release_year: number
+  industry: string
+  /** Worldwide gross in INR crore (converted from TMDB USD at 84.0 ₹/USD) */
+  box_office_crore: number
+  /** Primary actors who appeared in the film (is_primary_actor = TRUE) */
+  actor_names: string[]
+  actor_ids: number[]
+  poster_url: string | null
+}
+
+export async function getTopBoxOffice(
+  industry?: string,
+  limit = 4,
+): Promise<BoxOfficeEntry[]> {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (industry && industry !== 'all' && industry !== 'explore') {
+    params.set('industry', industry)
+  }
+  return apiFetch<BoxOfficeEntry[]>(`/analytics/top-box-office?${params}`)
 }

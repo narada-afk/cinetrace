@@ -31,6 +31,7 @@ class ActorBase(BaseModel):
 class ActorOut(ActorBase):
     """What the API returns when listing all actors (GET /actors)."""
     id: int
+    gender: Optional[str] = None   # 'M' | 'F' | None
 
     class Config:
         from_attributes = True  # Allows converting SQLAlchemy objects to Pydantic

@@ -6,7 +6,7 @@ import Header from '@/components/Header'
 import NavTabs from '@/components/NavTabs'
 import InsightCard, { InsightCardData } from '@/components/InsightCard'
 import TrendingActors, { TrendingActor } from '@/components/TrendingActors'
-import { getInsights, getActors } from '@/lib/api'
+import { getInsights, getActors, getTopBoxOffice, BoxOfficeEntry } from '@/lib/api'
 
 // Gradient palette — cycle through for variety
 const GRADIENTS: InsightCardData['gradient'][] = [
@@ -126,9 +126,47 @@ async function fetchInsightCards(industry?: string): Promise<InsightCardData[]> 
   }
 }
 
+// Box office card gradients — cycle through for visual variety
+const BO_GRADIENTS: InsightCardData['gradient'][] = [
+  'green',
+  'orange',
+  'blue',
+  'purple',
+]
+
+/** Format INR crore for display: 2357.9 → "₹2,358 Cr" */
+function formatCrore(crore: number): string {
+  return `₹${Math.round(crore).toLocaleString('en-IN')} Cr`
+}
+
+async function fetchBoxOfficeCards(industry?: string): Promise<InsightCardData[]> {
+  try {
+    const entries = await getTopBoxOffice(industry, 4)
+    if (!entries.length) return []
+
+    return entries.map((entry: BoxOfficeEntry, i: number) => {
+      const leadName = entry.actor_names[0] ?? null
+      const leadId   = entry.actor_ids[0]  ?? null
+      return {
+        emoji:    '💰',
+        label:    `Box Office #${i + 1}`,
+        headline: `${entry.title} earned worldwide`,
+        stat:     formatCrore(entry.box_office_crore),
+        subtext:  `${entry.industry} · ${entry.release_year}`,
+        actors:   leadName ? [{ name: leadName }] : [],
+        gradient: BO_GRADIENTS[i % BO_GRADIENTS.length],
+        href:     leadId ? `/actors/${leadId}` : '#',
+      }
+    })
+  } catch {
+    return []
+  }
+}
+
 async function fetchTrendingActors(industry?: string): Promise<TrendingActor[]> {
   try {
-    const actors = await getActors()
+    // gender='M' → lead actors only (excludes lead actresses from this row)
+    const actors = await getActors(true, 'M')
     if (!actors.length) return FALLBACK_TRENDING
 
     // Filter by industry when a tab is selected (case-insensitive match)
@@ -139,13 +177,34 @@ async function fetchTrendingActors(industry?: string): Promise<TrendingActor[]> 
           )
         : actors
 
-    // Cap at 20 for the horizontal scroll row
-    return filtered.slice(0, 20).map((a) => ({
+    // Cap at 50 — all primary actors fit comfortably in the scroll row
+    return filtered.slice(0, 50).map((a) => ({
       id: a.id,
       name: a.name,
     }))
   } catch {
     return FALLBACK_TRENDING
+  }
+}
+
+async function fetchLeadingLadies(industry?: string): Promise<TrendingActor[]> {
+  try {
+    const actresses = await getActors(true, 'F')
+    if (!actresses.length) return []
+
+    const filtered =
+      industry && industry !== 'all'
+        ? actresses.filter(
+            (a) => a.industry?.toLowerCase() === industry.toLowerCase()
+          )
+        : actresses
+
+    return filtered.slice(0, 50).map((a) => ({
+      id: a.id,
+      name: a.name,
+    }))
+  } catch {
+    return []
   }
 }
 
@@ -157,9 +216,11 @@ export default async function HomePage({
   // Read the active industry from the URL (?industry=telugu) or default to 'all'
   const industry = searchParams?.industry ?? 'all'
 
-  const [insightCards, trendingActors] = await Promise.all([
+  const [insightCards, boxOfficeCards, trendingActors, leadingLadies] = await Promise.all([
     fetchInsightCards(industry),
+    fetchBoxOfficeCards(industry),
     fetchTrendingActors(industry),
+    fetchLeadingLadies(industry),
   ])
 
   return (
@@ -179,16 +240,35 @@ export default async function HomePage({
           🔥 Cinema Insights
         </h1>
 
-        {/* 2×2 Insight Cards Grid */}
+        {/* 2×N Insight Cards Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {insightCards.map((card, i) => (
             <InsightCard key={i} {...card} />
           ))}
         </div>
+
+        {/* Box Office Leaderboard */}
+        {boxOfficeCards.length > 0 && (
+          <>
+            <h2 className="text-xl font-bold text-white/80 mt-12 mb-6">
+              💰 Box Office Leaderboard
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {boxOfficeCards.map((card, i) => (
+                <InsightCard key={i} {...card} />
+              ))}
+            </div>
+          </>
+        )}
       </main>
 
-      {/* Trending Actors Row — filtered by industry */}
-      <TrendingActors actors={trendingActors} />
+      {/* Lead Actors Row */}
+      <TrendingActors actors={trendingActors} title="🎬 Lead Actors" />
+
+      {/* Leading Ladies Row — only shown when there are results */}
+      {leadingLadies.length > 0 && (
+        <TrendingActors actors={leadingLadies} title="🌟 Leading Ladies" />
+      )}
 
       <div className="h-16" />
     </div>
