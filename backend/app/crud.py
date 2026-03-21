@@ -1149,10 +1149,11 @@ def get_chart_data(
 
 def get_cinema_universe(db: Session, min_shared_films: int = 2) -> dict:
     """
-    Returns nodes (ingested actors) and edges (shared-film pairs) for the
+    Returns nodes (primary actors) and edges (shared-film pairs) for the
     force-directed Cinema Universe graph.
+    Scoped to primary actors only to keep the graph fast and readable.
     """
-    # Nodes: all primary + network actors with costar counts
+    # Nodes: primary actors with costar counts
     node_rows = db.execute(text("""
         SELECT a.id, a.name, a.industry,
                COUNT(DISTINCT am.movie_id)  AS film_count,
@@ -1161,7 +1162,7 @@ def get_cinema_universe(db: Session, min_shared_films: int = 2) -> dict:
         JOIN actor_movies am  ON am.actor_id  = a.id
         JOIN actor_movies am2 ON am2.movie_id = am.movie_id
                               AND am2.actor_id != a.id
-        WHERE a.actor_tier IS NOT NULL
+        WHERE a.actor_tier = 'primary'
         GROUP BY a.id, a.name, a.industry
         ORDER BY costar_count DESC
     """)).fetchall()
@@ -1172,7 +1173,7 @@ def get_cinema_universe(db: Session, min_shared_films: int = 2) -> dict:
     ]
     node_ids = {r[0] for r in node_rows}
 
-    # Edges: pairs of ingested actors with ≥ min_shared_films together
+    # Edges: pairs of primary actors with ≥ min_shared_films together
     edge_rows = db.execute(text("""
         SELECT am1.actor_id AS source,
                am2.actor_id AS target,
@@ -1180,8 +1181,8 @@ def get_cinema_universe(db: Session, min_shared_films: int = 2) -> dict:
         FROM actor_movies am1
         JOIN actor_movies am2
           ON am1.movie_id = am2.movie_id AND am1.actor_id < am2.actor_id
-        JOIN actors a1 ON a1.id = am1.actor_id AND a1.actor_tier IS NOT NULL
-        JOIN actors a2 ON a2.id = am2.actor_id AND a2.actor_tier IS NOT NULL
+        JOIN actors a1 ON a1.id = am1.actor_id AND a1.actor_tier = 'primary'
+        JOIN actors a2 ON a2.id = am2.actor_id AND a2.actor_tier = 'primary'
         GROUP BY am1.actor_id, am2.actor_id
         HAVING COUNT(*) >= :min_films
         ORDER BY weight DESC
@@ -1199,14 +1200,14 @@ def get_gravity_center(db: Session, limit: int = 25) -> list:
     """
     from collections import deque, defaultdict
 
-    # Build adjacency list for ingested actors only
+    # Build adjacency list for primary actors only (keeps graph small and fast)
     rows = db.execute(text("""
         SELECT DISTINCT am1.actor_id, am2.actor_id
         FROM actor_movies am1
         JOIN actor_movies am2
           ON am1.movie_id = am2.movie_id AND am1.actor_id < am2.actor_id
-        JOIN actors a1 ON a1.id = am1.actor_id AND a1.actor_tier IS NOT NULL
-        JOIN actors a2 ON a2.id = am2.actor_id AND a2.actor_tier IS NOT NULL
+        JOIN actors a1 ON a1.id = am1.actor_id AND a1.actor_tier = 'primary'
+        JOIN actors a2 ON a2.id = am2.actor_id AND a2.actor_tier = 'primary'
     """)).fetchall()
 
     graph: dict[int, set] = defaultdict(set)
