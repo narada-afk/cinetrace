@@ -33,6 +33,11 @@ export default async function ActorPage({ params }: PageProps) {
     getActors().catch(() => []),
   ])
 
+  console.log('[actor page] API response:', actor?.name ?? 'null',
+    '| movies:', movies.length,
+    '| collaborators:', collaborators.length,
+    '| directors:', directors.length)
+
   if (!actor) notFound()
 
   // Build name → id map from full actors list for collaborator linking
