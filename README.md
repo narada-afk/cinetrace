@@ -81,9 +81,9 @@ south-cinema-analytics/
 │   ├── components/
 │   │   ├── HeroSearch.tsx        # Hero search with trending actor chips
 │   │   ├── ConnectionFinder.tsx  # Search form wired to /stats/connection
-│   │   ├── ConnectionResult.tsx  # Animated BFS path replay (step-by-step)
-│   │   ├── GraphPreview.tsx      # Interactive collaboration network graph
-│   │   ├── InsightsCarousel.tsx  # Infinite-scroll WOW insight cards (RAF loop)
+│   │   ├── ConnectionResult.tsx  # BFS path animation — entry fade, pause/resume on hover, payoff glow, share
+│   │   ├── GraphPreview.tsx      # Interactive collaboration network graph + share button
+│   │   ├── InsightsCarousel.tsx  # Infinite-scroll insight cards (RAF, visibility + intersection pause, edge fade)
 │   │   ├── InsightCard.tsx       # Gradient card — single or paired actor avatars
 │   │   ├── ActorAvatar.tsx       # Avatar image with deterministic initials fallback
 │   │   └── stats/                # Stats page sub-components (charts, panels)
@@ -258,6 +258,7 @@ All migrations use `IF NOT EXISTS` — safe to re-run.
 | 24 | Gender column · lead actresses · director classification · actor tiers |
 | 25 | Backend refactor: routers / repositories / services · in-memory graph singleton · lifespan startup |
 | 26 | Homepage redesign: HeroSearch · ConnectionFinder + animated path · GraphPreview · InsightsCarousel · WOW insight engine v3 (thread-safe cache · confidence · category field) |
+| 27 | ConnectionResult premium animation: entry fade + scale bump · hover/touch pause (auto-resume 1.8 s) · payoff scale-bump + expanding glow ring · variable timing (actor 500 ms / movie 350 ms) · edge fade · Replay re-trigger · Share (Web Share API + clipboard) · GraphPreview share button · InsightsCarousel visibility + IntersectionObserver pause · `?actor=` URL param for deep-linking network center |
 
 ---
 
