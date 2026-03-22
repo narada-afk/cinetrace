@@ -11,6 +11,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import ActorAvatar from '@/components/ActorAvatar'
+import ConnectionResult from '@/components/ConnectionResult'
 import { searchActors, getActorConnection, type Actor, type ConnectionPath } from '@/lib/api'
 
 // ── Tiny actor search box ─────────────────────────────────────────────────────
@@ -21,12 +22,14 @@ function ActorBox({
   onSelect,
   onClear,
   colorClass,
+  placeholder = 'Search actor…',
 }: {
   label: string
   selected: Actor | null
   onSelect: (a: Actor) => void
   onClear: () => void
   colorClass: string
+  placeholder?: string
 }) {
   const [query, setQuery]     = useState('')
   const [results, setResults] = useState<Actor[]>([])
@@ -88,7 +91,7 @@ function ActorBox({
               ref={inputRef}
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="Search actor…"
+              placeholder={placeholder}
               className="flex-1 bg-transparent py-3.5 text-white placeholder-white/25 outline-none text-sm"
             />
             {loading && <span className="text-white/30 text-xs animate-pulse flex-shrink-0">…</span>}
@@ -117,55 +120,6 @@ function ActorBox({
           )}
         </div>
       )}
-    </div>
-  )
-}
-
-// ── Path visualisation ────────────────────────────────────────────────────────
-
-function PathDisplay({ result }: { result: ConnectionPath }) {
-  if (!result.found) {
-    return (
-      <div className="text-center py-8">
-        <p className="text-3xl mb-3">🔗</p>
-        <p className="text-white/60 text-sm">No connection found within 6 degrees.</p>
-      </div>
-    )
-  }
-
-  const { path, connections } = result
-
-  return (
-    <div className="mt-6">
-      <p className="text-center text-white/40 text-xs uppercase tracking-widest mb-5">
-        Connected in <span className="text-white font-bold">{result.depth}</span> step{result.depth !== 1 ? 's' : ''}
-      </p>
-
-      {/* Horizontal scroll on mobile, centred on desktop */}
-      <div className="flex items-center gap-0 overflow-x-auto pb-2 justify-start sm:justify-center">
-        {path.map((actor, idx) => (
-          <div key={actor.id} className="flex items-center gap-0 flex-shrink-0">
-            {/* Actor node */}
-            <div className="flex flex-col items-center gap-1.5 px-2">
-              <ActorAvatar name={actor.name} size={52} />
-              <p className="text-white text-xs font-semibold text-center max-w-[80px] leading-tight">
-                {actor.name}
-              </p>
-            </div>
-
-            {/* Connecting film */}
-            {idx < connections.length && (
-              <div className="flex flex-col items-center gap-0.5 px-1 flex-shrink-0 min-w-[90px] max-w-[110px]">
-                <div className="h-px w-full bg-white/20" />
-                <p className="text-white/35 text-[10px] text-center leading-tight px-1 py-0.5">
-                  {connections[idx].movie_title}
-                </p>
-                <div className="h-px w-full bg-white/20" />
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
     </div>
   )
 }
@@ -220,18 +174,13 @@ export default function ConnectionFinder({
   return (
     <section className="rounded-3xl p-6 sm:p-8 border border-white/[0.08]" style={{ background: '#13131a' }}>
       {/* Header */}
-      <div className="flex items-start justify-between gap-4 mb-6">
-        <div>
-          <h2 className="text-white font-bold text-lg flex items-center gap-2">
-            🔗 Actor Connection Finder
-          </h2>
-          <p className="text-white/40 text-sm mt-1">
-            Six degrees of South Indian cinema — find the shortest collaboration path between any two actors
-          </p>
-        </div>
-        <span className="flex-shrink-0 text-[10px] font-bold uppercase tracking-widest text-white/25 border border-white/10 rounded-full px-3 py-1 mt-1">
-          BFS
-        </span>
+      <div className="mb-6">
+        <h2 className="text-white font-bold text-lg flex items-center gap-2">
+          🔗 Actor Connection Finder
+        </h2>
+        <p className="text-white/40 text-sm mt-1">
+          Try connecting actors you wouldn&apos;t expect 👀
+        </p>
       </div>
 
       {/* Actor pickers */}
@@ -242,6 +191,7 @@ export default function ConnectionFinder({
           onSelect={setActor1}
           onClear={() => { setActor1(null); setResult(null) }}
           colorClass="text-amber-400/70"
+          placeholder="Try Rajinikanth"
         />
 
         <div className="flex sm:flex-col items-center justify-center gap-1 flex-shrink-0 py-2">
@@ -256,6 +206,7 @@ export default function ConnectionFinder({
           onSelect={setActor2}
           onClear={() => { setActor2(null); setResult(null) }}
           colorClass="text-cyan-400/70"
+          placeholder="Try Prabhas"
         />
       </div>
 
@@ -263,12 +214,12 @@ export default function ConnectionFinder({
       <div className="mt-5 flex flex-col sm:flex-row items-center gap-3">
         <button
           onClick={handleFind}
-          disabled={!canSearch || loading}
+          disabled={loading}
           className={`
-            px-8 py-3 rounded-full font-semibold text-sm transition-all
+            px-8 py-3 rounded-full font-bold text-sm transition-all duration-200
             ${canSearch && !loading
-              ? 'bg-white text-black hover:bg-white/90 active:scale-95 shadow-lg shadow-white/10'
-              : 'bg-white/10 text-white/30 cursor-not-allowed'}
+              ? 'bg-white text-[#0a0a0f] hover:scale-[1.03] hover:shadow-lg hover:shadow-white/20 active:scale-95'
+              : 'bg-white/[0.08] text-white/50 border border-white/[0.12] cursor-default'}
           `}
         >
           {loading ? 'Searching path…' : 'Find Connection'}
@@ -300,8 +251,13 @@ export default function ConnectionFinder({
         </div>
       )}
 
-      {/* Result */}
-      {result && !loading && <PathDisplay result={result} />}
+      {/* Result — key forces full remount (animation reset) on each new search */}
+      {result && !loading && (
+        <ConnectionResult
+          key={`${result.path[0]?.id}-${result.path.at(-1)?.id}-${result.depth}`}
+          result={result}
+        />
+      )}
     </section>
   )
 }
