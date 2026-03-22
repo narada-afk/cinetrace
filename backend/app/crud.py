@@ -346,163 +346,24 @@ def get_top_collaborations(db: Session, limit: int = 20) -> list:
 
 def get_insights(db: Session, industry: Optional[str] = None) -> list:
     """
-    Build a mixed list of 8 dynamic cinema insight objects for the homepage.
+    Return WOW insight cards for the homepage.
 
-    Runs three independent queries and interleaves the results so the response
-    always has a variety of insight types:
+    Delegates entirely to insight_engine.get_wow_insights(), which runs six
+    story-driven patterns (collaboration shock, hidden dominance, cross-industry
+    reach, career peak window, network power, director loyalty) and returns the
+    top 3 diverse, high-impact insights.
 
-    1. Collaboration insights — actor pairs with the most shared films,
-       sourced from the precomputed actor_collaborations table.  The
-       ``actor1_id < actor2_id`` guard picks one canonical direction per pair.
-
-    2. Director partnership insights — actor + director duos with the highest
-       co-film counts, computed from actor_movies ⋈ movies.
-
-    3. Supporting actor insights — the most prolific supporting performers,
-       computed from actor_movies rows where role_type = 'supporting'.
-
-    Parameters
-    ----------
-    industry : Optional industry filter (e.g. "telugu", "tamil").  Pass None
-               or "all" for the cross-industry global view.  Matching is
-               case-insensitive against the actors.industry column.
-               When a specific industry is selected the director HAVING
-               threshold is relaxed from 4 → 2 to ensure results even for
-               smaller industries (e.g. Kannada).
-
-    Interleaving strategy
-    ---------------------
-    Zip the three lists together (collab, director, supporting, collab, …)
-    and take the first 8 entries.  With 5 rows per query this yields
-    3 collaborations + 3 directors + 2 supporting = 8 total, guaranteeing
-    a balanced mix without hardcoding per-type limits.
+    The ``industry`` parameter is accepted for API compatibility but the WOW
+    engine intentionally operates on the full cross-industry dataset — the most
+    surprising insights emerge from unexpected connections across languages.
 
     Returns
     -------
     list of plain dicts — converted to Insight Pydantic models in the route.
+    Empty list triggers the frontend's static fallback cards.
     """
-    from itertools import zip_longest
-
-    # Normalise: None / "all" / "explore" → no filter
-    ind = (
-        industry.lower()
-        if industry and industry.lower() not in ("all", "explore")
-        else None
-    )
-
-    # Relax thresholds for industry-specific views so smaller industries
-    # (Kannada, etc.) still return results.
-    dir_threshold  = 2  if ind else 4   # director co-film minimum
-    supp_threshold = 5  if ind else 10  # supporting actor minimum films
-    # 10+ globally means a genuinely prolific character actor (e.g. Brahmanandam
-    # with 58 films, Nassar with 79).  5+ for a single industry is still
-    # meaningful without letting 1- or 2-film cameos pollute the cards.
-
-    # ── Query 1: Top actor-actor collaborations ──────────────────────────────
-    collab_rows = db.execute(text("""
-        SELECT
-            a1.name                AS actor1,
-            a2.name                AS actor2,
-            a1.id                  AS actor1_id,
-            a2.id                  AS actor2_id,
-            ac.collaboration_count
-        FROM   actor_collaborations ac
-        JOIN   actors a1 ON ac.actor1_id = a1.id
-        JOIN   actors a2 ON ac.actor2_id = a2.id
-        WHERE  ac.actor1_id < ac.actor2_id
-          AND  (:ind IS NULL OR LOWER(a1.industry) = :ind)
-          AND  (:ind IS NULL OR LOWER(a2.industry) = :ind)
-        ORDER  BY ac.collaboration_count DESC
-        LIMIT  5
-    """), {"ind": ind}).fetchall()
-
-    collab_insights = [
-        {
-            "type":      "collaboration",
-            "headline":  f"{row.actor1} and {row.actor2} have appeared together in",
-            "value":     row.collaboration_count,
-            "unit":      "films",
-            "actors":    [row.actor1, row.actor2],
-            "actor_ids": [row.actor1_id, row.actor2_id],
-        }
-        for row in collab_rows
-    ]
-
-    # ── Query 2: Actor-director partnerships ─────────────────────────────────
-    director_rows = db.execute(text("""
-        SELECT
-            a.name       AS actor,
-            a.id         AS actor_id,
-            m.director,
-            COUNT(*)     AS films
-        FROM   actor_movies am
-        JOIN   actors  a ON am.actor_id  = a.id
-        JOIN   movies  m ON am.movie_id  = m.id
-        WHERE  m.director IS NOT NULL
-          AND  m.director <> ''
-          AND  (:ind IS NULL OR LOWER(a.industry) = :ind)
-        GROUP  BY a.name, a.id, m.director
-        HAVING COUNT(*) >= :threshold
-        ORDER  BY films DESC
-        LIMIT  5
-    """), {"ind": ind, "threshold": dir_threshold}).fetchall()
-
-    director_insights = [
-        {
-            "type":      "director",
-            "headline":  f"{row.actor}'s most frequent director is",
-            "value":     row.films,
-            "unit":      "films",
-            "actors":    [row.actor, row.director],
-            # Director is not in the actors table — only the actor's ID is returned
-            "actor_ids": [row.actor_id],
-        }
-        for row in director_rows
-    ]
-
-    # ── Query 3: Prolific supporting actors ──────────────────────────────────
-    # Minimum threshold keeps low-count cameos (1–9 films) off the homepage.
-    # The HAVING guard is the key quality gate:
-    #   - globally:          10+ films  →  genuinely prolific character actor
-    #   - industry-specific:  5+ films  →  meaningful within a smaller pool
-    supporting_rows = db.execute(text("""
-        SELECT
-            a.name,
-            a.id,
-            COUNT(*) AS films
-        FROM   actor_movies am
-        JOIN   actors a ON am.actor_id = a.id
-        WHERE  am.role_type = 'supporting'
-          AND  (:ind IS NULL OR LOWER(a.industry) = :ind)
-        GROUP  BY a.name, a.id
-        HAVING COUNT(*) >= :supp_threshold
-        ORDER  BY films DESC
-        LIMIT  5
-    """), {"ind": ind, "supp_threshold": supp_threshold}).fetchall()
-
-    supporting_insights = [
-        {
-            "type":      "supporting",
-            "headline":  f"A defining face in South Indian cinema, {row.name} has appeared in",
-            "value":     row.films,
-            "unit":      "films",
-            "actors":    [row.name],
-            "actor_ids": [row.id],
-        }
-        for row in supporting_rows
-    ]
-
-    # ── Interleave and cap at 8 ───────────────────────────────────────────────
-    interleaved: list = []
-    for c, d, s in zip_longest(collab_insights, director_insights, supporting_insights):
-        if c:
-            interleaved.append(c)
-        if d:
-            interleaved.append(d)
-        if s:
-            interleaved.append(s)
-
-    return interleaved[:8]
+    from .insight_engine import get_wow_insights
+    return get_wow_insights(db)
 
 
 # ===========================================================================

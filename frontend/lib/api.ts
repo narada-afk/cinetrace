@@ -66,14 +66,24 @@ export interface TopCollaboration {
 }
 
 export interface Insight {
-  type: 'collaboration' | 'director' | 'supporting'
-  headline: string
-  value: number
+  /** Legacy types: 'collaboration' | 'director' | 'supporting'
+   *  WOW types: 'collab_shock' | 'hidden_dominance' | 'cross_industry'
+   *             | 'career_peak' | 'network_power' | 'director_loyalty' */
+  type: string
+  /** Broad grouping for filtering/diversity: 'collaboration' | 'network' | 'career' | 'industry' */
+  category?: string
+  title: string
+  /** Numeric count for most types; string range (e.g. "2005–2010") for career_peak. */
+  value: number | string
   unit: string
   actors: string[]
   /** Database IDs for the actors[] array — same order. Use for building URLs
    *  without any name→slug conversion (avoids issues with special chars like dots). */
   actor_ids: number[]
+  /** WOW story sentence — the surprising context behind the stat. Undefined for legacy types. */
+  subtext?: string
+  /** Normalised score 0–1. Higher = more surprising / impressive. */
+  confidence?: number
 }
 
 export interface SharedFilm {

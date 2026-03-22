@@ -14,7 +14,7 @@
 #                GET /analytics/production-houses)
 
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Union
 
 
 # ===========================================================================
@@ -164,21 +164,26 @@ class Insight(BaseModel):
     Fields
     ------
     type      : category — "collaboration" | "director" | "supporting"
-    headline  : sentence fragment describing the fact (value + unit appended by UI)
-    value     : the numeric stat (film count, collaboration count, etc.)
-    unit      : label for the value — always "films" in Sprint 15
-    actors    : names involved; 2 entries for collaborations/directors, 1 for supporting
+                WOW types: "collab_shock" | "hidden_dominance" | "cross_industry"
+                           | "career_peak" | "network_power" | "director_loyalty"
+    headline  : actor name(s) or descriptive fragment (UI displays prominently)
+    value     : the stat — int for counts, str for ranges (e.g. "2005–2010")
+    unit      : label for the value — "films", "industries", "connections", etc.
+    actors    : names involved; 2 entries for collaborations, 1 for solo insights
     actor_ids : database IDs for the actors in `actors` (same order).
                 For director insights only the actor's ID is included (directors
                 are not in the actors table).  Use these IDs to build compare or
                 actor-profile URLs without name→slug conversion.
+    subtext   : optional WOW story sentence — the surprising context behind the stat.
+                Set by the insight engine; None for legacy insight types.
     """
     type: str
     headline: str
-    value: int
+    value: Union[int, str]   # int for counts; str for ranges like "2005–2010"
     unit: str
     actors: List[str]
     actor_ids: List[int] = []
+    subtext: Optional[str] = None   # WOW story sentence (insight_engine.py)
 
 
 class InsightsOut(BaseModel):

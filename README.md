@@ -1,37 +1,20 @@
 # South Cinema Analytics
 
-An analytics platform for South Indian cinema. Ingests filmography data from Wikidata and Wikipedia, precomputes actor statistics, and exposes a FastAPI REST API for a dashboard frontend to consume.
+A cinema curiosity engine for South Indian films. Explore the collaboration networks, career arcs, and box-office records of actors across Telugu, Tamil, Malayalam, and Kannada cinema.
+
+**Dataset:** ~10,000+ movies · 6,700+ actors · 4 industries
 
 ---
 
 ## What it does
 
-- Pulls complete filmographies for 13 major South Indian actors from **Wikidata** via SPARQL
-- Enriches movie records with runtime, production company, and language from **Wikipedia**
-- Precomputes analytics tables (career stats, collaborations, director pairings) so dashboard queries are O(1)
-- Serves all data through a typed **FastAPI** REST API with interactive docs
-
----
-
-## Actors covered
-
-| Actor | Industry |
-|---|---|
-| Allu Arjun | Telugu |
-| Mahesh Babu | Telugu |
-| Prabhas | Telugu |
-| Ram Charan | Telugu |
-| N. T. Rama Rao Jr. | Telugu |
-| Pawan Kalyan | Telugu |
-| Vijay | Tamil |
-| Ajith Kumar | Tamil |
-| Suriya | Tamil |
-| Dhanush | Tamil |
-| Karthi | Tamil |
-| Rajinikanth | Tamil |
-| Kamal Haasan | Tamil |
-
-**Dataset size:** ~734 movies, ~759 cast links
+- **Connection Finder** — animated BFS shortest path between any two actors through shared films
+- **Cinema Universe** — force-directed collaboration graph of primary actors
+- **Gravity Center** — Brandes betweenness-centrality leaderboard (in-memory, sub-second)
+- **WOW Insights** — story-driven cinema facts (collaboration shock, career peaks, network power, director loyalty) with TTL-cached scoring
+- **Actor Profiles** — filmography, co-stars, director partnerships, production companies
+- **Side-by-side Compare** — career stats from precomputed analytics tables (O(1))
+- **Stats for Nerds** — industry distribution, top partnerships, career timelines, chart builder
 
 ---
 
@@ -39,12 +22,29 @@ An analytics platform for South Indian cinema. Ingests filmography data from Wik
 
 | Layer | Technology |
 |---|---|
-| API | FastAPI + Uvicorn |
+| Frontend | Next.js 14 (App Router) · TypeScript · Tailwind CSS |
+| Backend | FastAPI · Uvicorn |
 | ORM | SQLAlchemy |
 | Database | PostgreSQL 15 |
-| Data sources | Wikidata SPARQL, Wikipedia |
-| HTTP clients | requests, requests-cache (Wikipedia caching) |
-| Retry logic | urllib3 `Retry` (3 retries, backoff) |
+| Containerisation | Docker Compose |
+| Data sources | TMDB API · Wikidata SPARQL · Wikipedia |
+
+---
+
+## Running with Docker
+
+```bash
+docker compose up --build
+```
+
+| Service | URL |
+|---|---|
+| Frontend | http://localhost:3000 |
+| Backend API | http://localhost:8000 |
+| Swagger docs | http://localhost:8000/docs |
+
+The backend connects to Postgres inside the same Compose network.
+The frontend calls the backend at `http://backend:8000` server-side (SSR/RSC) and `http://localhost:8000` client-side (browser).
 
 ---
 
@@ -54,30 +54,144 @@ An analytics platform for South Indian cinema. Ingests filmography data from Wik
 south-cinema-analytics/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py          # FastAPI routes
-│   │   ├── crud.py          # Database query functions
-│   │   ├── models.py        # SQLAlchemy ORM models
-│   │   ├── schemas.py       # Pydantic request/response schemas
-│   │   └── database.py      # DB connection + session factory
+│   │   ├── main.py              # FastAPI app, CORS, lifespan (graph build on startup)
+│   │   ├── crud.py              # All database query functions
+│   │   ├── insight_engine.py    # WOW insight patterns + thread-safe TTL cache
+│   │   ├── models.py            # SQLAlchemy ORM models
+│   │   ├── schemas.py           # Pydantic request / response schemas
+│   │   └── database.py          # DB engine + session factory
 │   ├── data_pipeline/
-│   │   ├── ingest_all_actors.py        # Wikidata batch ingestion
-│   │   ├── ingest_actor.py             # Per-actor upsert logic
-│   │   ├── enrich_movies.py            # Wikipedia enrichment
-│   │   ├── build_analytics_tables.py   # Precompute analytics tables
-│   │   ├── refresh_analytics_views.py  # Refresh materialized views
-│   │   ├── wikidata_client.py          # Single-actor SPARQL client
-│   │   ├── wikidata_batch_client.py    # Batched SPARQL client (VALUES clause)
-│   │   └── wikipedia_client.py        # Wikipedia scraper with caching
-│   ├── migrations/
-│   │   ├── sprint2_add_directors.sql
-│   │   ├── sprint3_add_actor_registry.sql
-│   │   ├── sprint4_indexes_and_constraints.sql
-│   │   ├── sprint4_pipeline_runs.sql
-│   │   ├── sprint4_materialized_views.sql
-│   │   ├── sprint5_analytics_tables.sql
-│   │   └── sprint6_indexes.sql
+│   │   ├── ingest_all_actors.py          # Wikidata batch ingestion (13 primary actors)
+│   │   ├── ingest_supporting_actors.py   # TMDB supporting actor ingestion
+│   │   ├── ingest_malayalam_actors.py    # TMDB Malayalam actor expansion
+│   │   ├── enrich_movies.py              # Wikipedia runtime / production enrichment
+│   │   ├── enrich_box_office.py          # TMDB box-office revenue enrichment
+│   │   ├── backfill_directors.py         # TMDB director credit backfill
+│   │   ├── build_analytics_tables.py     # Precompute all analytics tables
+│   │   └── classify_directors.py         # Set actor_tier (primary / network / null)
+│   ├── migrations/               # Schema migrations — sprint-tagged SQL files
 │   └── requirements.txt
+├── frontend/
+│   ├── app/
+│   │   ├── layout.tsx            # Root layout, global footer, dark theme (#0a0a0f)
+│   │   ├── page.tsx              # Homepage: Hero, Connection Finder, Graph, Insights
+│   │   ├── actors/[id]/          # Actor profile page
+│   │   ├── compare/              # Side-by-side compare page
+│   │   └── stats/                # Stats for Nerds page
+│   ├── components/
+│   │   ├── HeroSearch.tsx        # Hero search with trending actor chips
+│   │   ├── ConnectionFinder.tsx  # Search form wired to /stats/connection
+│   │   ├── ConnectionResult.tsx  # Animated BFS path replay (step-by-step)
+│   │   ├── GraphPreview.tsx      # Interactive collaboration network graph
+│   │   ├── InsightsCarousel.tsx  # Infinite-scroll WOW insight cards (RAF loop)
+│   │   ├── InsightCard.tsx       # Gradient card — single or paired actor avatars
+│   │   ├── ActorAvatar.tsx       # Avatar image with deterministic initials fallback
+│   │   └── stats/                # Stats page sub-components (charts, panels)
+│   └── lib/
+│       └── api.ts                # Typed fetch helpers for every backend endpoint
+├── docker-compose.yml
 └── README.md
+```
+
+---
+
+## Backend API
+
+Full interactive docs at `/docs` (Swagger UI) and `/redoc`.
+
+### Actors
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/health` | Service status + live row counts |
+| GET | `/actors` | List actors (`?primary_only=true`, `?gender=M\|F`) |
+| GET | `/actors/search?q=` | Partial name search — max 20 results |
+| GET | `/actors/{id}` | Profile with precomputed career stats |
+| GET | `/actors/{id}/movies` | Filmography, newest-first |
+| GET | `/actors/{id}/collaborators` | Top co-stars by shared film count |
+| GET | `/actors/{id}/directors` | Directors sorted by collaboration count |
+| GET | `/actors/{id}/production` | Production companies by film count |
+| GET | `/actors/{id1}/shared/{id2}` | Films two actors appeared in together |
+| GET | `/compare?actor1=&actor2=` | Side-by-side career comparison |
+
+### Analytics
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/analytics/insights` | WOW insight cards (`?industry=telugu\|tamil\|…`) |
+| GET | `/analytics/top-collaborations` | Actor pairs by shared film count |
+| GET | `/analytics/directors` | Top directors by film count |
+| GET | `/analytics/production-houses` | Top production companies by film count |
+| GET | `/analytics/top-box-office` | Highest-grossing films in INR crore |
+
+### Stats
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/stats/overview` | Global counts: movies, actors, links, industries |
+| GET | `/stats/most-connected` | Actors ranked by unique co-star count |
+| GET | `/stats/industry-distribution` | Film counts per industry with per-decade breakdown |
+| GET | `/stats/top-partnerships` | Top actor–director partnerships (≥ 3 films) |
+| GET | `/stats/career-timeline?actor_id=` | Films per year for one actor |
+| GET | `/stats/top-costars` | Highest network-centrality actors |
+| GET | `/stats/connection?actor1_id=&actor2_id=` | BFS shortest collaboration path (in-memory graph) |
+| GET | `/stats/chart-data` | Dynamic chart data for the chart builder |
+| GET | `/stats/cinema-universe` | Force-directed graph: nodes + edges |
+| GET | `/stats/gravity-center` | Brandes betweenness centrality leaderboard |
+
+---
+
+## WOW Insight Engine
+
+`backend/app/insight_engine.py` runs 6 pattern queries on startup and returns the 3 highest-scoring, most diverse insights.
+
+| Pattern | Category | What it surfaces |
+|---|---|---|
+| `collab_shock` | collaboration | A legendary duo whose last shared film was 8+ years ago |
+| `hidden_dominance` | career | A supporting actor with more films than most lead actors |
+| `cross_industry` | industry | A primary actor who worked across 3+ language industries |
+| `career_peak` | career | The densest 5-year window (≥ 35% of an actor's total output) |
+| `network_power` | network | The actor connected to the most unique co-stars |
+| `director_loyalty` | collaboration | An actor who spent ≥ 30% of their career with one director |
+
+**Scoring:** log-scaled magnitude + per-type importance weight + optional rarity bonus.
+**Confidence:** `min(1.0, score / 100)` — normalised 0–1, exposed to the frontend.
+**Cache:** module-level TTL (10 min), protected by `threading.Lock`. Bust with `_invalidate_cache()` after ingestion.
+
+Each insight emits: `type`, `category`, `title`, `value`, `unit`, `actors`, `actor_ids`, `subtext`, `confidence`.
+
+---
+
+## Data pipeline
+
+Run in order after a fresh database:
+
+```bash
+cd backend
+
+# 1. Wikidata — 13 primary South Indian actors
+DATABASE_URL=postgresql://sca:sca@localhost:5432/sca python -m data_pipeline.ingest_all_actors
+
+# 2. TMDB — supporting actors from primary actors' film credits
+DATABASE_URL=postgresql://sca:sca@localhost:5432/sca python -m data_pipeline.ingest_supporting_actors
+
+# 3. TMDB — Malayalam actor expansion
+DATABASE_URL=postgresql://sca:sca@localhost:5432/sca python -m data_pipeline.ingest_malayalam_actors
+
+# 4. Wikipedia — enrich movies with runtime, production company, language
+DATABASE_URL=postgresql://sca:sca@localhost:5432/sca python -m data_pipeline.enrich_movies
+
+# 5. TMDB — backfill director credits
+DATABASE_URL=postgresql://sca:sca@localhost:5432/sca python -m data_pipeline.backfill_directors
+
+# 6. TMDB — box-office revenue (INR crore at 84 INR/USD)
+DATABASE_URL=postgresql://sca:sca@localhost:5432/sca python -m data_pipeline.enrich_box_office
+
+# 7. Classify director-only entries; set actor_tier
+DATABASE_URL=postgresql://sca:sca@localhost:5432/sca python -m data_pipeline.classify_directors
+
+# 8. Build precomputed analytics tables (re-run after any ingestion step)
+DATABASE_URL=postgresql://sca:sca@localhost:5432/sca python -m data_pipeline.build_analytics_tables
 ```
 
 ---
@@ -85,180 +199,70 @@ south-cinema-analytics/
 ## Database schema
 
 ```
-actor_registry          seed catalog — Wikidata QIDs for ingestion
-actors                  ingested actor records
-movies                  ingested film records (enriched by Wikipedia)
-cast                    actor ↔ movie join table (many-to-many)
-directors               normalized director entities
-movie_directors         movie ↔ director join table (many-to-many)
-pipeline_runs           audit log for every pipeline execution
+actors                  actor records — actor_tier: 'primary' | 'network' | null (directors)
+movies                  film records — enriched with runtime, language, box_office_crore
+cast                    actor ↔ movie join (Wikidata pipeline)
+actor_movies            actor ↔ movie join (TMDB pipeline — includes character + role_type)
 
-actor_stats             precomputed: film count, career span, avg runtime
-actor_collaborations    precomputed: co-occurrence counts (bidirectional)
+actor_stats             precomputed: film count, career span, avg runtime per actor
+actor_collaborations    precomputed: co-star pair counts (bidirectional)
 actor_director_stats    precomputed: actor × director film counts
 actor_production_stats  precomputed: actor × production company film counts
+
+actor_registry          seed catalog — Wikidata QIDs for primary actor ingestion
+pipeline_runs           audit log for every pipeline execution
 ```
 
 ---
 
-## Setup
-
-### Prerequisites
-
-- Python 3.11+
-- PostgreSQL 15 running locally on port 5432
-- A database named `sca` with user `sca` / password `sca`
-
-```sql
-CREATE USER sca WITH PASSWORD 'sca';
-CREATE DATABASE sca OWNER sca;
-```
-
-### Install dependencies
+## Local development (without Docker)
 
 ```bash
+# Backend
 cd backend
 pip install -r requirements.txt
+DATABASE_URL=postgresql://sca:sca@localhost:5432/sca uvicorn app.main:app --reload --port 8000
+
+# Frontend (separate terminal)
+cd frontend
+npm install
+NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
 ```
 
-### Run all migrations (in order)
+Apply all migrations before the first run:
 
 ```bash
-psql -h localhost -p 5432 -U sca -d sca -f migrations/sprint2_add_directors.sql
-psql -h localhost -p 5432 -U sca -d sca -f migrations/sprint3_add_actor_registry.sql
-psql -h localhost -p 5432 -U sca -d sca -f migrations/sprint4_indexes_and_constraints.sql
-psql -h localhost -p 5432 -U sca -d sca -f migrations/sprint4_pipeline_runs.sql
-psql -h localhost -p 5432 -U sca -d sca -f migrations/sprint4_materialized_views.sql
-psql -h localhost -p 5432 -U sca -d sca -f migrations/sprint5_analytics_tables.sql
-psql -h localhost -p 5432 -U sca -d sca -f migrations/sprint6_indexes.sql
+for f in backend/migrations/sprint*.sql; do
+  psql -h localhost -U sca -d sca -f "$f"
+done
 ```
 
-All migrations use `IF NOT EXISTS` and are safe to re-run.
+All migrations use `IF NOT EXISTS` — safe to re-run.
 
 ---
 
-## Running the data pipeline
+## Sprint history
 
-Run these three commands in order. Each step builds on the previous one.
-
-```bash
-cd backend
-
-# 1. Pull filmographies from Wikidata (all 13 actors in one batched SPARQL query)
-DATABASE_URL=postgresql://sca:sca@localhost:5432/sca python -m data_pipeline.ingest_all_actors
-
-# 2. Enrich movies with runtime, production company, language from Wikipedia
-DATABASE_URL=postgresql://sca:sca@localhost:5432/sca python -m data_pipeline.enrich_movies
-
-# 3. Build precomputed analytics tables (fast O(1) reads for the API)
-DATABASE_URL=postgresql://sca:sca@localhost:5432/sca python -m data_pipeline.build_analytics_tables
-```
-
-### Pipeline options
-
-```bash
-# Ingest only Telugu actors, limit to 50 movies for testing
-python -m data_pipeline.ingest_all_actors --industry Telugu --limit 50
-
-# Dry-run enrichment (no DB writes) with 4 parallel workers
-python -m data_pipeline.enrich_movies --dry-run --workers 4
-
-# Refresh materialized views after ingestion
-python -m data_pipeline.refresh_analytics_views
-```
+| Sprint | What shipped |
+|---|---|
+| 1–6 | Core backend · Wikidata ingestion · analytics tables · actor + compare API |
+| 7–8 | TMDB columns · supporting actor ingestion |
+| 9 | Movie industry field · Malayalam actor expansion |
+| 10 | `/analytics/top-collaborations` |
+| 11 | Next.js 14 frontend: homepage · Header · InsightCard · TrendingActors |
+| 15 | `/analytics/insights` — dynamic insight cards |
+| 19 | `/analytics/directors` · `/analytics/production-houses` |
+| 21 | Stats for Nerds: full `/stats/*` suite |
+| 22 | Cinema Universe graph · Gravity Center (Brandes) · Build Your Own Chart |
+| 23 | Box-office enrichment · `/analytics/top-box-office` |
+| 24 | Gender column · lead actresses · director classification · actor tiers |
+| 25 | Backend refactor: routers / repositories / services · in-memory graph singleton · lifespan startup |
+| 26 | Homepage redesign: HeroSearch · ConnectionFinder + animated path · GraphPreview · InsightsCarousel · WOW insight engine v3 (thread-safe cache · confidence · category field) |
 
 ---
 
-## Starting the API server
+## Data attribution
 
-```bash
-cd backend
-DATABASE_URL=postgresql://sca:sca@localhost:5432/sca python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
-```
-
-- **Swagger UI (interactive):** http://localhost:8000/docs
-- **ReDoc:** http://localhost:8000/redoc
-
----
-
-## API endpoints
-
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/health` | Service status + live actor/movie counts |
-| GET | `/actors` | List all actors |
-| GET | `/actors/search?q=` | Case-insensitive partial name search (max 20) |
-| GET | `/actors/{id}` | Actor profile with precomputed career stats |
-| GET | `/actors/{id}/movies` | Filmography ordered newest-first |
-| GET | `/actors/{id}/collaborators` | Top co-stars by shared film count |
-| GET | `/actors/{id}/directors` | Directors sorted by collaboration count |
-| GET | `/actors/{id}/production` | Production companies sorted by film count |
-| GET | `/compare?actor1=&actor2=` | Side-by-side career comparison |
-
-### Example responses
-
-**GET /health**
-```json
-{ "status": "ok", "actors": 13, "movies": 734 }
-```
-
-**GET /actors/search?q=raj**
-```json
-[{ "id": 11, "name": "Rajinikanth" }]
-```
-
-**GET /actors/11**
-```json
-{
-  "id": 11,
-  "name": "Rajinikanth",
-  "industry": "Tamil",
-  "film_count": 157,
-  "first_film_year": 1957,
-  "last_film_year": 2025,
-  "avg_runtime": 170.0
-}
-```
-
-**GET /actors/11/collaborators**
-```json
-[
-  { "actor": "Kamal Haasan", "films": 12 },
-  { "actor": "Prabhas", "films": 1 }
-]
-```
-
-**GET /actors/11/directors**
-```json
-[
-  { "director": "S. P. Muthuraman", "films": 23 },
-  { "director": "R. Thyagarajan", "films": 10 }
-]
-```
-
-**GET /compare?actor1=Rajinikanth&actor2=Kamal Haasan**
-```json
-{
-  "actor1": { "name": "Rajinikanth", "films": 157, "avg_runtime": 170.0, "first_film": 1957, "last_film": 2025 },
-  "actor2": { "name": "Kamal Haasan", "films": 174, "avg_runtime": 182.0, "first_film": 1957, "last_film": 2024 }
-}
-```
-
----
-
-## Performance
-
-All analytics endpoints read from precomputed tables — no heavy joins at request time.
-
-| Endpoint | Strategy | Typical response |
-|---|---|---|
-| `/actors/{id}` | PK lookup on `actor_stats` | < 5 ms |
-| `/actors/{id}/collaborators` | Index scan on `actor_collaborations` | < 5 ms |
-| `/actors/{id}/directors` | Index scan on `actor_director_stats` | < 5 ms |
-| `/compare` | Two PK lookups on `actor_stats` | < 5 ms |
-| `/actors/{id}/movies` | Index join `cast` → `movies` | < 20 ms |
-
-Rebuild analytics tables after any ingestion run:
-```bash
-python -m data_pipeline.build_analytics_tables
-```
+Movie metadata provided by [The Movie Database (TMDB)](https://www.themoviedb.org/).
+This product uses the TMDB API but is not endorsed or certified by TMDB.
+Additional data from [Wikidata](https://www.wikidata.org/) and [Wikipedia](https://www.wikipedia.org/).
