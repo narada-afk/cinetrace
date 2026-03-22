@@ -5,12 +5,14 @@ interface ActorHeroProps {
   actor: ActorProfile
   collaboratorCount: number
   directorCount: number
+  topCollaborator?: string
 }
 
 export default function ActorHero({
   actor,
   collaboratorCount,
   directorCount,
+  topCollaborator,
 }: ActorHeroProps) {
   const yearRange =
     actor.first_film_year && actor.last_film_year
@@ -24,9 +26,9 @@ export default function ActorHero({
       <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0f]/80 via-transparent to-transparent" />
 
       <div className="relative z-10 px-8 py-10 flex flex-col sm:flex-row items-center sm:items-end gap-6">
-        {/* Avatar — large */}
+        {/* Avatar — large for strong presence */}
         <div className="flex-shrink-0 ring-4 ring-white/10 rounded-full">
-          <ActorAvatar name={actor.name} size={96} />
+          <ActorAvatar name={actor.name} size={120} />
         </div>
 
         {/* Text info */}
@@ -54,6 +56,14 @@ export default function ActorHero({
             <span className="text-white/20">•</span>
             <HeroStat value={directorCount} label="directors" />
           </div>
+
+          {/* Most seen with */}
+          {topCollaborator && (
+            <p className="text-white/25 text-xs mt-0.5">
+              Most seen with{' '}
+              <span className="text-white/45 font-medium">{topCollaborator}</span>
+            </p>
+          )}
         </div>
       </div>
     </div>
