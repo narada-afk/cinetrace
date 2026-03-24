@@ -69,17 +69,21 @@ async function fetchActorFull(query, signal) {
 
     const id = match.id;
 
-    // Step 2 — parallel: profile + top collaborator + latest movie
-    const [profile, collabs, movies] = await Promise.all([
+    // Step 2 — parallel: profile + top blockbuster + latest movie
+    const [profile, blockbusters, movies] = await Promise.all([
       apiFetch(`/actors/${id}`, signal),
-      apiFetch(`/actors/${id}/collaborators`, signal),
+      apiFetch(`/actors/${id}/blockbusters`, signal),
       apiFetch(`/actors/${id}/movies`, signal),
     ]);
 
     if (!profile) return null;
 
-    const topCollab = Array.isArray(collabs) && collabs.length > 0
-      ? collabs[0].actor
+    // Top box office: highest grossing film (blockbusters sorted desc already)
+    const topHit = Array.isArray(blockbusters) && blockbusters.length > 0
+      ? blockbusters[0]
+      : null;
+    const topBoxOffice = topHit
+      ? `${topHit.title} · ₹${Math.round(topHit.box_office_crore)} Cr`
       : null;
 
     const latestMovie = Array.isArray(movies)
@@ -89,16 +93,16 @@ async function fetchActorFull(query, signal) {
       : null;
 
     return {
-      id:           profile.id,
-      name:         profile.name,
-      industry:     profile.industry   || '',
-      film_count:   profile.film_count || 0,
-      first_year:   profile.first_film_year || null,
-      last_year:    profile.last_film_year
-                      ? Math.min(profile.last_film_year, CURRENT_YEAR)
-                      : null,
-      top_collab:   topCollab,
-      latest_movie: latestMovie ? `${latestMovie.title} (${latestMovie.release_year})` : null,
+      id:            profile.id,
+      name:          profile.name,
+      industry:      profile.industry   || '',
+      film_count:    profile.film_count || 0,
+      first_year:    profile.first_film_year || null,
+      last_year:     profile.last_film_year
+                       ? Math.min(profile.last_film_year, CURRENT_YEAR)
+                       : null,
+      top_box_office: topBoxOffice,
+      latest_movie:  latestMovie ? `${latestMovie.title} (${latestMovie.release_year})` : null,
     };
 
   } catch (err) {
@@ -159,8 +163,8 @@ function buildHTML(actor) {
       </div>
       <div class="sca-row">
         <span class="sca-icon">🤝</span>
-        <span class="sca-label">Top Duo</span>
-        <span class="sca-value">${esc(actor.top_collab || '—')}</span>
+        <span class="sca-label">Top Hit</span>
+        <span class="sca-value">${esc(actor.top_box_office || '—')}</span>
       </div>
       <div class="sca-row">
         <span class="sca-icon">🔥</span>
