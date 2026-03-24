@@ -13,7 +13,9 @@ interface FilmographyPreviewProps {
 }
 
 export default function FilmographyPreview({ movies, totalCount }: FilmographyPreviewProps) {
-  const sorted = [...movies].sort((a, b) => (b.release_year ?? 0) - (a.release_year ?? 0))
+  const sorted = [...movies]
+    .filter(m => m.release_year != null && m.release_year > 0)
+    .sort((a, b) => b.release_year - a.release_year)
   if (sorted.length === 0) return null
 
   const scrollRef      = useRef<HTMLDivElement>(null)

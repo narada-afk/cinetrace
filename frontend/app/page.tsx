@@ -69,6 +69,7 @@ const FALLBACK_INSIGHT_CARDS: InsightCardData[] = [
 async function fetchPageData(industry: string) {
   try {
     const insights = await getInsights(industry)
+    console.log('[homepage] API response insights:', insights.length, 'items')
     if (!insights.length) return { insightCards: FALLBACK_INSIGHT_CARDS }
 
     // Build insight cards — take first 3 (any type)
@@ -92,11 +93,16 @@ async function fetchPageData(industry: string) {
           ? `With director ${insight.actors[1]}`
           : undefined)
 
+      // career_peak value is already a string like "2005–2010"; all others are numbers
+      const stat = typeof insight.value === 'string'
+        ? insight.value
+        : `${insight.value} ${insight.unit ?? 'films'}`
+
       return {
         emoji:    meta.emoji,
         label:    meta.label,
         headline: insight.title,
-        stat:     `${insight.value} ${insight.value === 1 ? 'film' : insight.unit}`,
+        stat,
         subtext,
         actors:   insight.actors
           .slice(0, insight.type === 'director' ? 1 : 2)
@@ -107,7 +113,8 @@ async function fetchPageData(industry: string) {
     })
 
     return { insightCards }
-  } catch {
+  } catch (err) {
+    console.error('[homepage] insights fetch failed:', err)
     return { insightCards: FALLBACK_INSIGHT_CARDS }
   }
 }
@@ -117,6 +124,8 @@ async function fetchPageData(industry: string) {
 async function fetchTrendingChips(): Promise<TrendingChip[]> {
   try {
     const actors = await getActors(true)
+    console.log('[homepage] API response actors:', actors.length, 'primary actors')
+
     // Pick first actor per industry so chips span Telugu / Tamil / Malayalam / Kannada
     const seen = new Set<string>()
     const chips: TrendingChip[] = []
@@ -136,7 +145,8 @@ async function fetchTrendingChips(): Promise<TrendingChip[]> {
       }
     }
     return chips
-  } catch {
+  } catch (err) {
+    console.error('[homepage] actors fetch failed:', err)
     return []
   }
 }
@@ -149,17 +159,25 @@ const FALLBACK_CENTER: NetworkCenter = { id: 1, name: 'Rajinikanth', gender: 'M'
 async function fetchNetworkData(
   first?: { id: number; name: string } | null,
 ): Promise<{ center: NetworkCenter; nodes: NetworkNode[] } | null> {
-  // Use first trending actor as center; fall back to Rajinikanth
-  const center: NetworkCenter = first
-    ? { id: first.id, name: first.name }
-    : FALLBACK_CENTER
+  const centerId   = first?.id   ?? FALLBACK_CENTER.id
+  const centerName = first?.name ?? FALLBACK_CENTER.name
 
   try {
-    // Fetch collaborators + actor list in parallel for ID resolution
+    // Fetch collaborators + actor list in parallel for ID resolution and gender lookup
     const [collaborators, actors] = await Promise.all([
-      getActorCollaborators(center.id),
+      getActorCollaborators(centerId),
       getActors(true),
     ])
+
+    console.log('[homepage] API response collaborators for', centerName, ':', collaborators.length)
+
+    // Resolve gender from actors list — drives the pronoun in GraphPreview subtitle
+    const centerActor = actors.find(a => a.id === centerId)
+    const center: NetworkCenter = {
+      id:     centerId,
+      name:   centerName,
+      gender: centerActor?.gender ?? FALLBACK_CENTER.gender,
+    }
 
     // Build a name → id lookup (case-insensitive) so collaborators get navigable IDs
     const nameToId = new Map(actors.map(a => [a.name.toLowerCase().trim(), a.id]))
@@ -174,7 +192,8 @@ async function fetchNetworkData(
 
     if (nodes.length === 0) return null
     return { center, nodes }
-  } catch {
+  } catch (err) {
+    console.error('[homepage] network data fetch failed:', err)
     return null
   }
 }
@@ -186,27 +205,25 @@ export default async function HomePage({
 }: {
   searchParams?: { actor?: string }
 }) {
-  // Fetch page data + trending chips in parallel; chips[0] drives the graph center
-  const [{ insightCards }, trendingChips] = await Promise.all([
+  // Parse ?actor= override upfront so it can run in the parallel batch below
+  const actorIdOverride = searchParams?.actor ? Number(searchParams.actor) : NaN
+
+  // Fetch insights + trending chips + optional actor-override — all in parallel
+  // This eliminates the sequential waterfall that existed for the ?actor= case
+  const [{ insightCards }, trendingChips, actorOverride] = await Promise.all([
     fetchPageData('all'),
     fetchTrendingChips(),
+    !Number.isNaN(actorIdOverride)
+      ? getActor(actorIdOverride).catch(() => null)
+      : Promise.resolve(null),
   ])
 
   // ?actor= URL param overrides the network center (used by Share button on GraphPreview)
-  let networkCenter: { id: number; name: string } | null = trendingChips[0] ?? null
-  if (searchParams?.actor) {
-    const actorId = Number(searchParams.actor)
-    if (!Number.isNaN(actorId)) {
-      try {
-        const profile = await getActor(actorId)
-        networkCenter = { id: profile.id, name: profile.name }
-      } catch {
-        // Fall back to trending actor if ID is invalid / actor not found
-      }
-    }
-  }
+  const networkCenter = actorOverride
+    ? { id: actorOverride.id, name: actorOverride.name }
+    : (trendingChips[0] ?? null)
 
-  // Network data runs after chips resolve so we can pass the center actor
+  // Network data runs after chips resolve so we can pass the correct center actor
   const networkData = await fetchNetworkData(networkCenter)
 
   return (
