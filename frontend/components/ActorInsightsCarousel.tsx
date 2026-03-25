@@ -191,7 +191,7 @@ export default function ActorInsightsCarousel({
       label:    'Biggest Hit',
       headline: `${topHit.title} · ${topHit.release_year}`,
       stat:     formatCrore(topHit.box_office_crore),
-      subtext:  `highest grossing film`,
+      subtext:  `highest grossing film · Source: TMDB`,
       actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
       gradient: 'green',
       href:     `/actors/${actor.id}`,
@@ -206,9 +206,28 @@ export default function ActorInsightsCarousel({
       label:    'Box Office Total',
       headline: `Top ${blockbusters.length} films combined`,
       stat:     formatCrore(total),
-      subtext:  `combined box office`,
+      subtext:  `combined collection · Source: TMDB`,
       actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
       gradient: 'green',
+      href:     `/actors/${actor.id}`,
+    })
+  }
+
+  // 3c-ROI. Best ROI film (needs budget data)
+  const roiFilms = blockbusters.filter(b => b.budget_crore && b.budget_crore > 0)
+  if (roiFilms.length > 0) {
+    const best = roiFilms.reduce((a, b) =>
+      (b.box_office_crore / b.budget_crore!) > (a.box_office_crore / a.budget_crore!) ? b : a
+    )
+    const roi = (best.box_office_crore / best.budget_crore!).toFixed(1)
+    cards.push({
+      emoji:    '🚀',
+      label:    'Best ROI',
+      headline: `${best.title} · ${best.release_year}`,
+      stat:     `${roi}x`,
+      subtext:  `return on ₹${Math.round(best.budget_crore!)} Cr budget · Source: TMDB / Wikipedia`,
+      actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
+      gradient: 'amber',
       href:     `/actors/${actor.id}`,
     })
   }

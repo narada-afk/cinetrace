@@ -119,6 +119,9 @@ class BlockbusterOut(BaseModel):
     release_year: int
     poster_url: Optional[str] = None
     box_office_crore: float
+    budget_crore: Optional[float] = None
+    box_office_source: str = "TMDB"
+    budget_source: Optional[str] = None
 
     class Config:
         from_attributes = True

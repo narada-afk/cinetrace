@@ -260,7 +260,9 @@ def get_actor_blockbusters(actor_id: int, db: Session = Depends(get_db)):
     if not actor_repo.get_by_id(db, actor_id):
         raise HTTPException(status_code=404, detail="Actor not found")
     rows = db.execute(text("""
-        SELECT m.title, m.release_year, m.poster_url, m.box_office AS box_office_crore
+        SELECT m.title, m.release_year, m.poster_url,
+               m.box_office   AS box_office_crore,
+               m.budget_crore AS budget_crore
         FROM movies m
         JOIN actor_movies am ON am.movie_id = m.id
         WHERE am.actor_id = :actor_id
@@ -275,6 +277,9 @@ def get_actor_blockbusters(actor_id: int, db: Session = Depends(get_db)):
             release_year=r.release_year,
             poster_url=r.poster_url,
             box_office_crore=r.box_office_crore,
+            budget_crore=r.budget_crore,
+            box_office_source="TMDB",
+            budget_source="TMDB / Wikipedia" if r.budget_crore else None,
         )
         for r in rows
     ]

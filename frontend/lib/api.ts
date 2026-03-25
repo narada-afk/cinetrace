@@ -164,6 +164,9 @@ export interface Blockbuster {
   release_year: number
   poster_url: string | null
   box_office_crore: number
+  budget_crore: number | null
+  box_office_source: string
+  budget_source: string | null
 }
 
 export async function getActorBlockbusters(id: number | string): Promise<Blockbuster[]> {

@@ -289,14 +289,31 @@ function BlockbustersList({ blockbusters }: { blockbusters: Blockbuster[] }) {
                         {b.release_year}
                       </p>
                     </div>
-                    <span className={`flex-shrink-0 font-bold tabular-nums ${
-                      isFirst ? 'text-[#F5D98B] text-base'
-                      : isTop3 ? 'text-[#CFAF6B]/90 text-sm'
-                      : 'text-[#CFAF6B]/60 text-xs'
-                    }`}>
-                      {formatCrore(b.box_office_crore)}
-                    </span>
+                    {/* Collection + ROI */}
+                    <div className="flex-shrink-0 text-right">
+                      <span className={`font-bold tabular-nums block ${
+                        isFirst ? 'text-[#F5D98B] text-base'
+                        : isTop3 ? 'text-[#CFAF6B]/90 text-sm'
+                        : 'text-[#CFAF6B]/60 text-xs'
+                      }`}>
+                        {formatCrore(b.box_office_crore)}
+                      </span>
+                      {b.budget_crore && b.budget_crore > 0 && (
+                        <span className="text-[10px] text-white/30 tabular-nums">
+                          {(b.box_office_crore / b.budget_crore).toFixed(1)}x ROI
+                        </span>
+                      )}
+                    </div>
                   </div>
+
+                  {/* Budget row */}
+                  {b.budget_crore && b.budget_crore > 0 && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-white/25">Budget</span>
+                      <span className="text-[10px] text-white/40 font-medium tabular-nums">{formatCrore(b.budget_crore)}</span>
+                      <span className="text-[9px] text-white/15">({b.budget_source})</span>
+                    </div>
+                  )}
 
                   {/* Progress bar */}
                   <div className="h-[4px] rounded-full w-full" style={{ background: 'rgba(255,255,255,0.08)' }}>
@@ -317,7 +334,7 @@ function BlockbustersList({ blockbusters }: { blockbusters: Blockbuster[] }) {
         })}
       </div>
       <p className="text-white/20 text-[11px] text-right">
-        Box office figures in ₹ Cr (Source: TMDB)
+        Box office: TMDB · Budget: TMDB / Wikipedia
       </p>
     </div>
   )
