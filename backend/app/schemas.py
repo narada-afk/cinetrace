@@ -13,7 +13,7 @@
 #   Sprint 19  : DirectorStat, ProductionHouseStat (GET /analytics/directors,
 #                GET /analytics/production-houses)
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List, Union
 
 
@@ -105,6 +105,8 @@ class ActorMovieOut(BaseModel):
     backdrop_url: Optional[str] = None
     vote_average: Optional[float] = None
     popularity: Optional[float] = None
+    industry: Optional[str] = None
+    box_office: Optional[float] = None     # worldwide collection in ₹ crore
 
     class Config:
         from_attributes = True

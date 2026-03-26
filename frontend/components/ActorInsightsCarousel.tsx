@@ -387,6 +387,175 @@ export default function ActorInsightsCarousel({
     })
   }
 
+  // ── NEW PATTERNS from cross-actor analysis ────────────────────────────────
+
+  // N1. Hit rate (% of films that were blockbusters ≥₹100Cr)
+  const boFilms = datedMovies.filter(m => m.box_office != null && m.box_office! > 0)
+  const hitFilms = boFilms.filter(m => m.box_office! >= 100)
+  if (boFilms.length >= 5) {
+    const hitRate = Math.round((hitFilms.length / boFilms.length) * 100)
+    if (hitRate >= 15) {
+      cards.push({
+        emoji:    '🎯',
+        label:    'Hit Rate',
+        headline: `${hitFilms.length} of ${boFilms.length} films crossed ₹100 Cr`,
+        stat:     `${hitRate}%`,
+        subtext:  `commercial success rate · Source: TMDB`,
+        actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
+        gradient: 'green',
+        href:     `/actors/${actor.id}`,
+      })
+    }
+  }
+
+  // N2. Critical darling — films rated ≥7.5
+  const acclaimedFilms = ratedMovies.filter(m => (m.vote_average ?? 0) >= 7.5)
+  if (acclaimedFilms.length >= 3) {
+    cards.push({
+      emoji:    '🎭',
+      label:    'Critical Darling',
+      headline: `${acclaimedFilms.length} films rated 7.5+ by audiences`,
+      stat:     acclaimedFilms.length,
+      subtext:  `critically acclaimed performances · Source: TMDB`,
+      actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
+      gradient: 'purple',
+      href:     `/actors/${actor.id}`,
+    })
+  }
+
+  // N3. Unicorn films — both critically acclaimed (≥7.0) AND blockbuster (≥₹100 Cr)
+  const unicornFilms = datedMovies.filter(m =>
+    (m.vote_average ?? 0) >= 7.0 && m.box_office != null && m.box_office! >= 100
+  )
+  if (unicornFilms.length >= 1) {
+    cards.push({
+      emoji:    '🦄',
+      label:    'Unicorn Films',
+      headline: `${unicornFilms.length === 1 ? unicornFilms[0].title : `${unicornFilms.length} films`} — critic & commercial hit`,
+      stat:     unicornFilms.length,
+      subtext:  `films that won both critics and box office · Source: TMDB`,
+      actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
+      gradient: 'amber',
+      href:     `/actors/${actor.id}`,
+    })
+  }
+
+  // N4. Director loyalty — % of films with top director
+  if (directors.length > 0 && datedMovies.length >= 5) {
+    const top = directors[0]
+    const loyaltyPct = Math.round((top.films / datedMovies.length) * 100)
+    if (loyaltyPct >= 10) {
+      cards.push({
+        emoji:    '🎬',
+        label:    'Director Loyalty',
+        headline: `${loyaltyPct}% of films directed by ${top.director}`,
+        stat:     `${loyaltyPct}%`,
+        subtext:  `${top.films} films together`,
+        actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
+        gradient: 'blue',
+        href:     `/actors/${actor.id}`,
+      })
+    }
+  }
+
+  // N5. Box office growth — compare first-half avg vs second-half avg BO
+  if (boFilms.length >= 6) {
+    const sorted = [...boFilms].sort((a, b) => a.release_year - b.release_year)
+    const mid = Math.floor(sorted.length / 2)
+    const earlyAvg = sorted.slice(0, mid).reduce((s, m) => s + m.box_office!, 0) / mid
+    const lateAvg  = sorted.slice(mid).reduce((s, m) => s + m.box_office!, 0) / (sorted.length - mid)
+    const growthX  = (lateAvg / earlyAvg).toFixed(1)
+    if (lateAvg > earlyAvg * 1.5) {
+      cards.push({
+        emoji:    '📈',
+        label:    'Box Office Growth',
+        headline: `Later films earn ${growthX}× more than early career`,
+        stat:     `${growthX}×`,
+        subtext:  `avg BO: ₹${Math.round(earlyAvg)}Cr early → ₹${Math.round(lateAvg)}Cr recent · Source: TMDB`,
+        actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
+        gradient: 'green',
+        href:     `/actors/${actor.id}`,
+      })
+    }
+  }
+
+  // N6. Rating arc — early vs recent career ratings
+  if (ratedMovies.length >= 8) {
+    const sorted = [...ratedMovies].sort((a, b) => a.release_year - b.release_year)
+    const mid = Math.floor(sorted.length / 2)
+    const earlyAvg = sorted.slice(0, mid).reduce((s, m) => s + (m.vote_average ?? 0), 0) / mid
+    const lateAvg  = sorted.slice(mid).reduce((s, m) => s + (m.vote_average ?? 0), 0) / (sorted.length - mid)
+    const diff = lateAvg - earlyAvg
+    if (Math.abs(diff) >= 0.3) {
+      cards.push({
+        emoji:    diff > 0 ? '⬆️' : '📉',
+        label:    'Rating Arc',
+        headline: diff > 0 ? `Improving — recent films rated higher` : `Early films rated higher`,
+        stat:     `${earlyAvg.toFixed(1)} → ${lateAvg.toFixed(1)}`,
+        subtext:  `audience rating: early vs recent career · Source: TMDB`,
+        actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
+        gradient: diff > 0 ? 'green' : 'orange',
+        href:     `/actors/${actor.id}`,
+      })
+    }
+  }
+
+  // N7. Cross-industry — worked in multiple film industries
+  const industries = new Set(datedMovies.map(m => m.industry).filter(Boolean))
+  if (industries.size >= 3) {
+    const homeCount = datedMovies.filter(m => m.industry === actor.industry).length
+    const crossover = datedMovies.length - homeCount
+    cards.push({
+      emoji:    '🌍',
+      label:    'Pan-Indian',
+      headline: `Worked across ${industries.size} film industries`,
+      stat:     industries.size,
+      subtext:  `${crossover} crossover films outside ${actor.industry}`,
+      actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
+      gradient: 'blue',
+      href:     `/actors/${actor.id}`,
+    })
+  }
+
+  // N8. Comeback — largest mid-career gap
+  if (datedMovies.length >= 5) {
+    const years = [...new Set(datedMovies.map(m => m.release_year))].sort((a, b) => a - b)
+    let maxGap = 0, comebackYear = 0
+    for (let i = 1; i < years.length; i++) {
+      const gap = years[i] - years[i - 1]
+      if (gap > maxGap) { maxGap = gap; comebackYear = years[i] }
+    }
+    if (maxGap >= 4) {
+      cards.push({
+        emoji:    '🔄',
+        label:    'Comeback',
+        headline: `Returned in ${comebackYear} after ${maxGap}-year break`,
+        stat:     `${maxGap}yr`,
+        subtext:  `longest mid-career gap`,
+        actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
+        gradient: 'purple',
+        href:     `/actors/${actor.id}`,
+      })
+    }
+  }
+
+  // N9. High impact — avg BO per film (selective filmography)
+  if (boFilms.length >= 3 && boFilms.length <= 20) {
+    const avgBO = boFilms.reduce((s, m) => s + m.box_office!, 0) / boFilms.length
+    if (avgBO >= 150) {
+      cards.push({
+        emoji:    '⚡',
+        label:    'High Impact',
+        headline: `Avg ${formatCrore(avgBO)} per film — selective filmography`,
+        stat:     formatCrore(avgBO),
+        subtext:  `average box office per film · Source: TMDB`,
+        actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
+        gradient: 'amber',
+        href:     `/actors/${actor.id}`,
+      })
+    }
+  }
+
   // ── PRIORITY 4 — Supporting / same-gender co-stars ───────────────────────
 
   const sameGenderPairs = isFemale
