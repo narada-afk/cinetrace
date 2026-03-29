@@ -824,6 +824,15 @@ def get_chart_data(
         "film_count":               "COUNT(DISTINCT am.movie_id)",
         "avg_rating":               "ROUND((AVG(m.vote_average) FILTER (WHERE m.vote_average > 0))::numeric, 2)",
         "director_collaborations":  "COUNT(DISTINCT m.director) FILTER (WHERE m.director IS NOT NULL)",
+        # Box office / budget
+        "avg_box_office":           "ROUND((AVG(m.box_office) FILTER (WHERE m.box_office IS NOT NULL AND m.box_office > 0))::numeric, 1)",
+        "total_box_office":         "ROUND((SUM(m.box_office) FILTER (WHERE m.box_office IS NOT NULL AND m.box_office > 0))::numeric, 1)",
+        "avg_budget":               "ROUND((AVG(m.budget_crore) FILTER (WHERE m.budget_crore IS NOT NULL AND m.budget_crore > 0))::numeric, 1)",
+        # Quality / reach
+        "avg_runtime":              "ROUND((AVG(m.runtime) FILTER (WHERE m.runtime IS NOT NULL AND m.runtime > 0))::numeric, 1)",
+        "avg_popularity":           "ROUND((AVG(m.popularity) FILTER (WHERE m.popularity > 0))::numeric, 2)",
+        "hit_rate":                 "ROUND(100.0 * COUNT(*) FILTER (WHERE m.vote_average >= 7.0) / NULLIF(COUNT(*) FILTER (WHERE m.vote_average > 0), 0), 1)",
+        "unique_directors":         "COUNT(DISTINCT m.director) FILTER (WHERE m.director IS NOT NULL)",
     }
     # unique_costars and total_collaborations need a different join
     COSTAR_Y = y_axis in ("unique_costars", "total_collaborations")

@@ -1,0 +1,288 @@
+"""
+repositories/actor_repository.py
+=================================
+Pure database queries for the actors domain.
+
+Rules:
+  - Only SQL / ORM queries here. No business logic.
+  - Methods take (db, ...) and return raw ORM objects or Row tuples.
+  - No Pydantic model construction — that's the router's job.
+
+Ready for a future service layer:
+    router → service → actor_repo.method(db, ...)
+"""
+
+from typing import Optional
+from sqlalchemy.orm import Session
+from sqlalchemy import func, text, case, union, select, or_
+
+from app import models
+
+
+class ActorRepository:
+    """All database read operations for actors. Stateless singleton."""
+
+    # ── List / lookup ──────────────────────────────────────────────────────────
+
+    def get_all(
+        self,
+        db: Session,
+        primary_only: bool = False,
+        gender: Optional[str] = None,
+    ) -> list[models.Actor]:
+        """Return actors with optional filters."""
+        q = db.query(models.Actor)
+        if primary_only:
+            q = q.filter(models.Actor.is_primary_actor == True)  # noqa: E712
+        if gender is not None:
+            q = q.filter(models.Actor.gender == gender)
+        return q.all()
+
+    def get_by_id(self, db: Session, actor_id: int) -> Optional[models.Actor]:
+        """Single actor by primary key, or None."""
+        return db.query(models.Actor).filter(models.Actor.id == actor_id).first()
+
+    def get_by_name(self, db: Session, name: str) -> Optional[models.Actor]:
+        """
+        Case-insensitive exact name lookup.
+        Uses functional index idx_actors_name_lower.
+        """
+        return (
+            db.query(models.Actor)
+            .filter(func.lower(models.Actor.name) == name.lower())
+            .first()
+        )
+
+    # ── Search ─────────────────────────────────────────────────────────────────
+
+    def search(
+        self,
+        db: Session,
+        q: str,
+        lead_only: bool = False,
+        limit: int = 20,
+    ) -> list:
+        """
+        Partial-match search ordered by: exact match → primary actors → alpha.
+
+        Uses ILIKE '%q%' (sequential scan — fast at current dataset size).
+        After running migrations/sprint25_trigram_search.sql, switch to:
+            .filter(func.similarity(models.Actor.name, q) > 0.2)
+
+        Returns (id, name) tuples — lightweight for autocomplete.
+        """
+        exact_first = case(
+            (func.lower(models.Actor.name) == q.lower(), 0),
+            else_=1,
+        )
+        query = (
+            db.query(models.Actor.id, models.Actor.name)
+            .filter(models.Actor.name.ilike(f"%{q}%"))
+        )
+        if lead_only:
+            query = query.filter(models.Actor.is_primary_actor == True)  # noqa: E712
+        return (
+            query
+            .order_by(exact_first, models.Actor.is_primary_actor.desc(), models.Actor.name)
+            .limit(limit)
+            .all()
+        )
+
+    # ── Profile ────────────────────────────────────────────────────────────────
+
+    def get_with_stats(
+        self,
+        db: Session,
+        actor_id: int,
+    ) -> Optional[tuple[models.Actor, Optional[models.ActorStats]]]:
+        """
+        Return (Actor, ActorStats | None).
+        Stats come from the precomputed actor_stats table — O(1) lookup.
+        Returns None when actor doesn't exist.
+        """
+        actor = self.get_by_id(db, actor_id)
+        if not actor:
+            return None
+        stats = (
+            db.query(models.ActorStats)
+            .filter(models.ActorStats.actor_id == actor_id)
+            .first()
+        )
+        return actor, stats
+
+    def get_with_stats_by_name(
+        self,
+        db: Session,
+        name: str,
+    ) -> Optional[tuple[models.Actor, models.ActorStats]]:
+        """
+        For /compare. Returns (Actor, ActorStats) or None if either is missing.
+        Both rows required — returns None if analytics tables haven't been built.
+        """
+        actor = self.get_by_name(db, name)
+        if not actor:
+            return None
+        stats = (
+            db.query(models.ActorStats)
+            .filter(models.ActorStats.actor_id == actor.id)
+            .first()
+        )
+        return (actor, stats) if stats else None
+
+    # ── Filmography ────────────────────────────────────────────────────────────
+
+    # Character names that indicate a non-acting appearance (narrator, voice, cameo etc.)
+    _NON_ACTING_PATTERNS = [
+        'narrator', 'narration', '(voice)', 'voice)',
+        'himself', 'herself', 'cameo', 'self -',
+    ]
+
+    def _is_non_acting(self, character_name: str | None) -> bool:
+        if not character_name:
+            return False
+        low = character_name.lower()
+        return any(p in low for p in self._NON_ACTING_PATTERNS)
+
+    def get_movies(self, db: Session, actor_id: int) -> list[models.Movie]:
+        """
+        All movies for an actor, newest first.
+        Unions both ingestion pipelines:
+          • cast        → Wikidata-sourced (original actors)
+          • actor_movies → TMDB-sourced (supporting + Malayalam expansion)
+        Excludes non-acting roles (narrator, voice-only, cameo, himself/herself).
+        """
+        cast_ids = select(models.Cast.movie_id).where(
+            models.Cast.actor_id == actor_id
+        )
+        # Exclude narrator / voice / cameo / himself roles from TMDB pipeline
+        non_acting = [f"%{p}%" for p in self._NON_ACTING_PATTERNS]
+        tmdb_ids = select(models.ActorMovie.movie_id).where(
+            models.ActorMovie.actor_id == actor_id,
+            ~or_(*[
+                func.lower(models.ActorMovie.character_name).like(p)
+                for p in non_acting
+            ])
+        )
+        all_ids = union(cast_ids, tmdb_ids).scalar_subquery()
+
+        return (
+            db.query(models.Movie)
+            .filter(models.Movie.id.in_(all_ids))
+            .order_by(models.Movie.release_year.desc())
+            .all()
+        )
+
+    # ── Relationships ──────────────────────────────────────────────────────────
+
+    def get_collaborators(self, db: Session, actor_id: int) -> list:
+        """
+        Top co-stars ordered by collaboration count.
+        Reads precomputed actor_collaborations table — O(1) per actor.
+        Returns (name, collaboration_count, actor_id) tuples.
+        """
+        return (
+            db.query(
+                models.Actor.name,
+                models.ActorCollaboration.collaboration_count,
+                models.Actor.id,
+            )
+            .join(
+                models.ActorCollaboration,
+                models.ActorCollaboration.actor2_id == models.Actor.id,
+            )
+            .filter(models.ActorCollaboration.actor1_id == actor_id)
+            .order_by(models.ActorCollaboration.collaboration_count.desc())
+            .all()
+        )
+
+    def get_lead_collaborators(self, db: Session, actor_id: int) -> list:
+        """
+        Co-stars who appeared in a PRIMARY role in the same films as this actor
+        (also in a primary role). Excludes supporting/background appearances.
+        Returns (name, film_count) tuples ordered by film_count DESC.
+        """
+        result = db.execute(
+            text("""
+                SELECT a.name, COUNT(DISTINCT am2.movie_id) AS film_count
+                FROM actor_movies am1
+                JOIN actor_movies am2
+                  ON  am2.movie_id  = am1.movie_id
+                  AND am2.actor_id != am1.actor_id
+                  AND am2.role_type = 'primary'
+                JOIN actors a ON a.id = am2.actor_id
+                WHERE am1.actor_id  = :actor_id
+                  AND am1.role_type = 'primary'
+                GROUP BY a.name
+                ORDER BY film_count DESC
+            """),
+            {"actor_id": actor_id},
+        )
+        return result.fetchall()
+
+    def get_directors(self, db: Session, actor_id: int) -> list[models.ActorDirectorStat]:
+        """Directors an actor has worked with, ordered by film count."""
+        return (
+            db.query(models.ActorDirectorStat)
+            .filter(models.ActorDirectorStat.actor_id == actor_id)
+            .order_by(models.ActorDirectorStat.film_count.desc())
+            .all()
+        )
+
+    def get_production_companies(
+        self, db: Session, actor_id: int
+    ) -> list[models.ActorProductionStat]:
+        """Production companies an actor has worked with, ordered by film count."""
+        return (
+            db.query(models.ActorProductionStat)
+            .filter(models.ActorProductionStat.actor_id == actor_id)
+            .order_by(models.ActorProductionStat.film_count.desc())
+            .all()
+        )
+
+    def get_shared_films(
+        self, db: Session, actor1_id: int, actor2_id: int
+    ) -> list:
+        """
+        Movies both actors appeared in, newest first.
+        Joins actor_movies and cast for both actors to cover all pipeline paths,
+        then enriches with character/role info from each pipeline.
+        """
+        return db.execute(text("""
+            SELECT
+                m.title,
+                m.release_year,
+                m.director,
+                m.poster_url,
+                m.vote_average,
+                m.popularity,
+                am1.character_name  AS actor1_character,
+                am1.role_type       AS actor1_role,
+                am2.character_name  AS actor2_character,
+                am2.role_type       AS actor2_role
+            FROM (
+                SELECT movie_id FROM actor_movies WHERE actor_id = :a1
+                UNION
+                SELECT movie_id FROM "cast"      WHERE actor_id = :a1
+            ) ids
+            JOIN movies m ON m.id = ids.movie_id
+            LEFT JOIN actor_movies am1 ON am1.movie_id = m.id AND am1.actor_id = :a1
+            LEFT JOIN actor_movies am2 ON am2.movie_id = m.id AND am2.actor_id = :a2
+            WHERE ids.movie_id IN (
+                SELECT movie_id FROM actor_movies WHERE actor_id = :a2
+                UNION
+                SELECT movie_id FROM "cast"      WHERE actor_id = :a2
+            )
+            ORDER BY m.release_year DESC
+        """), {"a1": actor1_id, "a2": actor2_id}).fetchall()
+
+    # ── Health counts ──────────────────────────────────────────────────────────
+
+    def get_counts(self, db: Session) -> tuple[int, int]:
+        """(actor_count, movie_count) for the health endpoint."""
+        actors = db.query(func.count(models.Actor.id)).scalar() or 0
+        movies = db.query(func.count(models.Movie.id)).scalar() or 0
+        return actors, movies
+
+
+# Module-level singleton — import and use directly.
+actor_repo = ActorRepository()

@@ -4,12 +4,12 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { searchActors, getActorCollaborators, getActors, type Actor } from '@/lib/api'
 
-// ── Exported types ────────────────────────────────────────────────────────────
+// ── Exported types (consumed by page.tsx) ────────────────────────────────────
 
 export interface NetworkNode {
-  id: number | null
+  id: number | null   // null → no click navigation
   name: string
-  films: number
+  films: number       // shared films with center actor
 }
 
 export interface NetworkCenter {
@@ -20,56 +20,64 @@ export interface NetworkCenter {
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 
-const SVG_W    = 1100
-const SVG_H    = 380
-const CX       = SVG_W / 2
-const CY       = SVG_H / 2 - 5
-const RING_R   = 155
-const CENTER_R = 21
+const SVG_W       = 1100
+const SVG_H       = 380
+const CX          = SVG_W / 2      // 550 — center of wide canvas
+const CY          = SVG_H / 2 - 5  // 185
+const RING_R      = 155            // base radius of surrounding ring
+const CENTER_R    = 40             // center node radius
 
+// Distinct but muted node colours — visible over galaxy, not garish
 const COLORS = [
   '#a78bfa', '#60a5fa', '#34d399', '#fbbf24',
   '#f472b6', '#22d3ee', '#fb923c', '#a3e635',
 ]
-const CENTER_COLOR = '#f5c518'
+const CENTER_COLOR = '#f5c518'   // golden — sun / bright star
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/** Deterministic seeded random (0–1) — consistent across renders */
 function sr(seed: number): number {
   const x = Math.sin(seed * 9301 + 49297) * 233280
   return x - Math.floor(x)
 }
 
+/** Node position with slight angular + radial jitter for organic feel */
 function polarPos(i: number, total: number) {
   const base   = (2 * Math.PI * i / total) - Math.PI / 2
-  const jitter = (sr(i * 7 + 13) - 0.5) * 0.26
+  const jitter = (sr(i * 7 + 13) - 0.5) * 0.26          // ±~7° jitter
   const angle  = base + jitter
-  const r      = RING_R + (sr(i * 3 + 1) - 0.5) * 24
+  const r      = RING_R + (sr(i * 3 + 1) - 0.5) * 24    // ±12px radial variance
   return { x: CX + r * Math.cos(angle), y: CY + r * Math.sin(angle) }
 }
 
+/** Depth factor 0.62–1.0 — simulates distance from viewer */
 function depth(i: number): number {
   return 0.62 + sr(i * 5 + 29) * 0.38
 }
 
+/** Node radius scaled by film count (14–24px) then nudged by depth */
 function nodeR(films: number, d = 1): number {
   const base = 14 + Math.min(films * 0.85, 10)
-  return Math.round(base * (0.78 + d * 0.22))
+  return Math.round(base * (0.78 + d * 0.22))   // depth ±22% size variance
 }
 
+/** Up to 2 capital initials */
 function initials(name: string) {
   return name.split(' ').map(w => w[0] ?? '').join('').slice(0, 2).toUpperCase()
 }
 
+/** Gender-aware pronoun */
 function pronoun(gender?: 'M' | 'F' | null) {
   return gender === 'F' ? 'she' : 'he'
 }
 
+/** URL-safe actor slug */
 function toSlug(name: string) {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 }
 
-// ── Toast ─────────────────────────────────────────────────────────────────────
+// ── Toast helper ──────────────────────────────────────────────────────────────
 
 function useToast() {
   const [toast, setToast] = useState<string | null>(null)
@@ -80,18 +88,16 @@ function useToast() {
   return { toast, showToast }
 }
 
-// ── ActorPicker ───────────────────────────────────────────────────────────────
+// ── Actor picker dropdown ─────────────────────────────────────────────────────
 
 function ActorPicker({
   onSelect,
   loading,
   defaultSuggestions = [],
-  variant = 'compact',
 }: {
   onSelect: (actor: Actor) => void
   loading: boolean
   defaultSuggestions?: Actor[]
-  variant?: 'compact' | 'prominent'
 }) {
   const [query, setQuery]         = useState('')
   const [results, setResults]     = useState<Actor[]>([])
@@ -130,55 +136,6 @@ function ActorPicker({
     setQuery(''); setResults([]); setFocused(false); onSelect(actor)
   }
 
-  if (variant === 'prominent') {
-    return (
-      <div className="relative w-full max-w-sm">
-        <div className="flex items-center gap-2 rounded-2xl bg-white/[0.07] border border-white/[0.15] px-4 py-3 focus-within:border-white/30 focus-within:bg-white/[0.09] transition-all">
-          <span className="text-white/40 text-sm">🔍</span>
-          <input
-            ref={inputRef}
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            onFocus={() => setFocused(true)}
-            placeholder="Search an actor (Rajinikanth, Vijay…)"
-            disabled={loading}
-            className="bg-transparent text-white text-sm placeholder-white/35 outline-none flex-1 disabled:opacity-50"
-          />
-          {(searching || loading) && (
-            <span className="text-white/30 text-xs animate-pulse">…</span>
-          )}
-        </div>
-        {showDropdown && (
-          <div
-            ref={dropRef}
-            className="absolute left-0 right-0 top-full mt-2 rounded-2xl overflow-hidden z-[100] shadow-2xl border border-white/[0.10]"
-            style={{ background: '#1e1e2c' }}
-          >
-            {displayList.map(a => (
-              <button
-                key={a.id}
-                onMouseDown={e => e.preventDefault()}
-                onClick={() => handleSelect(a)}
-                className="w-full flex items-center gap-2.5 px-4 py-2.5 hover:bg-white/[0.08] transition-colors text-left border-b border-white/[0.05] last:border-0"
-              >
-                <div
-                  className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0"
-                  style={{ background: '#ef444433', color: '#ef4444' }}
-                >
-                  {initials(a.name)}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-white text-sm font-medium truncate">{a.name}</p>
-                  {a.industry && <p className="text-white/35 text-xs">{a.industry}</p>}
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    )
-  }
-
   return (
     <div className="relative">
       <div className="flex items-center gap-1.5 rounded-full bg-white/[0.07] border border-white/[0.12] px-3 py-1.5 focus-within:border-white/25 transition-all">
@@ -196,6 +153,7 @@ function ActorPicker({
           <span className="text-white/30 text-[10px] animate-pulse">…</span>
         )}
       </div>
+
       {showDropdown && (
         <div
           ref={dropRef}
@@ -242,44 +200,48 @@ export default function GraphPreview({
   suggestions?: Actor[]
 }) {
   const router = useRouter()
-  const [hovered, setHovered]               = useState<'center' | number | null>(null)
+  const [hovered, setHovered]             = useState<'center' | number | null>(null)
   const [centerImgError, setCenterImgError] = useState(false)
-  const [localCenter, setLocalCenter]       = useState<NetworkCenter | null>(null)
-  const [localNodes,  setLocalNodes]        = useState<NetworkNode[]>([])
+  const [localCenter, setLocalCenter]     = useState<NetworkCenter | null>(networkData?.center ?? null)
+  const [localNodes,  setLocalNodes]      = useState<NetworkNode[]>(networkData?.nodes ?? [])
   const [fetchingNetwork, setFetchingNetwork] = useState(false)
-  const [hasChosen, setHasChosen]           = useState(false)
   const { toast, showToast } = useToast()
 
+  // Reset avatar error when center actor changes
   useEffect(() => { setCenterImgError(false) }, [localCenter?.id])
 
-  // Background star field (seeded, stable)
+  // Precompute dense star field — scattered + band-concentrated (seeded)
   const bgStars = useMemo(() => {
     const stars: { x: number; y: number; r: number; op: number }[] = []
+
+    // 200 scattered stars across the whole SVG
     for (let i = 0; i < 200; i++) {
       stars.push({
-        x:  sr(i * 11 + 3) * SVG_W,
-        y:  sr(i * 7  + 5) * SVG_H,
-        r:  sr(i * 13 + 1) * 1.1 + 0.15,
-        op: sr(i * 17 + 2) * 0.40 + 0.05,
+        x:  sr(i * 11 + 3)  * SVG_W,
+        y:  sr(i * 7  + 5)  * SVG_H,
+        r:  sr(i * 13 + 1)  * 1.1 + 0.15,
+        op: sr(i * 17 + 2)  * 0.40 + 0.05,
       })
     }
+
+    // 130 band-concentrated stars along the diagonal (milky way core density)
     for (let i = 0; i < 130; i++) {
-      const t      = sr(i * 23 + 7)
-      const spread = (sr(i * 31 + 11) - 0.5) * SVG_H * 0.28
+      const t      = sr(i * 23 + 7)                        // 0→1 along band axis
+      const spread = (sr(i * 31 + 11) - 0.5) * SVG_H * 0.28 // perpendicular scatter
       const bx     = t * (SVG_W * 1.1) - SVG_W * 0.05
       const by     = (1 - t) * (SVG_H * 0.90) + spread + SVG_H * 0.05
       stars.push({
         x:  Math.max(0, Math.min(SVG_W, bx)),
         y:  Math.max(0, Math.min(SVG_H, by)),
-        r:  sr(i * 19 + 3) * 1.3 + 0.20,
-        op: sr(i * 29 + 7) * 0.55 + 0.18,
+        r:  sr(i * 19 + 3)  * 1.3 + 0.20,
+        op: sr(i * 29 + 7)  * 0.55 + 0.18,  // brighter in the band
       })
     }
+
     return stars
   }, [])
 
   async function handleActorSelect(actor: Actor) {
-    setHasChosen(true)
     setFetchingNetwork(true)
     try {
       const [collaborators, actors] = await Promise.all([
@@ -321,8 +283,14 @@ export default function GraphPreview({
     }
   }
 
-  const center    = localCenter
-  const nodes     = localNodes.slice(0, 8)
+  const center   = localCenter
+  const nodes    = localNodes.slice(0, 8)
+  const title    = center ? `${center.name}'s Network` : 'Cinema Network'
+  const subtitle = center
+    ? `Actors ${pronoun(center.gender)} has collaborated with across industries`
+    : 'Explore collaboration networks'
+
+  // Precompute all node positions once per render (stable with same nodes)
   const positions = useMemo(
     () => nodes.map((_, i) => polarPos(i, nodes.length)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -337,14 +305,16 @@ export default function GraphPreview({
       {/* ── Header ── */}
       <div className="px-6 pt-6 pb-3 flex items-start justify-between gap-4">
         <div className="min-w-0">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-white/25 mb-1">
+            Showing network for
+          </p>
           <h2 className="text-base font-bold text-white flex items-center gap-2">
-            <span style={{ color: CENTER_COLOR, opacity: 0.8 }}>✦</span>
-            {hasChosen && center ? center.name : 'Discover Connections'}
+            <span style={{ color: CENTER_COLOR, opacity: 0.8 }}>✦</span> {title}
           </h2>
-          <p className="text-white/30 text-xs mt-0.5">Tap stars to explore connections</p>
+          <p className="text-white/30 text-xs mt-0.5">{subtitle}</p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0 pt-1">
-          {hasChosen && center && (
+          {center && (
             <button
               onClick={handleShare}
               className="text-xs font-semibold px-3 py-1.5 rounded-full bg-white/[0.07] border border-white/[0.12] text-white/50 hover:text-white/80 hover:border-white/25 transition-all"
@@ -353,370 +323,498 @@ export default function GraphPreview({
               🔗
             </button>
           )}
-          {hasChosen && (
-            <ActorPicker
-              onSelect={handleActorSelect}
-              loading={fetchingNetwork}
-              defaultSuggestions={suggestions}
-            />
-          )}
+          <ActorPicker
+            onSelect={handleActorSelect}
+            loading={fetchingNetwork}
+            defaultSuggestions={suggestions}
+          />
         </div>
       </div>
 
-      {/* ── Empty state: centered search over starfield ── */}
-      {!hasChosen && (
-        <div className="relative rounded-b-3xl overflow-hidden" style={{ minHeight: 300 }}>
+      {/* ── Galaxy graph ── */}
+      <div className="pb-5 relative">
+
+        {/* Loading overlay */}
+        {fetchingNetwork && (
+          <div
+            className="absolute inset-0 flex items-center justify-center z-10 rounded-2xl"
+            style={{ background: 'rgba(13,13,21,0.75)' }}
+          >
+            <div className="flex gap-1.5">
+              {[0,1,2,3,4].map(i => (
+                <div
+                  key={i}
+                  className="w-2 h-2 rounded-full bg-white/40 animate-bounce"
+                  style={{ animationDelay: `${i * 0.1}s` }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {!center || nodes.length === 0 ? (
+          <div
+            className="w-full flex items-center justify-center"
+            style={{ minHeight: 200 }}
+          >
+            <p className="text-white/20 text-sm">No collaboration data available yet</p>
+          </div>
+        ) : (
+
           <svg
             viewBox={`0 0 ${SVG_W} ${SVG_H}`}
-            className="absolute inset-0 w-full h-full"
-            style={{ display: 'block', opacity: 0.5 }}
-            aria-hidden
+            className="w-full"
+            style={{ display: 'block' }}
           >
+            <defs>
+              {/* ── Galaxy atmosphere inside the card ─────────────────── */}
+
+              {/* Heavy blur for galaxy band layers */}
+              {/* Heavy blur — makes galaxy feel distant, not painted-on */}
+              <filter id="gp-galblur" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="38"/>
+              </filter>
+
+              {/* Diagonal blue-white core band — asymmetric, off-centre sweep */}
+              <linearGradient id="gp-gband" x1="0.08" y1="0" x2="0.78" y2="1">
+                <stop offset="0%"   stopColor="#6496ff" stopOpacity="0"/>
+                <stop offset="25%"  stopColor="#90b4ff" stopOpacity="0.05"/>
+                <stop offset="42%"  stopColor="#b8ccff" stopOpacity="0.12"/>
+                <stop offset="56%"  stopColor="#c8d8ff" stopOpacity="0.09"/>
+                <stop offset="75%"  stopColor="#90b4ff" stopOpacity="0.04"/>
+                <stop offset="100%" stopColor="#6496ff" stopOpacity="0"/>
+              </linearGradient>
+
+              {/* Warm orange/gold cloud — lower-left, atmospheric only */}
+              <radialGradient id="gp-gwarm" cx="50%" cy="50%" r="50%">
+                <stop offset="0%"   stopColor="#ff9040" stopOpacity="0.10"/>
+                <stop offset="55%"  stopColor="#ff6820" stopOpacity="0.04"/>
+                <stop offset="100%" stopColor="#ff4400" stopOpacity="0"/>
+              </radialGradient>
+
+              {/* Cool purple haze — upper-right, atmospheric only */}
+              <radialGradient id="gp-gcool" cx="50%" cy="50%" r="50%">
+                <stop offset="0%"   stopColor="#7050f8" stopOpacity="0.09"/>
+                <stop offset="55%"  stopColor="#5538d8" stopOpacity="0.03"/>
+                <stop offset="100%" stopColor="#3820b0" stopOpacity="0"/>
+              </radialGradient>
+
+              {/* Circular clip for center avatar */}
+              <clipPath id="gp-centerclip">
+                <circle cx={CX} cy={CY} r={CENTER_R - 2}/>
+              </clipPath>
+
+              {/* ── Standard node/center glow filters ──────────────────── */}
+
+              {/* Glow filter for center star */}
+              <filter id="gp-cglow" x="-80%" y="-80%" width="260%" height="260%">
+                <feGaussianBlur in="SourceGraphic" stdDeviation="10" result="b"/>
+                <feComposite in="SourceGraphic" in2="b" operator="over"/>
+              </filter>
+
+              {/* Plasma corona filter — turbulence displacement */}
+              <filter id="gp-plasma" x="-60%" y="-60%" width="220%" height="220%">
+                <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="3" seed="5" result="noise">
+                  <animate attributeName="seed" values="5;12;5" dur="8s" repeatCount="indefinite"/>
+                </feTurbulence>
+                <feDisplacementMap in="SourceGraphic" in2="noise" scale="7" xChannelSelector="R" yChannelSelector="G" result="displaced"/>
+                <feGaussianBlur in="displaced" stdDeviation="1.5" result="blurred"/>
+                <feComposite in="blurred" in2="blurred" operator="over"/>
+              </filter>
+
+              {/* Chromosphere ring gradient */}
+              <radialGradient id="gp-chromo" cx="50%" cy="50%" r="50%">
+                <stop offset="85%" stopColor="#f59e0b" stopOpacity="0"/>
+                <stop offset="92%" stopColor="#fbbf24" stopOpacity="0.55"/>
+                <stop offset="100%" stopColor="#f59e0b" stopOpacity="0"/>
+              </radialGradient>
+
+              {/* Glow filter for surrounding nodes — tight halo, not fog */}
+              <filter id="gp-nglow" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="b"/>
+                <feComposite in="SourceGraphic" in2="b" operator="over"/>
+              </filter>
+
+              {/* Sharp inner halo for close-in glow ring */}
+              <filter id="gp-nglow2" x="-40%" y="-40%" width="180%" height="180%">
+                <feGaussianBlur in="SourceGraphic" stdDeviation="1.5" result="b"/>
+                <feComposite in="SourceGraphic" in2="b" operator="over"/>
+              </filter>
+
+              {/* Vignette — strong edge darkening, centres the eye */}
+              <radialGradient id="gp-vignette" cx="50%" cy="50%" r="50%">
+                <stop offset="40%" stopColor="#0a0a14" stopOpacity="0"/>
+                <stop offset="78%" stopColor="#0a0a14" stopOpacity="0.55"/>
+                <stop offset="100%" stopColor="#07070f" stopOpacity="0.90"/>
+              </radialGradient>
+
+              {/* Nebula — soft radial atmosphere behind center */}
+              <radialGradient id="gp-nebula" cx="50%" cy="48%" r="50%">
+                <stop offset="0%"   stopColor="#ef4444" stopOpacity="0.12"/>
+                <stop offset="40%"  stopColor="#7c3aed" stopOpacity="0.05"/>
+                <stop offset="100%" stopColor="#000000" stopOpacity="0"/>
+              </radialGradient>
+
+              {/* Line glow filter — thin luminous halo on lit lines */}
+              <filter id="gp-lineglow" x="-200%" y="-200%" width="500%" height="500%">
+                <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="b"/>
+                <feComposite in="SourceGraphic" in2="b" operator="over"/>
+              </filter>
+
+              {/* Diffraction spike blur — soft ray dissolve */}
+              <filter id="gp-spike" x="-300%" y="-300%" width="700%" height="700%">
+                <feGaussianBlur in="SourceGraphic" stdDeviation="1.0"/>
+              </filter>
+
+              {/* Per-line gradient: golden centre → node colour */}
+              {nodes.map((_, i) => {
+                const p = positions[i]
+                const c = COLORS[i % COLORS.length]
+                return (
+                  <linearGradient
+                    key={i}
+                    id={`gp-lg${i}`}
+                    x1={CX} y1={CY}
+                    x2={p?.x ?? 0} y2={p?.y ?? 0}
+                    gradientUnits="userSpaceOnUse"
+                  >
+                    <stop offset="0%"   stopColor={CENTER_COLOR} stopOpacity="0.25"/>
+                    <stop offset="100%" stopColor={c}            stopOpacity="0.75"/>
+                  </linearGradient>
+                )
+              })}
+            </defs>
+
+            {/* ── Galaxy atmosphere — deepest layer, behind everything ── */}
+
+            {/* Diagonal core band spans full wide canvas */}
+            <rect
+              x={-80} y={-80} width={SVG_W + 160} height={SVG_H + 160}
+              fill="url(#gp-gband)"
+              filter="url(#gp-galblur)"
+              style={{ mixBlendMode: 'screen' }}
+            />
+            {/* Warm orange cloud — shifted lower-left, away from center */}
+            <ellipse
+              cx={SVG_W * 0.12} cy={SVG_H * 0.88}
+              rx={300} ry={150}
+              fill="url(#gp-gwarm)"
+              filter="url(#gp-galblur)"
+              style={{ mixBlendMode: 'screen' }}
+            />
+            {/* Cool purple haze — shifted upper-right, away from center */}
+            <ellipse
+              cx={SVG_W * 0.88} cy={SVG_H * 0.12}
+              rx={280} ry={140}
+              fill="url(#gp-gcool)"
+              filter="url(#gp-galblur)"
+              style={{ mixBlendMode: 'screen' }}
+            />
+
+            {/* ── Background micro-stars ── */}
             {bgStars.map((s, i) => (
               <circle key={i} cx={s.x} cy={s.y} r={s.r} fill="white" opacity={s.op}/>
             ))}
-          </svg>
-          <div className="relative z-10 flex flex-col items-center justify-center px-8 py-12 gap-5">
-            <p className="text-white/40 text-[11px] uppercase tracking-[0.2em]">
-              Choose an actor to explore
-            </p>
-            <ActorPicker
-              onSelect={handleActorSelect}
-              loading={fetchingNetwork}
-              defaultSuggestions={suggestions}
-              variant="prominent"
-            />
-            {suggestions.length > 0 && (
-              <div className="flex flex-wrap gap-2 justify-center">
-                {suggestions.slice(0, 4).map(a => (
-                  <button
-                    key={a.id}
-                    onClick={() => handleActorSelect(a)}
-                    className="text-xs px-3 py-1.5 rounded-full border border-white/[0.12] text-white/50 hover:text-white hover:border-white/25 bg-white/[0.04] hover:bg-white/[0.08] transition-all"
-                  >
-                    {a.name}
-                  </button>
-                ))}
-              </div>
-            )}
-            <p className="text-white/20 text-[10px] tracking-wide">
-              Tap stars to explore connections
-            </p>
-          </div>
-        </div>
-      )}
 
-      {/* ── Constellation (after actor chosen) ── */}
-      {hasChosen && (
-        <div className="pb-5 relative">
+            {/* ── Nebula glow behind center ── */}
+            <ellipse cx={CX} cy={CY} rx={155} ry={125} fill="url(#gp-nebula)"/>
 
-          {fetchingNetwork && (
-            <div
-              className="absolute inset-0 flex items-center justify-center z-10 rounded-2xl"
-              style={{ background: 'rgba(13,13,21,0.75)' }}
-            >
-              <div className="flex gap-1.5">
-                {[0,1,2,3,4].map(i => (
-                  <div
-                    key={i}
-                    className="w-2 h-2 rounded-full bg-white/40 animate-bounce"
-                    style={{ animationDelay: `${i * 0.1}s` }}
+            {/* ── Constellation lines ── */}
+            {nodes.map((node, i) => {
+              const p    = positions[i]
+              const d    = depth(i)
+              const lit  = hovered === i || hovered === 'center'
+              const fade = hovered !== null && !lit
+              if (!p) return null
+              return (
+                <line
+                  key={i}
+                  x1={CX} y1={CY}
+                  x2={p.x} y2={p.y}
+                  stroke={`url(#gp-lg${i})`}
+                  strokeWidth={lit ? 1.8 : 0.8 + d * 0.55}
+                  opacity={fade ? 0.07 : lit ? 1 : 0.44 + d * 0.24}
+                  filter="url(#gp-lineglow)"
+                  style={{ transition: 'opacity 0.22s ease, stroke-width 0.22s ease' }}
+                />
+              )
+            })}
+
+            {/* ── Collaborator stars ── */}
+            {nodes.map((node, i) => {
+              const p       = positions[i]
+              const color   = COLORS[i % COLORS.length]
+              const d       = depth(i)
+              // Star size: glow cloud r, bright-core r
+              const glowR   = nodeR(node.films, d)           // 10–24px glow radius
+              const coreR   = Math.max(2.2, glowR * 0.32)   // tight bright centre
+              const isHov   = hovered === i
+              const fade    = hovered !== null && hovered !== i && hovered !== 'center'
+              const baseOp  = 0.48 + d * 0.52
+              const floatDur = `${3.0 + i * 0.32}s`
+              const floatAmp = d > 0.78 ? '-4px' : '-2px'
+
+              if (!p) return null
+
+              return (
+                <g
+                  key={i}
+                  style={{
+                    cursor: node.id ? 'pointer' : 'default',
+                    opacity: fade ? 0.12 : baseOp,
+                    ['--gp-amp' as string]: floatAmp,
+                    animation: `gp-float ${floatDur} ease-in-out ${i * 0.42}s infinite`,
+                    transition: 'opacity 0.22s ease',
+                  }}
+                  onMouseEnter={() => setHovered(i)}
+                  onMouseLeave={() => setHovered(null)}
+                  onClick={() => node.id && router.push(`/actors/${toSlug(node.name)}`)}
+                >
+                  {/* Wide colour glow cloud */}
+                  <circle
+                    cx={p.x} cy={p.y}
+                    r={glowR * 2.0}
+                    fill={color}
+                    opacity={isHov ? 0.22 * d : 0.10 * d}
+                    filter="url(#gp-nglow)"
+                    style={{ transition: 'opacity 0.22s ease' }}
                   />
-                ))}
-              </div>
-            </div>
-          )}
+                  {/* Tight colour halo */}
+                  <circle
+                    cx={p.x} cy={p.y}
+                    r={glowR}
+                    fill={color}
+                    opacity={isHov ? 0.45 * d : 0.20 * d}
+                    filter="url(#gp-nglow2)"
+                    style={{ transition: 'opacity 0.22s ease' }}
+                  />
+                  {/* Diffraction spikes — 4 main + 4 diagonal rays */}
+                  {(() => {
+                    const spikeMain = coreR * (isHov ? 7.5 : 5.0) * (0.7 + d * 0.3)
+                    const spikeDiag = spikeMain * 0.55
+                    const rot       = sr(i * 11 + 7) * 28
+                    const spikeOp   = isHov ? 0.55 : 0.22 * d
+                    const diagOp    = isHov ? 0.35 : 0.14 * d
+                    const toRad     = (deg: number) => (deg + rot) * Math.PI / 180
+                    const mainAngles = [0, 90, 180, 270]
+                    const diagAngles = [45, 135, 225, 315]
+                    return (
+                      <g filter="url(#gp-spike)">
+                        {mainAngles.map(a => (
+                          <line key={a}
+                            x1={p.x} y1={p.y}
+                            x2={p.x + spikeMain * Math.cos(toRad(a))}
+                            y2={p.y + spikeMain * Math.sin(toRad(a))}
+                            stroke="white" strokeWidth="0.9" opacity={spikeOp}
+                          />
+                        ))}
+                        {diagAngles.map(a => (
+                          <line key={a}
+                            x1={p.x} y1={p.y}
+                            x2={p.x + spikeDiag * Math.cos(toRad(a))}
+                            y2={p.y + spikeDiag * Math.sin(toRad(a))}
+                            stroke="white" strokeWidth="0.6" opacity={diagOp}
+                          />
+                        ))}
+                      </g>
+                    )
+                  })()}
 
-          {!center || nodes.length === 0 ? (
-            <div className="w-full flex items-center justify-center" style={{ minHeight: 200 }}>
-              <p className="text-white/20 text-sm">No collaboration data available yet</p>
-            </div>
-          ) : (
-
-            <svg
-              viewBox={`0 0 ${SVG_W} ${SVG_H}`}
-              className="w-full"
-              style={{ display: 'block', touchAction: 'pan-y' }}
-              onTouchStart={() => setHovered(null)}
-            >
-              <defs>
-                {/* Blur for galaxy band */}
-                <filter id="gp-galblur" x="-50%" y="-50%" width="200%" height="200%">
-                  <feGaussianBlur stdDeviation="38"/>
-                </filter>
-
-                {/* Galaxy band gradient */}
-                <linearGradient id="gp-gband" x1="0.08" y1="0" x2="0.78" y2="1">
-                  <stop offset="0%"   stopColor="#6496ff" stopOpacity="0"/>
-                  <stop offset="25%"  stopColor="#90b4ff" stopOpacity="0.05"/>
-                  <stop offset="42%"  stopColor="#b8ccff" stopOpacity="0.12"/>
-                  <stop offset="56%"  stopColor="#c8d8ff" stopOpacity="0.09"/>
-                  <stop offset="75%"  stopColor="#90b4ff" stopOpacity="0.04"/>
-                  <stop offset="100%" stopColor="#6496ff" stopOpacity="0"/>
-                </linearGradient>
-
-                <radialGradient id="gp-gwarm" cx="50%" cy="50%" r="50%">
-                  <stop offset="0%"   stopColor="#ff9040" stopOpacity="0.10"/>
-                  <stop offset="55%"  stopColor="#ff6820" stopOpacity="0.04"/>
-                  <stop offset="100%" stopColor="#ff4400" stopOpacity="0"/>
-                </radialGradient>
-
-                <radialGradient id="gp-gcool" cx="50%" cy="50%" r="50%">
-                  <stop offset="0%"   stopColor="#7050f8" stopOpacity="0.09"/>
-                  <stop offset="55%"  stopColor="#5538d8" stopOpacity="0.03"/>
-                  <stop offset="100%" stopColor="#3820b0" stopOpacity="0"/>
-                </radialGradient>
-
-                {/* Clip for center avatar */}
-                <clipPath id="gp-centerclip">
-                  <circle cx={CX} cy={CY} r={CENTER_R - 2}/>
-                </clipPath>
-
-                {/* Glow filters */}
-                <filter id="gp-cglow" x="-80%" y="-80%" width="260%" height="260%">
-                  <feGaussianBlur in="SourceGraphic" stdDeviation="10" result="b"/>
-                  <feComposite in="SourceGraphic" in2="b" operator="over"/>
-                </filter>
-                <filter id="gp-nglow" x="-50%" y="-50%" width="200%" height="200%">
-                  <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="b"/>
-                  <feComposite in="SourceGraphic" in2="b" operator="over"/>
-                </filter>
-                <filter id="gp-nglow2" x="-40%" y="-40%" width="180%" height="180%">
-                  <feGaussianBlur in="SourceGraphic" stdDeviation="1.5" result="b"/>
-                  <feComposite in="SourceGraphic" in2="b" operator="over"/>
-                </filter>
-
-                {/* Vignette */}
-                <radialGradient id="gp-vignette" cx="50%" cy="50%" r="50%">
-                  <stop offset="40%" stopColor="#0a0a14" stopOpacity="0"/>
-                  <stop offset="78%" stopColor="#0a0a14" stopOpacity="0.55"/>
-                  <stop offset="100%" stopColor="#07070f" stopOpacity="0.90"/>
-                </radialGradient>
-
-                {/* Nebula */}
-                <radialGradient id="gp-nebula" cx="50%" cy="48%" r="50%">
-                  <stop offset="0%"   stopColor="#ef4444" stopOpacity="0.12"/>
-                  <stop offset="40%"  stopColor="#7c3aed" stopOpacity="0.05"/>
-                  <stop offset="100%" stopColor="#000000" stopOpacity="0"/>
-                </radialGradient>
-
-                {/* Line glow */}
-                <filter id="gp-lineglow" x="-200%" y="-200%" width="500%" height="500%">
-                  <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="b"/>
-                  <feComposite in="SourceGraphic" in2="b" operator="over"/>
-                </filter>
-
-                {/* Sharp line glow */}
-                <filter id="gp-lineglow2" x="-100%" y="-100%" width="300%" height="300%">
-                  <feGaussianBlur in="SourceGraphic" stdDeviation="1.0"/>
-                </filter>
-
-                {/* Animated ring around avatar — rotating gradient + pulse */}
-                <linearGradient id="gp-ring-grad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%"   stopColor="#ffcc44" stopOpacity="1"/>
-                  <stop offset="35%"  stopColor="#ff8800" stopOpacity="1"/>
-                  <stop offset="70%"  stopColor="#ffaa22" stopOpacity="1"/>
-                  <stop offset="100%" stopColor="#ffcc44" stopOpacity="1"/>
-                </linearGradient>
-                <filter id="gp-ringblur" x="-20%" y="-20%" width="140%" height="140%">
-                  <feGaussianBlur stdDeviation="1.5"/>
-                </filter>
-              </defs>
-
-              {/* ── Galaxy atmosphere ── */}
-              <rect x="0" y="0" width={SVG_W} height={SVG_H} fill="url(#gp-gband)" filter="url(#gp-galblur)"/>
-              <rect x="0" y={SVG_H * 0.25} width={SVG_W * 0.55} height={SVG_H * 0.75}
-                fill="url(#gp-gwarm)" filter="url(#gp-galblur)"/>
-              <rect x={SVG_W * 0.45} y="0" width={SVG_W * 0.55} height={SVG_H * 0.75}
-                fill="url(#gp-gcool)" filter="url(#gp-galblur)"/>
-
-              {/* ── Background stars ── */}
-              {bgStars.map((s, i) => (
-                <circle key={i} cx={s.x} cy={s.y} r={s.r} fill="white" opacity={s.op}/>
-              ))}
-
-              {/* ── Nebula behind center ── */}
-              <rect x={CX - 180} y={CY - 130} width="360" height="260"
-                fill="url(#gp-nebula)" filter="url(#gp-galblur)" opacity="0.9"/>
-
-              {/* ── Connection lines ── */}
-              {nodes.map((node, i) => {
-                const { x, y } = positions[i]
-                const d        = depth(i)
-                const isHov    = hovered === i || hovered === 'center'
-                return (
-                  <g key={i}>
-                    {isHov && (
-                      <line x1={CX} y1={CY} x2={x} y2={y}
-                        stroke="rgba(255,255,255,0.22)" strokeWidth="1.5"
-                        filter="url(#gp-lineglow)" style={{ pointerEvents: 'none' }}/>
-                    )}
-                    <line x1={CX} y1={CY} x2={x} y2={y}
-                      stroke={isHov ? 'rgba(255,255,255,0.28)' : `rgba(255,255,255,${(0.05 * d).toFixed(2)})`}
-                      strokeWidth={isHov ? 1.0 : 0.5}
-                      style={{ transition: 'stroke 0.2s ease', pointerEvents: 'none' }}/>
-                  </g>
-                )
-              })}
-
-              {/* ── Orbital nodes ── */}
-              {nodes.map((node, i) => {
-                const { x, y }  = positions[i]
-                const d         = depth(i)
-                const color     = '#ffffff'
-                const isHov     = hovered === i
-                const glowR     = nodeR(node.films, d)
-                const coreR     = isHov ? Math.max(2.8, glowR * 0.32) : 1.6 + d * 1.0
-                const floatAmp  = 3 + sr(i * 7 + 1) * 4
-                const floatDur  = `${3.5 + sr(i * 11 + 3) * 2.5}s`
-                const floatDel  = `${sr(i * 13 + 7) * 2}s`
-
-                return (
-                  <g
-                    key={i}
-                    style={{
-                      cursor: node.id ? 'pointer' : 'default',
-                      // @ts-ignore CSS custom property
-                      '--gp-amp': `-${floatAmp}px`,
-                      animation: `gp-float ${floatDur} ${floatDel} ease-in-out infinite`,
-                    }}
-                    onMouseEnter={() => setHovered(i)}
-                    onMouseLeave={() => setHovered(null)}
-                    onClick={() => node.id !== null && router.push(`/actors/${toSlug(node.name)}`)}
-                    onTouchStart={e => { e.stopPropagation(); setHovered(i) }}
+                  {/* Bright white core dot */}
+                  <circle
+                    cx={p.x} cy={p.y}
+                    r={isHov ? coreR * 1.4 : coreR * 1.1}
+                    fill="white"
+                    opacity={isHov ? 1 : 0.72 + d * 0.26}
+                    style={{ transition: 'r 0.22s ease, opacity 0.22s ease' }}
+                  />
+                  {/* Name — subtle star label, brightens on hover */}
+                  <text
+                    x={p.x} y={p.y + glowR + 12}
+                    textAnchor="middle" fontSize="8"
+                    fill={isHov ? 'rgba(255,255,255,0.65)' : `rgba(255,255,255,${(0.14 + d * 0.14).toFixed(2)})`}
+                    style={{ userSelect: 'none', transition: 'fill 0.22s ease' }}
                   >
-                    {/* Rest glow */}
-                    <circle cx={x} cy={y} r={coreR * 2.5} fill={color}
-                      opacity={isHov ? 0 : 0.18 * d} filter="url(#gp-nglow)"/>
-
-                    {/* Wide hover glow */}
-                    <circle cx={x} cy={y} r={glowR * 2.0} fill={color}
-                      opacity={isHov ? 0.28 : 0}
-                      filter="url(#gp-nglow)"
-                      style={{ transition: 'opacity 0.2s ease' }}/>
-
-                    {/* Inner hover ring */}
-                    <circle cx={x} cy={y} r={glowR} fill={color}
-                      opacity={isHov ? 0.55 : 0}
-                      filter="url(#gp-nglow2)"
-                      style={{ transition: 'opacity 0.2s ease' }}/>
-
-                    {/* Core */}
-                    <circle cx={x} cy={y} r={coreR} fill={isHov ? '#fff' : color}
-                      opacity={isHov ? 1 : 0.85 * d}
-                      style={{ transition: 'r 0.2s ease, fill 0.2s ease' }}/>
-
-                    {/* Name label */}
+                    {node.name.split(' ')[0]}
+                  </text>
+                  {/* Film count on hover */}
+                  {isHov && (
                     <text
-                      x={x} y={y - coreR - 6}
-                      textAnchor="middle" fontSize="9" fontWeight={isHov ? '600' : '400'}
-                      fill={isHov ? 'rgba(255,255,255,0.95)' : `rgba(255,255,255,${(0.30 + d * 0.25).toFixed(2)})`}
-                      style={{ userSelect: 'none', transition: 'fill 0.2s ease' }}
+                      x={p.x} y={p.y + glowR + 23}
+                      textAnchor="middle" fontSize="7"
+                      fill="rgba(255,255,255,0.45)"
+                      style={{ userSelect: 'none' }}
                     >
-                      {node.name.split(' ')[0]}
+                      {node.films} {node.films === 1 ? 'film' : 'films'}
                     </text>
+                  )}
+                </g>
+              )
+            })}
 
-                    {/* Film count on hover */}
-                    {isHov && (
-                      <text x={x} y={y + coreR + 14}
-                        textAnchor="middle" fontSize="7.5"
-                        fill="rgba(255,255,255,0.45)"
-                        style={{ userSelect: 'none' }}
-                      >
-                        {node.films} {node.films === 1 ? 'film' : 'films'}
-                      </text>
-                    )}
-                  </g>
-                )
-              })}
+            {/* ── Center star — main actor as a golden sun ── */}
+            {(() => {
+              const avatarSlug = center.name.toLowerCase().replace(/\s+/g, '')
+              const isHovCenter = hovered === 'center'
+              return (
+                <g
+                  style={{ cursor: 'pointer' }}
+                  onMouseEnter={() => setHovered('center')}
+                  onMouseLeave={() => setHovered(null)}
+                  onClick={() => router.push(`/actors/${toSlug(center.name)}`)}
+                >
+                  {/* ── Sun corona: wide plasma glow cloud ── */}
+                  <circle cx={CX} cy={CY} r={CENTER_R + 22}
+                    fill={CENTER_COLOR}
+                    opacity={isHovCenter ? 0.42 : 0.28}
+                    filter="url(#gp-cglow)"
+                    style={{ transition: 'opacity 0.3s ease' }}
+                  />
 
-              {/* ── Center star (actor as sun with fire ring) ── */}
-              {(() => {
-                const avatarSlug  = center.name.toLowerCase().replace(/\s+/g, '')
-                const isHovCenter = hovered === 'center'
-                return (
-                  <g
-                    style={{ cursor: 'pointer' }}
-                    onMouseEnter={() => setHovered('center')}
-                    onMouseLeave={() => setHovered(null)}
-                    onClick={() => router.push(`/actors/${toSlug(center.name)}`)}
+                  {/* Plasma corona ring — turbulence distortion */}
+                  <circle cx={CX} cy={CY} r={CENTER_R + 4}
+                    fill="none"
+                    stroke={CENTER_COLOR}
+                    strokeWidth="8"
+                    strokeOpacity="0.35"
+                    filter="url(#gp-plasma)"
+                  />
+
+                  {/* Chromosphere — tight bright band right at edge */}
+                  <circle cx={CX} cy={CY} r={CENTER_R + 2}
+                    fill="none"
+                    stroke="#fde68a"
+                    strokeWidth="3"
+                    strokeOpacity="0">
+                    <animate attributeName="stroke-opacity"
+                      values="0.0;0.55;0.3;0.55;0.0"
+                      dur="5s" repeatCount="indefinite"/>
+                    <animate attributeName="stroke-width"
+                      values="3;5;3;5;3" dur="5s" repeatCount="indefinite"/>
+                  </circle>
+
+                  {/* Outermost pulsing corona — golden, slow expand */}
+                  <circle cx={CX} cy={CY} r={CENTER_R} fill={CENTER_COLOR} opacity="0">
+                    <animate attributeName="r"
+                      values={`${CENTER_R + 4};${CENTER_R + 52};${CENTER_R + 4}`}
+                      dur="4.2s" repeatCount="indefinite"/>
+                    <animate attributeName="opacity"
+                      values="0.28;0;0.28" dur="4.2s" repeatCount="indefinite"/>
+                  </circle>
+
+                  {/* Second pulse ring — faster, smaller */}
+                  <circle cx={CX} cy={CY} r={CENTER_R} fill={CENTER_COLOR} opacity="0">
+                    <animate attributeName="r"
+                      values={`${CENTER_R + 2};${CENTER_R + 28};${CENTER_R + 2}`}
+                      dur="2.8s" begin="0.6s" repeatCount="indefinite"/>
+                    <animate attributeName="opacity"
+                      values="0.32;0;0.32" dur="2.8s" begin="0.6s" repeatCount="indefinite"/>
+                  </circle>
+
+                  {/* Third micro-pulse — very close, flicker */}
+                  <circle cx={CX} cy={CY} r={CENTER_R} fill={CENTER_COLOR} opacity="0">
+                    <animate attributeName="r"
+                      values={`${CENTER_R + 1};${CENTER_R + 14};${CENTER_R + 1}`}
+                      dur="1.9s" begin="1.3s" repeatCount="indefinite"/>
+                    <animate attributeName="opacity"
+                      values="0.4;0;0.4" dur="1.9s" begin="1.3s" repeatCount="indefinite"/>
+                  </circle>
+
+                  {/* Solar flare arcs — 6 short arcs at random angles */}
+                  {[0, 60, 120, 180, 240, 300].map((deg, fi) => {
+                    const rad = deg * Math.PI / 180
+                    const r1 = CENTER_R + 2
+                    const r2 = CENTER_R + 16 + (fi % 3) * 7
+                    const x1 = CX + r1 * Math.cos(rad)
+                    const y1 = CY + r1 * Math.sin(rad)
+                    const x2 = CX + r2 * Math.cos(rad)
+                    const y2 = CY + r2 * Math.sin(rad)
+                    const delay = `${fi * 0.55}s`
+                    return (
+                      <line key={fi} x1={x1} y1={y1} x2={x2} y2={y2}
+                        stroke="#fbbf24" strokeWidth="1.2" strokeLinecap="round" opacity="0">
+                        <animate attributeName="opacity"
+                          values="0;0.5;0.8;0.3;0"
+                          dur="3.3s" begin={delay} repeatCount="indefinite"/>
+                        <animate attributeName="stroke-width"
+                          values="0.8;1.4;0.8" dur="3.3s" begin={delay} repeatCount="indefinite"/>
+                      </line>
+                    )
+                  })}
+
+                  {/* Wide golden glow cloud — kept last for legacy compat */}
+                  <circle cx={CX} cy={CY} r={CENTER_R + 14}
+                    fill={CENTER_COLOR}
+                    opacity="0"
+                  />
+
+                  {/* Golden border ring around avatar */}
+                  <circle cx={CX} cy={CY} r={CENTER_R}
+                    fill="#1a1025"
+                    stroke={CENTER_COLOR}
+                    strokeWidth={isHovCenter ? 2.5 : 1.8}
+                    strokeOpacity={isHovCenter ? 1 : 0.85}
+                    style={{ transition: 'all 0.22s ease' }}
+                  />
+
+                  {/* Avatar image — clipped to circle */}
+                  {!centerImgError ? (
+                    <image
+                      href={`/avatars/${avatarSlug}.png`}
+                      x={CX - CENTER_R + 2} y={CY - CENTER_R + 2}
+                      width={(CENTER_R - 2) * 2} height={(CENTER_R - 2) * 2}
+                      clipPath="url(#gp-centerclip)"
+                      preserveAspectRatio="xMidYMid slice"
+                      onError={() => setCenterImgError(true)}
+                    />
+                  ) : (
+                    /* Fallback: golden initials when no avatar */
+                    <text x={CX} y={CY}
+                      textAnchor="middle" dominantBaseline="central"
+                      fontSize={CENTER_R * 0.48} fontWeight="700"
+                      fill={CENTER_COLOR}
+                      style={{ userSelect: 'none' }}
+                    >
+                      {initials(center.name)}
+                    </text>
+                  )}
+
+                  {/* Name below */}
+                  <text x={CX} y={CY + CENTER_R + 17}
+                    textAnchor="middle" fontSize="10" fontWeight="600"
+                    fill={isHovCenter ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.68)'}
+                    style={{ userSelect: 'none', transition: 'fill 0.22s ease' }}
                   >
-                    {/* Subtle animated ring — rotating gradient + gentle pulse */}
-                    <g>
-                      <animateTransform attributeName="transform" type="rotate"
-                        from={`0 ${CX} ${CY}`} to={`360 ${CX} ${CY}`}
-                        dur="7s" repeatCount="indefinite" calcMode="linear"/>
-                      <circle cx={CX} cy={CY} r={CENTER_R + 2}
-                        fill="none"
-                        stroke="url(#gp-ring-grad)"
-                        strokeWidth="2.5"
-                        filter="url(#gp-ringblur)"
-                        opacity="0.65"
-                      >
-                        <animate attributeName="r"
-                          values={`${CENTER_R + 2};${CENTER_R + 2.7};${CENTER_R + 2}`}
-                          dur="3.5s" repeatCount="indefinite" calcMode="spline"
-                          keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>
-                      </circle>
-                    </g>
-
-                    {/* Avatar backing */}
-                    <circle cx={CX} cy={CY} r={CENTER_R} fill="#0d0d15"/>
-
-                    {/* Avatar image */}
-                    {!centerImgError ? (
-                      <image
-                        href={`/avatars/${avatarSlug}.png`}
-                        x={CX - CENTER_R + 2} y={CY - CENTER_R + 2}
-                        width={(CENTER_R - 2) * 2} height={(CENTER_R - 2) * 2}
-                        clipPath="url(#gp-centerclip)"
-                        preserveAspectRatio="xMidYMid slice"
-                        onError={() => setCenterImgError(true)}
-                      />
-                    ) : (
-                      <text x={CX} y={CY}
-                        textAnchor="middle" dominantBaseline="central"
-                        fontSize={CENTER_R * 0.48} fontWeight="700"
-                        fill={CENTER_COLOR} style={{ userSelect: 'none' }}
-                      >
-                        {initials(center.name)}
-                      </text>
-                    )}
-
-                    {/* Name */}
-                    <text x={CX} y={CY + CENTER_R + 17}
-                      textAnchor="middle" fontSize="10" fontWeight="600"
-                      fill={isHovCenter ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.68)'}
-                      style={{ userSelect: 'none', transition: 'fill 0.22s ease' }}
+                    {center.name.split(' ')[0]}
+                  </text>
+                  {isHovCenter && (
+                    <text x={CX} y={CY + CENTER_R + 29}
+                      textAnchor="middle" fontSize="7.5"
+                      fill="rgba(255,255,255,0.35)"
+                      style={{ userSelect: 'none' }}
                     >
-                      {center.name.split(' ')[0]}
+                      tap to explore
                     </text>
-                    {isHovCenter && (
-                      <text x={CX} y={CY + CENTER_R + 29}
-                        textAnchor="middle" fontSize="7.5"
-                        fill="rgba(255,255,255,0.35)"
-                        style={{ userSelect: 'none' }}
-                      >
-                        tap to explore
-                      </text>
-                    )}
-                  </g>
-                )
-              })()}
+                  )}
+                </g>
+              )
+            })()}
 
-              {/* Vignette */}
-              <rect x="0" y="0" width={SVG_W} height={SVG_H}
-                fill="url(#gp-vignette)" style={{ pointerEvents: 'none' }}/>
-            </svg>
-          )}
+            {/* ── Vignette — darkens edges, draws eye inward ── */}
+            <rect
+              x="0" y="0" width={SVG_W} height={SVG_H}
+              fill="url(#gp-vignette)"
+              style={{ pointerEvents: 'none' }}
+            />
+          </svg>
+        )}
 
-          {center && nodes.length > 0 && (
-            <p className="text-center text-[10px] text-white/25 mt-3 tracking-wide select-none">
-              Tap stars to explore connections
-            </p>
-          )}
-        </div>
-      )}
+        {center && nodes.length > 0 && (
+          <p className="text-center text-[10px] text-white/15 mt-3 tracking-wide">
+            Lines represent shared films · click any node to explore
+          </p>
+        )}
+      </div>
 
       {/* Toast */}
       {toast && (

@@ -1,4 +1,4 @@
-import { notFound, redirect } from 'next/navigation'
+import { notFound } from 'next/navigation'
 import Header from '@/components/Header'
 import ActorHero from '@/components/ActorHero'
 import FilmographyPreview from '@/components/FilmographyPreview'
@@ -27,16 +27,8 @@ interface PageProps {
 export default async function ActorPage({ params }: PageProps) {
   const slug = params.slug
 
-  // Redirect legacy numeric IDs → name-based slugs
-  if (/^\d+$/.test(slug)) {
-    const actor = await getActor(slug).catch(() => null)
-    if (!actor) notFound()
-    const nameSlug = actor.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-    redirect(`/actors/${nameSlug}`)
-  }
-
   // Resolve slug → numeric actor ID
-  // Supports name slugs (e.g. "venkatesh", "jr-ntr")
+  // Supports both legacy numeric IDs and name slugs (e.g. "venkatesh", "jr-ntr")
   let id: number | string = slug
   if (!/^\d+$/.test(slug)) {
     const nameFromSlug = slug.replace(/-/g, ' ')

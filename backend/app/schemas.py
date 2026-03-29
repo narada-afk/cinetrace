@@ -13,7 +13,7 @@
 #   Sprint 19  : DirectorStat, ProductionHouseStat (GET /analytics/directors,
 #                GET /analytics/production-houses)
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List, Union
 
 
@@ -105,6 +105,8 @@ class ActorMovieOut(BaseModel):
     backdrop_url: Optional[str] = None
     vote_average: Optional[float] = None
     popularity: Optional[float] = None
+    industry: Optional[str] = None
+    box_office: Optional[float] = None     # worldwide collection in ₹ crore
 
     class Config:
         from_attributes = True
@@ -114,13 +116,27 @@ class ActorMovieOut(BaseModel):
 # Analytics / Collaboration Schemas
 # ===========================================================================
 
+class BlockbusterOut(BaseModel):
+    title: str
+    release_year: int
+    poster_url: Optional[str] = None
+    box_office_crore: float
+    budget_crore: Optional[float] = None
+    box_office_source: str = "TMDB"
+    budget_source: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
 class CollaboratorOut(BaseModel):
     """
     One row in GET /actors/{actor_id}/collaborators.
     Sourced from the actor_collaborations precomputed table.
     """
-    actor: str      # co-star's name
-    films: int      # number of shared films
+    actor: str       # co-star's name
+    films: int       # number of shared films
+    actor_id: int = 0  # co-star's database ID (useful for building shared-films URLs)
 
 
 class DirectorCollabOut(BaseModel):
