@@ -52,28 +52,37 @@ function sr(seed: number): number {
 }
 
 /**
- * Fully random scatter position — no circular pattern.
- * kind nudges the base radius range but jitter dominates.
+ * Elliptical scatter — fills the full SVG canvas (1100×400).
+ * Uses separate horizontal/vertical radii matching the aspect ratio so
+ * nodes spread to the edges in both axes, not just a circle in the middle.
+ * kind nudges the radius band; large jitter ensures no ring pattern.
  */
 function scatterPos(i: number, kind: NetworkNode['kind']): { x: number; y: number } {
-  // Fully random angle — no even division by total nodes
+  // Fully random angle — no even division
   const angle = sr(i * 37 + 11) * 2 * Math.PI
 
-  // Base radius range per kind (leads slightly closer, supporting further out)
-  const [rMin, rMax] = kind === 'lead'
-    ? [58, 140]
+  // Elliptical radii — rx is ~2.5× ry to match SVG aspect ratio (1100:400)
+  // leads slightly closer, supporting further out to edges
+  const [rxMin, rxMax] = kind === 'lead'
+    ? [75,  360]
     : kind === 'director'
-    ? [75, 155]
-    : [90, 180]
+    ? [95,  390]
+    : [110, 420]
+  const [ryMin, ryMax] = kind === 'lead'
+    ? [45,  145]
+    : kind === 'director'
+    ? [55,  158]
+    : [65,  172]
 
-  const r = rMin + sr(i * 23 + 7) * (rMax - rMin)
+  const rx = rxMin + sr(i * 23 + 7)  * (rxMax - rxMin)
+  const ry = ryMin + sr(i * 41 + 13) * (ryMax - ryMin)
 
-  // Additional random jitter so nodes at similar r don't form a faint ring
-  const jx = (sr(i * 53 + 17) - 0.5) * 28
-  const jy = (sr(i * 61 + 19) - 0.5) * 22
+  // Extra jitter breaks up any faint elliptical band
+  const jx = (sr(i * 53 + 17) - 0.5) * 45
+  const jy = (sr(i * 61 + 19) - 0.5) * 28
 
-  const x = Math.max(40, Math.min(SVG_W - 40, CX + r * Math.cos(angle) + jx))
-  const y = Math.max(22, Math.min(SVG_H - 22, CY + r * Math.sin(angle) + jy))
+  const x = Math.max(48, Math.min(SVG_W - 48, CX + rx * Math.cos(angle) + jx))
+  const y = Math.max(24, Math.min(SVG_H - 24, CY + ry * Math.sin(angle) + jy))
   return { x, y }
 }
 
@@ -331,28 +340,37 @@ export default function GraphPreview({
       ])
 
       const leadNames = new Set(leadCollabs.map(l => l.actor.toLowerCase().trim()))
-      const dirNameSet = new Set(directors.slice(0, 7).map(d => d.director.toLowerCase().trim()))
+      const dirNameSet = new Set(directors.slice(0, 8).map(d => d.director.toLowerCase().trim()))
 
       const nodes: NetworkNode[] = []
 
-      // Directors first (up to 7)
-      directors.slice(0, 7).forEach(d => {
+      // Directors first (up to 8)
+      directors.slice(0, 8).forEach(d => {
         nodes.push({ id: null, name: d.director, films: d.films, kind: 'director' })
       })
 
-      // Top collaborators, categorised, skip if already added as director
-      let added = 0
-      for (const c of collaborators) {
-        if (added >= 30) break
+      // Dynamic threshold: find the minimum shared-films count that keeps
+      // the collaborator list between ~28 and ~38 nodes (excluding directors).
+      const eligibleCollabs = collaborators.filter(
+        c => !dirNameSet.has(c.actor.toLowerCase().trim())
+      )
+      const TARGET = 35
+      // Walk down film counts until we'd exceed TARGET; use that as floor
+      let threshold = 1
+      for (let t = 1; t <= (eligibleCollabs[0]?.films ?? 1); t++) {
+        const count = eligibleCollabs.filter(c => c.films >= t).length
+        if (count <= TARGET) { threshold = t; break }
+      }
+
+      for (const c of eligibleCollabs) {
+        if (c.films < threshold) break   // list is sorted desc so we can break early
         const nameLow = c.actor.toLowerCase().trim()
-        if (dirNameSet.has(nameLow)) continue   // already in directors layer
         nodes.push({
           id:    c.actor_id || null,
           name:  c.actor,
           films: c.films,
           kind:  leadNames.has(nameLow) ? 'lead' : 'supporting',
         })
-        added++
       }
 
       const centerActor = { id: actor.id, name: actor.name, gender: actor.gender ?? null }
