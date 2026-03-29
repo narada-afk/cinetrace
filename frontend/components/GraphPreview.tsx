@@ -412,6 +412,23 @@ export default function GraphPreview({
                 <feComposite in="SourceGraphic" in2="b" operator="over"/>
               </filter>
 
+              {/* Plasma corona filter — turbulence displacement */}
+              <filter id="gp-plasma" x="-60%" y="-60%" width="220%" height="220%">
+                <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="3" seed="5" result="noise">
+                  <animate attributeName="seed" values="5;12;5" dur="8s" repeatCount="indefinite"/>
+                </feTurbulence>
+                <feDisplacementMap in="SourceGraphic" in2="noise" scale="7" xChannelSelector="R" yChannelSelector="G" result="displaced"/>
+                <feGaussianBlur in="displaced" stdDeviation="1.5" result="blurred"/>
+                <feComposite in="blurred" in2="blurred" operator="over"/>
+              </filter>
+
+              {/* Chromosphere ring gradient */}
+              <radialGradient id="gp-chromo" cx="50%" cy="50%" r="50%">
+                <stop offset="85%" stopColor="#f59e0b" stopOpacity="0"/>
+                <stop offset="92%" stopColor="#fbbf24" stopOpacity="0.55"/>
+                <stop offset="100%" stopColor="#f59e0b" stopOpacity="0"/>
+              </radialGradient>
+
               {/* Glow filter for surrounding nodes — tight halo, not fog */}
               <filter id="gp-nglow" x="-50%" y="-50%" width="200%" height="200%">
                 <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="b"/>
@@ -646,30 +663,89 @@ export default function GraphPreview({
                   onMouseLeave={() => setHovered(null)}
                   onClick={() => router.push(`/actors/${toSlug(center.name)}`)}
                 >
-                  {/* Outermost pulsing corona — golden */}
-                  <circle cx={CX} cy={CY} r={CENTER_R} fill={CENTER_COLOR} opacity="0">
-                    <animate attributeName="r"
-                      values={`${CENTER_R + 2};${CENTER_R + 44};${CENTER_R + 2}`}
-                      dur="3.6s" repeatCount="indefinite"/>
-                    <animate attributeName="opacity"
-                      values="0.22;0;0.22" dur="3.6s" repeatCount="indefinite"/>
-                  </circle>
-
-                  {/* Second pulse ring — offset */}
-                  <circle cx={CX} cy={CY} r={CENTER_R} fill={CENTER_COLOR} opacity="0">
-                    <animate attributeName="r"
-                      values={`${CENTER_R};${CENTER_R + 26};${CENTER_R}`}
-                      dur="3.6s" begin="0.8s" repeatCount="indefinite"/>
-                    <animate attributeName="opacity"
-                      values="0.28;0;0.28" dur="3.6s" begin="0.8s" repeatCount="indefinite"/>
-                  </circle>
-
-                  {/* Wide golden glow cloud */}
-                  <circle cx={CX} cy={CY} r={CENTER_R + 18}
+                  {/* ── Sun corona: wide plasma glow cloud ── */}
+                  <circle cx={CX} cy={CY} r={CENTER_R + 22}
                     fill={CENTER_COLOR}
-                    opacity={isHovCenter ? 0.38 : 0.24}
+                    opacity={isHovCenter ? 0.42 : 0.28}
                     filter="url(#gp-cglow)"
-                    style={{ transition: 'opacity 0.22s ease' }}
+                    style={{ transition: 'opacity 0.3s ease' }}
+                  />
+
+                  {/* Plasma corona ring — turbulence distortion */}
+                  <circle cx={CX} cy={CY} r={CENTER_R + 4}
+                    fill="none"
+                    stroke={CENTER_COLOR}
+                    strokeWidth="8"
+                    strokeOpacity="0.35"
+                    filter="url(#gp-plasma)"
+                  />
+
+                  {/* Chromosphere — tight bright band right at edge */}
+                  <circle cx={CX} cy={CY} r={CENTER_R + 2}
+                    fill="none"
+                    stroke="#fde68a"
+                    strokeWidth="3"
+                    strokeOpacity="0">
+                    <animate attributeName="stroke-opacity"
+                      values="0.0;0.55;0.3;0.55;0.0"
+                      dur="5s" repeatCount="indefinite"/>
+                    <animate attributeName="stroke-width"
+                      values="3;5;3;5;3" dur="5s" repeatCount="indefinite"/>
+                  </circle>
+
+                  {/* Outermost pulsing corona — golden, slow expand */}
+                  <circle cx={CX} cy={CY} r={CENTER_R} fill={CENTER_COLOR} opacity="0">
+                    <animate attributeName="r"
+                      values={`${CENTER_R + 4};${CENTER_R + 52};${CENTER_R + 4}`}
+                      dur="4.2s" repeatCount="indefinite"/>
+                    <animate attributeName="opacity"
+                      values="0.28;0;0.28" dur="4.2s" repeatCount="indefinite"/>
+                  </circle>
+
+                  {/* Second pulse ring — faster, smaller */}
+                  <circle cx={CX} cy={CY} r={CENTER_R} fill={CENTER_COLOR} opacity="0">
+                    <animate attributeName="r"
+                      values={`${CENTER_R + 2};${CENTER_R + 28};${CENTER_R + 2}`}
+                      dur="2.8s" begin="0.6s" repeatCount="indefinite"/>
+                    <animate attributeName="opacity"
+                      values="0.32;0;0.32" dur="2.8s" begin="0.6s" repeatCount="indefinite"/>
+                  </circle>
+
+                  {/* Third micro-pulse — very close, flicker */}
+                  <circle cx={CX} cy={CY} r={CENTER_R} fill={CENTER_COLOR} opacity="0">
+                    <animate attributeName="r"
+                      values={`${CENTER_R + 1};${CENTER_R + 14};${CENTER_R + 1}`}
+                      dur="1.9s" begin="1.3s" repeatCount="indefinite"/>
+                    <animate attributeName="opacity"
+                      values="0.4;0;0.4" dur="1.9s" begin="1.3s" repeatCount="indefinite"/>
+                  </circle>
+
+                  {/* Solar flare arcs — 6 short arcs at random angles */}
+                  {[0, 60, 120, 180, 240, 300].map((deg, fi) => {
+                    const rad = deg * Math.PI / 180
+                    const r1 = CENTER_R + 2
+                    const r2 = CENTER_R + 16 + (fi % 3) * 7
+                    const x1 = CX + r1 * Math.cos(rad)
+                    const y1 = CY + r1 * Math.sin(rad)
+                    const x2 = CX + r2 * Math.cos(rad)
+                    const y2 = CY + r2 * Math.sin(rad)
+                    const delay = `${fi * 0.55}s`
+                    return (
+                      <line key={fi} x1={x1} y1={y1} x2={x2} y2={y2}
+                        stroke="#fbbf24" strokeWidth="1.2" strokeLinecap="round" opacity="0">
+                        <animate attributeName="opacity"
+                          values="0;0.5;0.8;0.3;0"
+                          dur="3.3s" begin={delay} repeatCount="indefinite"/>
+                        <animate attributeName="stroke-width"
+                          values="0.8;1.4;0.8" dur="3.3s" begin={delay} repeatCount="indefinite"/>
+                      </line>
+                    )
+                  })}
+
+                  {/* Wide golden glow cloud — kept last for legacy compat */}
+                  <circle cx={CX} cy={CY} r={CENTER_R + 14}
+                    fill={CENTER_COLOR}
+                    opacity="0"
                   />
 
                   {/* Golden border ring around avatar */}
