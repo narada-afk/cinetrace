@@ -283,6 +283,15 @@ export default function GraphPreview({
 
   useEffect(() => { setCenterImgError(false) }, [localCenter?.id])
 
+  // Auto-load from server-provided networkData on first mount
+  useEffect(() => {
+    if (networkData?.center && !hasChosen) {
+      const { id, name, gender } = networkData.center
+      handleActorSelect({ id, name, gender: gender ?? null } as Actor)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Background star field — scattered + milky-way band (seeded, stable)
   const bgStars = useMemo(() => {
     const stars: { x: number; y: number; r: number; op: number }[] = []
