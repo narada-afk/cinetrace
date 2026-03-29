@@ -76,14 +76,18 @@ async function fetchPageData(industry: string) {
     const insightCards: InsightCardData[] = insights.slice(0, 3).map((insight, i) => {
       const meta = INSIGHT_META[insight.type] ?? { emoji: '🎭', label: 'Cinema Fact' }
 
+      function toSlug(name: string) {
+        return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+      }
+
       let href = '#'
       if (
         (insight.type === 'collaboration' || insight.type === 'collab_shock') &&
-        insight.actor_ids.length === 2
+        insight.actors.length === 2
       ) {
-        href = `/compare/${insight.actor_ids[0]}-vs-${insight.actor_ids[1]}`
-      } else if (insight.actor_ids.length > 0) {
-        href = `/actors/${insight.actor_ids[0]}`
+        href = `/compare/${toSlug(insight.actors[0])}-vs-${toSlug(insight.actors[1])}`
+      } else if (insight.actors.length > 0) {
+        href = `/actors/${toSlug(insight.actors[0])}`
       }
 
       // WOW subtext takes priority; fall back to legacy director label
@@ -119,36 +123,17 @@ async function fetchPageData(industry: string) {
   }
 }
 
-// ── Trending chips — one actor per industry for natural variety ───────────────
+// ── Trending chips — top hero of each of the 4 industries ────────────────────
 
-async function fetchTrendingChips(): Promise<TrendingChip[]> {
-  try {
-    const actors = await getActors(true)
-    console.log('[homepage] API response actors:', actors.length, 'primary actors')
+const INDUSTRY_HEROES: TrendingChip[] = [
+  { id: 11,   name: 'Rajinikanth'   },   // Tamil
+  { id: 206,  name: 'Chiranjeevi'   },   // Telugu
+  { id: 381,  name: 'Mohanlal'      },   // Malayalam
+  { id: 1939, name: 'Puneet Rajkumar' }, // Kannada
+]
 
-    // Pick first actor per industry so chips span Telugu / Tamil / Malayalam / Kannada
-    const seen = new Set<string>()
-    const chips: TrendingChip[] = []
-    for (const a of actors) {
-      const ind = (a.industry ?? 'other').toLowerCase()
-      if (!seen.has(ind)) {
-        seen.add(ind)
-        chips.push({ id: a.id, name: a.name })
-      }
-      if (chips.length >= 6) break
-    }
-    // If deduplication left fewer than 4, fill straight from the top of the list
-    if (chips.length < 4) {
-      for (const a of actors) {
-        if (!chips.some((c) => c.id === a.id)) chips.push({ id: a.id, name: a.name })
-        if (chips.length >= 6) break
-      }
-    }
-    return chips
-  } catch (err) {
-    console.error('[homepage] actors fetch failed:', err)
-    return []
-  }
+function fetchTrendingChips(): TrendingChip[] {
+  return INDUSTRY_HEROES
 }
 
 // ── Network graph data — top collaborators for the graph center actor ─────────
@@ -210,9 +195,9 @@ export default async function HomePage({
 
   // Fetch insights + trending chips + optional actor-override — all in parallel
   // This eliminates the sequential waterfall that existed for the ?actor= case
-  const [{ insightCards }, trendingChips, actorOverride] = await Promise.all([
+  const trendingChips = fetchTrendingChips()
+  const [{ insightCards }, actorOverride] = await Promise.all([
     fetchPageData('all'),
-    fetchTrendingChips(),
     !Number.isNaN(actorIdOverride)
       ? getActor(actorIdOverride).catch(() => null)
       : Promise.resolve(null),
@@ -227,7 +212,7 @@ export default async function HomePage({
   const networkData = await fetchNetworkData(networkCenter)
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f]">
+    <>
       <Header />
 
       <main className="max-w-[1200px] mx-auto px-6 pb-24">
@@ -245,7 +230,7 @@ export default async function HomePage({
 
         {/* ── 3. Graph Preview ─────────────────────────────────────────────── */}
         <section className="mt-16">
-          <GraphPreview networkData={networkData} />
+          <GraphPreview networkData={networkData} suggestions={trendingChips} />
         </section>
 
         {/* ── 4. Insights (auto-scroll carousel) ───────────────────────────── */}
@@ -257,6 +242,6 @@ export default async function HomePage({
         </section>
 
       </main>
-    </div>
+    </>
   )
 }

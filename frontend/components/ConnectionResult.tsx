@@ -37,27 +37,30 @@ import type { ConnectionPath } from '@/lib/api'
 
 // ── Sizing ─────────────────────────────────────────────────────────────────────
 
-const ACTOR_W      = 80
-const MOVIE_W      = 120
-const CONN_W       = 44
-const ACTOR_STEP_MS = 500   // Part 4: actor reveal feels more significant
-const MOVIE_STEP_MS = 350   // Part 4: movie label is a quick connector
+const ACTOR_W       = 80
+const MOVIE_W       = 72    // poster card width
+const CONN_W        = 36
+const ACTOR_STEP_MS = 500
+const MOVIE_STEP_MS = 350
 
-// ── Item model (unchanged) ─────────────────────────────────────────────────────
+// ── Item model ─────────────────────────────────────────────────────────────────
 
 type Item =
   | { kind: 'actor'; id: number; name: string }
-  | { kind: 'movie'; id: number; title: string }
+  | { kind: 'movie'; id: number; title: string; posterUrl: string | null; tmdbId: number | null }
 
 function buildItems(result: ConnectionPath): Item[] {
   const out: Item[] = []
   result.path.forEach((actor, i) => {
     out.push({ kind: 'actor', id: actor.id, name: actor.name })
     if (i < result.connections.length) {
+      const c = result.connections[i]
       out.push({
-        kind:  'movie',
-        id:    result.connections[i].movie_id,
-        title: result.connections[i].movie_title,
+        kind:      'movie',
+        id:        c.movie_id,
+        title:     c.movie_title,
+        posterUrl: c.poster_url,
+        tmdbId:    c.tmdb_id,
       })
     }
   })
@@ -149,7 +152,7 @@ function ActorNode({
   )
 }
 
-// ── Movie node (unchanged) ─────────────────────────────────────────────────────
+// ── Movie node — poster card, clicks to TMDB ──────────────────────────────────
 
 function MovieNode({
   item, active, past,
@@ -158,37 +161,95 @@ function MovieNode({
   active: boolean
   past:   boolean
 }) {
+  const POSTER_W = MOVIE_W        // 72
+  const POSTER_H = Math.round(MOVIE_W * 1.5)  // 108 — 2:3 aspect
+
+  function openTmdb() {
+    if (item.tmdbId) {
+      window.open(`https://www.themoviedb.org/movie/${item.tmdbId}`, '_blank', 'noopener')
+    }
+  }
+
+  const clickable = (active || past) && !!item.tmdbId
+
   return (
-    <div style={{
-      width:          MOVIE_W,
-      flexShrink:     0,
-      display:        'flex',
-      alignItems:     'center',
-      justifyContent: 'center',
-      opacity:        active ? 1 : past ? 0.38 : 0,
-      transform:      active ? 'scale(1.05)' : 'scale(1)',
-      transition:     'opacity 0.38s ease, transform 0.38s ease',
-      pointerEvents:  'none',
-    }}>
+    <div
+      onClick={clickable ? openTmdb : undefined}
+      title={clickable ? `Open "${item.title}" on TMDB` : item.title}
+      style={{
+        width:          POSTER_W,
+        flexShrink:     0,
+        display:        'flex',
+        flexDirection:  'column',
+        alignItems:     'center',
+        gap:            6,
+        opacity:        active ? 1 : past ? 0.45 : 0,
+        transform:      active ? 'scale(1.06)' : 'scale(1)',
+        transition:     'opacity 0.38s ease, transform 0.38s ease',
+        cursor:         clickable ? 'pointer' : 'default',
+        pointerEvents:  (active || past) ? 'auto' : 'none',
+      }}
+    >
+      {/* Poster */}
       <div style={{
-        borderRadius: 12,
-        padding:      '8px 12px',
-        background:   active ? 'rgba(255,255,255,0.09)' : 'rgba(255,255,255,0.04)',
-        border:       `1px solid ${active ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.07)'}`,
-        transition:   'background 0.38s ease, border-color 0.38s ease',
-        maxWidth:     MOVIE_W - 8,
-        textAlign:    'center',
+        width:        POSTER_W,
+        height:       POSTER_H,
+        borderRadius: 8,
+        overflow:     'hidden',
+        background:   'rgba(255,255,255,0.06)',
+        border:       `1px solid ${active ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.08)'}`,
+        flexShrink:   0,
+        position:     'relative',
+        transition:   'border-color 0.38s ease, box-shadow 0.2s ease',
+        boxShadow:    active ? '0 4px 18px rgba(0,0,0,0.55)' : 'none',
       }}>
-        <p style={{
-          color:      'rgba(255,255,255,0.75)',
-          fontSize:   10,
-          fontWeight: 500,
-          lineHeight: 1.45,
-          margin:     0,
-        }}>
-          {item.title}
-        </p>
+        {item.posterUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={item.posterUrl}
+            alt={item.title}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+          />
+        ) : (
+          <div style={{
+            width: '100%', height: '100%',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', textAlign: 'center', padding: '0 4px', lineHeight: 1.4 }}>
+              {item.title}
+            </span>
+          </div>
+        )}
+        {/* TMDB hover overlay */}
+        {clickable && (
+          <div style={{
+            position:       'absolute', inset: 0,
+            background:     'rgba(0,0,0,0)',
+            display:        'flex', alignItems: 'center', justifyContent: 'center',
+            transition:     'background 0.2s ease',
+          }}
+          className="movie-node-overlay"
+          />
+        )}
       </div>
+
+      {/* Title label */}
+      <p style={{
+        fontSize:   9,
+        fontWeight: 500,
+        color:      active ? 'rgba(255,255,255,0.70)' : 'rgba(255,255,255,0.35)',
+        textAlign:  'center',
+        lineHeight: 1.35,
+        margin:     0,
+        maxWidth:   POSTER_W,
+        overflow:   'hidden',
+        display:    '-webkit-box',
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: 'vertical',
+        transition: 'color 0.38s ease',
+      }}>
+        {item.title}
+      </p>
     </div>
   )
 }
@@ -286,13 +347,20 @@ export default function ConnectionResult({ result }: { result: ConnectionPath })
     }, 1800)
   }
 
-  // ── translateX — active item always centred in container ─────────────────
+  // ── translateX — active item centred while animating; full chain centred when done ──
   function calcTranslate(atStep: number): number {
+    // When all steps revealed, center the whole chain
+    if (atStep >= maxStep) {
+      const totalW = items.reduce((sum, item, i) =>
+        sum + itemWidth(item) + (i < items.length - 1 ? CONN_W : 0), 0)
+      return Math.max(0, (containerW - totalW) / 2)
+    }
+    // Otherwise track the active node
     let leftEdge = 0
     for (let i = 0; i < atStep; i++) {
       leftEdge += itemWidth(items[i]) + CONN_W
     }
-    const curW = atStep < items.length ? itemWidth(items[atStep]) : ACTOR_W
+    const curW = itemWidth(items[atStep])
     return containerW / 2 - leftEdge - curW / 2
   }
 
@@ -392,7 +460,7 @@ export default function ConnectionResult({ result }: { result: ConnectionPath })
           <div
             ref={containerRef}
             className="relative overflow-hidden"
-            style={{ height: 116 }}
+            style={{ height: 148 }}
           >
             <div
               className="absolute inset-y-0 flex items-center"
@@ -414,7 +482,7 @@ export default function ConnectionResult({ result }: { result: ConnectionPath })
                       // Part 3: payoff only on the very last actor, after done
                       payoff={showPayoff && i === maxStep}
                       done={done}
-                      onClick={() => router.push(`/actors/${item.id}`)}
+                      onClick={() => router.push(`/actors/${item.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`)}
                     />
                   ) : (
                     <MovieNode
@@ -533,6 +601,8 @@ export default function ConnectionResult({ result }: { result: ConnectionPath })
 
       {/* ── CSS keyframes (cr- prefix avoids collisions with other components) ── */}
       <style>{`
+        /* Movie poster hover — reveal a subtle overlay */
+        .movie-node-overlay:hover { background: rgba(0,0,0,0.28) !important; }
         /* Part 3: last actor scale bump — 1.08 → 1.12 → 1.0 */
         @keyframes crPayoffScale {
           0%   { transform: scale(1.08); }

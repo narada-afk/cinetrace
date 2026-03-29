@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import React, { useState } from 'react'
 import Image from 'next/image'
 import type { ActorMovie } from '@/lib/api'
 import MissingData from './MissingData'
@@ -45,13 +45,26 @@ export default function FullFilmography({ movies }: { movies: ActorMovie[] }) {
 }
 
 function MovieCard({ movie }: { movie: ActorMovie }) {
-  const hasRating = movie.vote_average != null && movie.vote_average > 0
-  const rating    = hasRating ? movie.vote_average!.toFixed(1) : null
-  const isVintage = movie.release_year > 0 && movie.release_year < 1980
-  const yearLabel = movie.release_year > 0 ? movie.release_year : null
+  const hasRating  = movie.vote_average != null && movie.vote_average > 0
+  const rating     = hasRating ? movie.vote_average!.toFixed(1) : null
+  const isVintage  = movie.release_year > 0 && movie.release_year < 1980
+  const yearLabel  = movie.release_year > 0 ? movie.release_year : null
+  const tmdbHref   = movie.tmdb_id ? `https://www.themoviedb.org/movie/${movie.tmdb_id}` : null
+
+  const Wrapper = tmdbHref
+    ? ({ children }: { children: React.ReactNode }) => (
+        <a href={tmdbHref} target="_blank" rel="noopener noreferrer" className="group flex flex-col gap-2 hover:scale-[1.03] transition-transform duration-200 cursor-pointer">
+          {children}
+        </a>
+      )
+    : ({ children }: { children: React.ReactNode }) => (
+        <div className="group flex flex-col gap-2 cursor-default">
+          {children}
+        </div>
+      )
 
   return (
-    <div className="group flex flex-col gap-2 hover:scale-[1.03] transition-transform duration-200 cursor-default">
+    <Wrapper>
       {/* Poster */}
       <div className="relative aspect-[2/3] rounded-xl overflow-hidden bg-[#1a1a24]">
         {movie.poster_url ? (
@@ -77,7 +90,7 @@ function MovieCard({ movie }: { movie: ActorMovie }) {
 
       {/* Title + year */}
       <div className="flex flex-col gap-0.5 px-0.5">
-        <span className="text-sm font-medium text-white/90 leading-snug line-clamp-2">
+        <span className="text-sm font-medium text-white/90 leading-snug line-clamp-2 group-hover:text-white transition-colors duration-200">
           {movie.title}
         </span>
         {yearLabel ? (
@@ -86,6 +99,6 @@ function MovieCard({ movie }: { movie: ActorMovie }) {
           <span className="text-xs text-white/30 italic">Coming soon</span>
         )}
       </div>
-    </div>
+    </Wrapper>
   )
 }

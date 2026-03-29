@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import ActorAvatar from './ActorAvatar'
+import { toActorSlug } from '@/lib/api'
 
 export interface TrendingActor {
   id: number
@@ -29,7 +30,7 @@ export default function TrendingActors({ actors, title = 'Trending Actors' }: Tr
         {valid.map((actor) => (
           <Link
             key={actor.id}
-            href={`/actors/${actor.id}`}
+            href={`/actors/${toActorSlug(actor.name)}`}
             className="flex flex-col items-center gap-2 flex-shrink-0 group"
           >
             <div className="ring-2 ring-white/10 group-hover:ring-white/30 rounded-full transition-all duration-200">

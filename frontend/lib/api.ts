@@ -15,6 +15,13 @@ async function apiFetch<T>(path: string): Promise<T> {
   return res.json() as Promise<T>
 }
 
+// ── URL helpers ──────────────────────────────────────────────────────────────
+
+/** Convert an actor name to a URL-safe slug, e.g. "Jr. NTR" → "jr-ntr" */
+export function toActorSlug(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+}
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export interface Actor {
@@ -47,11 +54,13 @@ export interface ActorMovie {
   backdrop_url: string | null
   vote_average: number | null
   popularity: number | null
+  box_office: number | null
 }
 
 export interface Collaborator {
-  actor: string   // co-star name
+  actor: string    // co-star name
   films: number
+  actor_id: number // co-star's database ID (0 when unavailable)
 }
 
 export interface DirectorCollab {
@@ -155,6 +164,24 @@ export async function getActorCollaborators(id: number | string): Promise<Collab
   return apiFetch<Collaborator[]>(`/actors/${id}/collaborators`)
 }
 
+export async function getActorLeadCollaborators(id: number | string): Promise<Collaborator[]> {
+  return apiFetch<Collaborator[]>(`/actors/${id}/lead-collaborators`)
+}
+
+export interface Blockbuster {
+  title: string
+  release_year: number
+  poster_url: string | null
+  box_office_crore: number
+  budget_crore: number | null
+  box_office_source: string
+  budget_source: string | null
+}
+
+export async function getActorBlockbusters(id: number | string): Promise<Blockbuster[]> {
+  return apiFetch<Blockbuster[]>(`/actors/${id}/blockbusters`)
+}
+
 export async function getActorDirectors(id: number | string): Promise<DirectorCollab[]> {
   return apiFetch<DirectorCollab[]>(`/actors/${id}/directors`)
 }
@@ -239,7 +266,7 @@ export interface ConnectionPath {
   found:       boolean
   depth:       number
   path:        { id: number; name: string }[]
-  connections: { movie_id: number; movie_title: string }[]
+  connections: { movie_id: number; movie_title: string; poster_url: string | null; tmdb_id: number | null }[]
 }
 
 export async function getStatsOverview(): Promise<StatsOverview> {

@@ -1,5 +1,4 @@
 import Link from 'next/link'
-import Image from 'next/image'
 import { notFound } from 'next/navigation'
 
 import Header from '@/components/Header'
@@ -8,8 +7,9 @@ import MissingData from '@/components/MissingData'
 import ShareButton from '@/components/ShareButton'
 import ShareSheet from '@/components/ShareSheet'
 import VerdictCard from '@/components/VerdictCard'
-import CareerTimeline from '@/components/CareerTimeline'
 import FilmGrid from '@/components/FilmGrid'
+import CompareChartBuilder from '@/components/CompareChartBuilder'
+import CompareCollaboratorList from '@/components/CompareCollaboratorList'
 import { calcYearsActive, calcAvgRating } from '@/lib/metrics'
 import {
   searchActors,
@@ -49,16 +49,6 @@ function parseSlug(slug: string): [string, string] | null {
 
 function toTitleCase(s: string): string {
   return s.replace(/\b\w/g, (c) => c.toUpperCase())
-}
-
-/** Pick the backdrop from the most popular film that has one. */
-function getBestBackdrop(movies: ActorMovie[]): string | null {
-  return (
-    [...movies]
-      .filter((m) => m.backdrop_url)
-      .sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0))[0]
-      ?.backdrop_url ?? null
-  )
 }
 
 /** Sort by popularity descending, take top N. */
@@ -245,83 +235,66 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 function HeroBanner({ data1, data2 }: { data1: ActorData; data2: ActorData }) {
   const { profile: p1 } = data1
   const { profile: p2 } = data2
-  const backdrop1 = getBestBackdrop(data1.movies)
-  const backdrop2 = getBestBackdrop(data2.movies)
 
   return (
-    <div className="relative w-full rounded-3xl overflow-hidden" style={{ minHeight: '260px' }}>
-      {/* Two half-panels side by side */}
-      <div className="flex h-full" style={{ minHeight: '260px' }}>
+    <div className="relative w-full rounded-3xl overflow-hidden" style={{ minHeight: '300px' }}>
+      <div className="flex h-full" style={{ minHeight: '300px' }}>
 
         {/* ── Left: Actor 1 ── */}
-        <div className="relative flex-1 overflow-hidden">
-          {backdrop1 ? (
-            <Image
-              src={backdrop1}
-              alt={p1.name}
-              fill
-              sizes="50vw"
-              className="object-cover object-center"
-              priority
-            />
-          ) : (
-            <div className="absolute inset-0 bg-gradient-to-br from-amber-950/60 via-amber-900/20 to-transparent" />
-          )}
-          {/* Dark overlay — stronger on left edge, fades toward centre */}
-          <div className="absolute inset-0 bg-gradient-to-r from-[#0a0a0f] via-[#0a0a0f]/75 to-[#0a0a0f]/40" />
-
-          {/* Actor info */}
-          <div className="relative z-10 flex flex-col gap-2 p-6 pb-8 h-full justify-end">
-            <span
-              className="self-start text-[11px] font-bold uppercase tracking-widest px-2.5 py-0.5 rounded-full"
-              style={{ background: 'rgba(245,158,11,0.15)', color: '#f59e0b' }}
-            >
-              {p1.industry}
-            </span>
-            <h2 className="text-2xl sm:text-3xl font-bold text-white leading-tight drop-shadow-lg">
-              {p1.name}
-            </h2>
-            {(p1.first_film_year || p1.last_film_year) && (
-              <p className="text-sm text-white/45">
-                {p1.first_film_year ?? '?'} – {p1.last_film_year ?? 'Present'}
-              </p>
-            )}
+        <div className="relative flex-1 overflow-hidden"
+          style={{ background: 'linear-gradient(135deg, rgba(245,158,11,0.10) 0%, rgba(10,10,15,1) 65%)' }}
+        >
+          <div className="absolute inset-0 bg-gradient-to-r from-[#0a0a0f]/0 via-[#0a0a0f]/0 to-[#0a0a0f]/80" />
+          <div className="relative z-10 flex flex-col items-center justify-center gap-4 p-6 h-full">
+            <div className="ring-2 ring-amber-400/25 rounded-full shadow-xl shadow-amber-900/30"
+              style={{ filter: 'drop-shadow(0 0 24px rgba(245,158,11,0.15))' }}>
+              <ActorAvatar name={p1.name} size={144} />
+            </div>
+            <div className="flex flex-col items-center gap-1.5 text-center">
+              <span
+                className="text-[11px] font-bold uppercase tracking-widest px-2.5 py-0.5 rounded-full"
+                style={{ background: 'rgba(245,158,11,0.15)', color: '#f59e0b' }}
+              >
+                {p1.industry}
+              </span>
+              <h2 className="text-xl sm:text-2xl font-bold text-white leading-tight">
+                {p1.name}
+              </h2>
+              {(p1.first_film_year || p1.last_film_year) && (
+                <p className="text-sm text-white/40">
+                  {p1.first_film_year ?? '?'} – {p1.last_film_year ?? 'Present'}
+                </p>
+              )}
+            </div>
           </div>
         </div>
 
         {/* ── Right: Actor 2 ── */}
-        <div className="relative flex-1 overflow-hidden">
-          {backdrop2 ? (
-            <Image
-              src={backdrop2}
-              alt={p2.name}
-              fill
-              sizes="50vw"
-              className="object-cover object-center"
-              priority
-            />
-          ) : (
-            <div className="absolute inset-0 bg-gradient-to-bl from-cyan-950/60 via-cyan-900/20 to-transparent" />
-          )}
-          {/* Dark overlay — stronger on right edge, fades toward centre */}
-          <div className="absolute inset-0 bg-gradient-to-l from-[#0a0a0f] via-[#0a0a0f]/75 to-[#0a0a0f]/40" />
-
-          {/* Actor info */}
-          <div className="relative z-10 flex flex-col items-end gap-2 p-6 pb-8 h-full justify-end">
-            <span
-              className="self-end text-[11px] font-bold uppercase tracking-widest px-2.5 py-0.5 rounded-full"
-              style={{ background: 'rgba(6,182,212,0.15)', color: '#06b6d4' }}
-            >
-              {p2.industry}
-            </span>
-            <h2 className="text-2xl sm:text-3xl font-bold text-white leading-tight text-right drop-shadow-lg">
-              {p2.name}
-            </h2>
-            {(p2.first_film_year || p2.last_film_year) && (
-              <p className="text-sm text-white/45">
-                {p2.first_film_year ?? '?'} – {p2.last_film_year ?? 'Present'}
-              </p>
-            )}
+        <div className="relative flex-1 overflow-hidden"
+          style={{ background: 'linear-gradient(225deg, rgba(6,182,212,0.10) 0%, rgba(10,10,15,1) 65%)' }}
+        >
+          <div className="absolute inset-0 bg-gradient-to-l from-[#0a0a0f]/0 via-[#0a0a0f]/0 to-[#0a0a0f]/80" />
+          <div className="relative z-10 flex flex-col items-center justify-center gap-4 p-6 h-full">
+            <div className="ring-2 ring-cyan-400/25 rounded-full shadow-xl shadow-cyan-900/30"
+              style={{ filter: 'drop-shadow(0 0 24px rgba(6,182,212,0.15))' }}>
+              <ActorAvatar name={p2.name} size={144} />
+            </div>
+            <div className="flex flex-col items-center gap-1.5 text-center">
+              <span
+                className="text-[11px] font-bold uppercase tracking-widest px-2.5 py-0.5 rounded-full"
+                style={{ background: 'rgba(6,182,212,0.15)', color: '#06b6d4' }}
+              >
+                {p2.industry}
+              </span>
+              <h2 className="text-xl sm:text-2xl font-bold text-white leading-tight">
+                {p2.name}
+              </h2>
+              {(p2.first_film_year || p2.last_film_year) && (
+                <p className="text-sm text-white/40">
+                  {p2.first_film_year ?? '?'} – {p2.last_film_year ?? 'Present'}
+                </p>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -329,7 +302,7 @@ function HeroBanner({ data1, data2 }: { data1: ActorData; data2: ActorData }) {
       {/* ── VS badge — absolute centre ── */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20">
         <div
-          className="w-14 h-14 rounded-full flex items-center justify-center border border-white/10 backdrop-blur-sm shadow-2xl"
+          className="w-14 h-14 rounded-full flex items-center justify-center border border-white/10 shadow-2xl"
           style={{ background: '#0a0a0f' }}
         >
           <span className="text-white/50 font-black text-sm tracking-wide">VS</span>
@@ -658,8 +631,6 @@ export default async function ComparePage({ params }: PageProps) {
   )
 
   const insights = generateInsights(data1, data2)
-  const rivalryStory = generateRivalryStory(data1, data2)
-
   const p1 = data1.profile
   const p2 = data2.profile
 
@@ -709,8 +680,8 @@ export default async function ComparePage({ params }: PageProps) {
 
         {/* Back link */}
         <div className="pt-3">
-          <Link href="/compare" className="text-sm text-white/30 hover:text-white/60 transition-colors">
-            ← Back to Compare
+          <Link href={`/actors/${data1.profile.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`} className="text-sm text-white/30 hover:text-white/60 transition-colors">
+            ← Back to {data1.profile.name}
           </Link>
         </div>
 
@@ -735,20 +706,6 @@ export default async function ComparePage({ params }: PageProps) {
           </section>
         )}
 
-        {/* ── TASK 8: Rivalry Story ─────────────────────────────── */}
-        <RivalryStory story={rivalryStory} />
-
-        {/* ── TASK 5: Career Timeline ──────────────────────────── */}
-        <section>
-          <SectionLabel>📈 Films Per Year</SectionLabel>
-          <CareerTimeline
-            movies1={data1.movies}
-            movies2={data2.movies}
-            name1={p1.name}
-            name2={p2.name}
-          />
-        </section>
-
         {/* ── Films Together ───────────────────────────────────── */}
         <section>
           <div className="flex items-baseline gap-3 mb-4">
@@ -760,26 +717,28 @@ export default async function ComparePage({ params }: PageProps) {
           <FilmsTogether films={sharedFilms} name1={p1.name} name2={p2.name} />
         </section>
 
-        {/* ── TASK 3: Shared Collaborators ─────────────────────── */}
+        {/* ── Custom Chart ──────────────────────────────────────── */}
         <section>
-          <SectionLabel>🤝 Shared Collaborators</SectionLabel>
-          <p className="text-xs text-white/30 mb-4">
-            Actors who have worked with both {p1.name.split(' ')[0]} and {p2.name.split(' ')[0]}
-          </p>
-          <SharedCollaboratorsSection shared={sharedCollabs} name1={p1.name} name2={p2.name} />
+          <SectionLabel>🔥 Career Showdown</SectionLabel>
+          <CompareChartBuilder
+            actor1={{ id: data1.profile.id, name: p1.name, industry: p1.industry }}
+            actor2={{ id: data2.profile.id, name: p2.name, industry: p2.industry }}
+          />
         </section>
 
         {/* ── TASK 6: Top Collaborators ────────────────────────── */}
         <section>
           <SectionLabel>🔥 Top Collaborators</SectionLabel>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <CollaboratorList
+            <CompareCollaboratorList
               actorName={p1.name}
+              mainActorId={data1.profile.id}
               collaborators={data1.collaborators.slice(0, 8)}
               accentColor="#f59e0b"
             />
-            <CollaboratorList
+            <CompareCollaboratorList
               actorName={p2.name}
+              mainActorId={data2.profile.id}
               collaborators={data2.collaborators.slice(0, 8)}
               accentColor="#06b6d4"
             />
@@ -818,102 +777,6 @@ export default async function ComparePage({ params }: PageProps) {
           </div>
         </section>
 
-        {/* ── TASK 9: Share Card Generator ─────────────────────── */}
-        <section>
-          <SectionLabel>📸 Share</SectionLabel>
-          {/* Visual share card — designed for screenshots */}
-          <div
-            id="share-card"
-            className="rounded-3xl p-8 mb-6 relative overflow-hidden"
-            style={{
-              background: 'linear-gradient(135deg, #0a0a0f 0%, #13131a 100%)',
-              border: '1px solid rgba(255,255,255,0.06)',
-            }}
-          >
-            {/* Accent lines */}
-            <div
-              className="absolute top-0 left-0 h-0.5 w-1/2"
-              style={{ background: 'linear-gradient(to right, #f59e0b, transparent)' }}
-            />
-            <div
-              className="absolute top-0 right-0 h-0.5 w-1/2"
-              style={{ background: 'linear-gradient(to left, #06b6d4, transparent)' }}
-            />
-
-            {/* Names */}
-            <div className="flex items-center justify-center gap-4 mb-8">
-              <h2 className="text-xl sm:text-2xl font-bold text-white text-right flex-1 truncate">
-                {p1.name}
-              </h2>
-              <span className="text-white/20 font-black text-sm px-3 py-1.5 rounded-full glass flex-shrink-0">
-                VS
-              </span>
-              <h2 className="text-xl sm:text-2xl font-bold text-white text-left flex-1 truncate">
-                {p2.name}
-              </h2>
-            </div>
-
-            {/* Stats grid */}
-            <div className="grid grid-cols-5 gap-2 mb-6">
-              {[
-                { label: 'Films',            v1: p1.film_count,              v2: p2.film_count,              d1: String(p1.film_count),         d2: String(p2.film_count) },
-                { label: 'Years Active',     v1: shareYrs1,                  v2: shareYrs2,                  d1: String(shareYrs1),             d2: String(shareYrs2) },
-                { label: 'Avg Rating',       v1: shareRat1,                  v2: shareRat2,                  d1: shareRat1.toFixed(1),          d2: shareRat2.toFixed(1) },
-                { label: 'Unique Directors', v1: data1.directors.length,     v2: data2.directors.length,     d1: String(data1.directors.length), d2: String(data2.directors.length) },
-                { label: 'Co-Stars',         v1: data1.collaborators.length, v2: data2.collaborators.length, d1: String(data1.collaborators.length), d2: String(data2.collaborators.length) },
-              ].map(({ label, v1, v2, d1, d2 }) => {
-                const lead = v1 > v2 ? 1 : v2 > v1 ? 2 : 0
-                return (
-                  <div key={label} className="glass rounded-2xl p-3 text-center">
-                    <p className="text-[8px] text-white/30 uppercase tracking-widest mb-2 leading-tight">{label}</p>
-                    <div className="flex items-center justify-center gap-1">
-                      <span
-                        className="text-base font-bold tabular-nums"
-                        style={{ color: lead === 1 ? '#f59e0b' : 'rgba(255,255,255,0.5)' }}
-                      >
-                        {d1}
-                      </span>
-                      <span className="text-white/15 text-[10px]">—</span>
-                      <span
-                        className="text-base font-bold tabular-nums"
-                        style={{ color: lead === 2 ? '#06b6d4' : 'rgba(255,255,255,0.5)' }}
-                      >
-                        {d2}
-                      </span>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-
-            {/* Verdict line */}
-            {winner ? (
-              <p className="text-center text-sm font-semibold"
-                style={{ color: winner === p1.name ? '#f59e0b' : '#06b6d4' }}>
-                🏆 {winner} leads in {winnerLeads} of 5 metrics
-              </p>
-            ) : (
-              <p className="text-center text-sm text-white/40">All square — perfectly matched</p>
-            )}
-
-            {/* Branding */}
-            <p className="text-center text-[11px] text-white/20 mt-4">southcinemaanalytics.com</p>
-          </div>
-
-          {/* Share actions */}
-          <div className="flex flex-col items-center gap-4">
-            <ShareSheet {...shareProps} />
-            <div className="flex items-center gap-3 w-full max-w-xs">
-              <div className="flex-1 h-px bg-white/8" />
-              <span className="text-[11px] text-white/20">or</span>
-              <div className="flex-1 h-px bg-white/8" />
-            </div>
-            <ShareButton {...shareProps} />
-            <p className="text-xs text-white/20">
-              Downloads a 1200×630 PNG — ready for social media
-            </p>
-          </div>
-        </section>
 
         {/* ── Data attribution note ─────────────────────────────── */}
         <p className="text-center text-[11px] text-white/20 pb-2">

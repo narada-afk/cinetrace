@@ -43,7 +43,7 @@ export default function ActorAvatar({
   size = 40,
 }: ActorAvatarProps) {
   if (!name) return null
-  const slug = avatarSlug ?? name.toLowerCase().replace(/\s+/g, '')
+  const slug = avatarSlug ?? name.toLowerCase().replace(/[^a-z0-9]/g, '')
   const src = `/avatars/${slug}.png`
 
   return (
@@ -55,6 +55,7 @@ export default function ActorAvatar({
         src={src}
         alt={name}
         fill
+        unoptimized
         className="object-cover scale-110"
         onError={(e) => {
           const el = e.currentTarget as HTMLImageElement

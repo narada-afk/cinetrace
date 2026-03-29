@@ -4,10 +4,10 @@
     {
       "name": "south-cinema-frontend",
       "runtimeExecutable": "/bin/sh",
-      "runtimeArgs": ["-c", "PATH=/usr/local/opt/node@20/bin:$PATH npm run dev"],
-      "port": 3000,
+      "runtimeArgs": ["-c", "PATH=/usr/local/opt/node@20/bin:$PATH API_URL=http://localhost:8000 npm run dev -- --port 3001"],
+      "port": 3001,
       "autoPort": false,
-      "cwd": "/Users/macmini/south-cinema-analytics/.claude/worktrees/gifted-cerf/frontend"
+      "cwd": "frontend"
     }
   ]
 }

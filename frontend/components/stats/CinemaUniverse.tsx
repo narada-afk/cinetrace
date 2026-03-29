@@ -159,7 +159,7 @@ function drawGraph(
 
   const maxCS = Math.max(...nodes.map(n => n.costar_count), 1)
   const maxWt = Math.max(...edges.map(e => e.weight), 1)
-  const nodeR = (n: SimNode) => 3 + Math.sqrt(n.costar_count / maxCS) * 13
+  const nodeR = (n: SimNode) => 1.1 + Math.sqrt(n.costar_count / maxCS) * 1.4
 
   const focusId = zoomed?.actorId ?? hovered
   const visIds  = zoomed?.nodeIds ?? null
@@ -213,30 +213,35 @@ function drawGraph(
 
     ctx.globalAlpha = dimmed ? 0.10 : 1
 
-    if (isFocus) { ctx.shadowColor = color; ctx.shadowBlur = 22 }
+    if (isFocus) {
+      ctx.shadowColor = color
+      ctx.shadowBlur  = 18
+    } else if (isNbr && focusId != null) {
+      ctx.shadowColor = color
+      ctx.shadowBlur  = 6
+    }
 
     ctx.beginPath()
-    ctx.arc(n.x, n.y, r, 0, Math.PI * 2)
+    ctx.arc(n.x, n.y, isFocus ? r * 2.2 : r, 0, Math.PI * 2)
     ctx.fillStyle = color
     ctx.fill()
 
     if (isFocus) {
       ctx.strokeStyle = 'rgba(255,255,255,0.9)'
-      ctx.lineWidth   = 2
+      ctx.lineWidth   = 1.5
       ctx.stroke()
-      ctx.shadowBlur  = 0
     }
+    ctx.shadowBlur = 0
 
     ctx.globalAlpha = 1
 
-    // Show label for focused, neighbours (when in focus mode), or large nodes
-    const showLabel = isFocus || (isNbr && focusId != null) || r > 7.5
-    if (showLabel && !dimmed) {
-      ctx.globalAlpha = isFocus ? 1 : r > 8 ? 0.85 : 0.65
-      ctx.font        = `${isFocus ? 600 : 400} ${Math.max(9, Math.min(r * 0.85, 13))}px Inter,sans-serif`
+    // Show label only on hover/focus
+    if (isFocus && !dimmed) {
+      ctx.globalAlpha = 1
+      ctx.font        = '600 12px Inter,sans-serif'
       ctx.fillStyle   = 'white'
       ctx.textAlign   = 'center'
-      ctx.fillText(n.name.split(' ')[0], n.x, n.y + r + 11)
+      ctx.fillText(n.name, n.x, n.y - r * 2.2 - 6)
       ctx.globalAlpha = 1
     }
   }
@@ -278,7 +283,7 @@ function GraphLegend() {
           {ind}
         </div>
       ))}
-      <div className="ml-auto text-white/30">Node size = √collaborators · Click to zoom into neighborhood</div>
+      <div className="ml-auto text-white/30">Hover to reveal name · Click to zoom into neighborhood</div>
     </div>
   )
 }
@@ -384,14 +389,12 @@ export default function CinemaUniverse({ data }: { data: UniverseData }) {
       if (zt) { mx = (mx - zt.tx) / zt.scale; my = (my - zt.ty) / zt.scale }
     }
 
-    const maxCS = Math.max(...simNodes.map(n => n.costar_count), 1)
     const pool  = zoomed ? simNodes.filter(n => zoomed.nodeIds.has(n.id)) : simNodes
     let best: SimNode | null = null, bestD = 32
 
     for (const n of pool) {
-      const r = 3 + Math.sqrt(n.costar_count / maxCS) * 16
       const d = Math.hypot(n.x - mx, n.y - my)
-      if (d < r + 6 && d < bestD) { best = n; bestD = d }
+      if (d < 10 && d < bestD) { best = n; bestD = d }
     }
     return best
   }, [simNodes, zoomed])

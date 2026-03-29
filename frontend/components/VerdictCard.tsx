@@ -54,12 +54,20 @@ export default function VerdictCard({ data1, data2 }: { data1: ActorData; data2:
   const rat1 = calcAvgRating(data1.movies)
   const rat2 = calcAvgRating(data2.movies)
 
+  const topBO1 = Math.max(0, ...data1.movies.map(m => m.box_office ?? 0))
+  const topBO2 = Math.max(0, ...data2.movies.map(m => m.box_office ?? 0))
+  const topBOMovie1 = data1.movies.find(m => (m.box_office ?? 0) === topBO1 && topBO1 > 0)
+  const topBOMovie2 = data2.movies.find(m => (m.box_office ?? 0) === topBO2 && topBO2 > 0)
+  const fmtBO  = (v: number) => v > 0
+    ? (v >= 1000 ? `₹${(v / 1000).toFixed(1)}K Cr` : `₹${Math.round(v)} Cr`)
+    : '—'
+
   const METRICS = [
-    { label: 'Films',            v1: p1.film_count,              v2: p2.film_count,              d1: String(p1.film_count),              d2: String(p2.film_count),              delay: 0.1 },
-    { label: 'Years Active',     v1: yrs1,                       v2: yrs2,                       d1: String(yrs1),                       d2: String(yrs2),                       delay: 0.2 },
-    { label: 'Avg Rating',       v1: rat1,                       v2: rat2,                       d1: rat1.toFixed(1),                    d2: rat2.toFixed(1),                    delay: 0.3 },
-    { label: 'Unique Directors', v1: data1.directors.length,     v2: data2.directors.length,     d1: String(data1.directors.length),     d2: String(data2.directors.length),     delay: 0.4 },
-    { label: 'Co-Stars',         v1: data1.collaborators.length, v2: data2.collaborators.length, d1: String(data1.collaborators.length), d2: String(data2.collaborators.length), delay: 0.5 },
+    { label: 'Films',            v1: p1.film_count,          v2: p2.film_count,          d1: String(p1.film_count),      d2: String(p2.film_count),      delay: 0.1, sub1: null,                        sub2: null },
+    { label: 'Years Active',     v1: yrs1,                   v2: yrs2,                   d1: String(yrs1),               d2: String(yrs2),               delay: 0.2, sub1: null,                        sub2: null },
+    { label: 'Avg Rating',       v1: rat1,                   v2: rat2,                   d1: rat1.toFixed(1),            d2: rat2.toFixed(1),            delay: 0.3, sub1: null,                        sub2: null },
+    { label: 'Unique Directors', v1: data1.directors.length, v2: data2.directors.length, d1: String(data1.directors.length), d2: String(data2.directors.length), delay: 0.4, sub1: null,              sub2: null },
+    { label: 'Top Box Office',   v1: topBO1,                 v2: topBO2,                 d1: fmtBO(topBO1),              d2: fmtBO(topBO2),              delay: 0.5, sub1: topBOMovie1?.title ?? null, sub2: topBOMovie2?.title ?? null },
   ]
 
   const wins1 = METRICS.filter((m) => m.v1 > m.v2).length
@@ -219,6 +227,18 @@ export default function VerdictCard({ data1, data2 }: { data1: ActorData; data2:
                   </div>
                 </div>
                 {/* ─────────────────────────────────────────────────────── */}
+
+                {/* Movie name subtitles for Top Box Office row */}
+                {(m.sub1 || m.sub2) && (
+                  <div className="flex justify-between px-1 mt-0.5">
+                    <span className="text-[11px] text-white/40 italic truncate max-w-[45%]">
+                      {m.sub1 ?? ''}
+                    </span>
+                    <span className="text-[11px] text-white/40 italic truncate max-w-[45%] text-right">
+                      {m.sub2 ?? ''}
+                    </span>
+                  </div>
+                )}
 
               </div>
             )

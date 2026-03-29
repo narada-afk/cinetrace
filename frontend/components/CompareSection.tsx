@@ -8,9 +8,10 @@ import { searchActors, type Actor } from '@/lib/api'
 interface CompareSectionProps {
   currentActor: { id: number; name: string }
   suggestions: Actor[]
+  actorGender?: 'M' | 'F' | null
 }
 
-export default function CompareSection({ currentActor, suggestions }: CompareSectionProps) {
+export default function CompareSection({ currentActor, suggestions, actorGender }: CompareSectionProps) {
   const router = useRouter()
 
   const [query,   setQuery]   = useState('')
@@ -21,21 +22,24 @@ export default function CompareSection({ currentActor, suggestions }: CompareSec
   const inputRef = useRef<HTMLInputElement>(null)
   const dropRef  = useRef<HTMLDivElement>(null)
 
-  // Debounced search
+  // Debounced search — filter to same gender when known
   useEffect(() => {
     if (!query.trim()) { setResults([]); setOpen(false); return }
     setLoading(true)
     const tid = setTimeout(async () => {
       try {
         const res = await searchActors(query)
-        const filtered = res.filter(a => a.id !== currentActor.id).slice(0, 7)
+        const filtered = res
+          .filter(a => a.id !== currentActor.id)
+          .filter(a => !actorGender || !a.gender || a.gender === actorGender)
+          .slice(0, 7)
         setResults(filtered)
         setOpen(filtered.length > 0)
       } catch { setResults([]) }
       finally  { setLoading(false) }
     }, 220)
     return () => clearTimeout(tid)
-  }, [query, currentActor.id])
+  }, [query, currentActor.id, actorGender])
 
   // Close on outside click
   useEffect(() => {
@@ -50,8 +54,12 @@ export default function CompareSection({ currentActor, suggestions }: CompareSec
     return () => document.removeEventListener('mousedown', h)
   }, [])
 
-  function navigate(targetId: number) {
-    router.push(`/compare/${currentActor.id}-vs-${targetId}`)
+  function toSlug(name: string) {
+    return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+  }
+
+  function navigate(targetName: string) {
+    router.push(`/compare/${toSlug(currentActor.name)}-vs-${toSlug(targetName)}`)
   }
 
   return (
@@ -62,7 +70,7 @@ export default function CompareSection({ currentActor, suggestions }: CompareSec
       {/* Header */}
       <div className="mb-6">
         <h2 className="text-white font-bold text-lg flex items-center gap-2">
-          ⚡ Compare with another actor
+          ⚡ Compare with another {actorGender === 'F' ? 'actress' : 'actor'}
         </h2>
         <p className="text-white/40 text-sm mt-1">Side-by-side career stats</p>
       </div>
@@ -73,7 +81,7 @@ export default function CompareSection({ currentActor, suggestions }: CompareSec
           {suggestions.slice(0, 6).map(s => (
             <button
               key={s.id}
-              onClick={() => navigate(s.id)}
+              onClick={() => navigate(s.name)}
               className="flex items-center gap-2 px-3 py-2 rounded-full border border-white/[0.08] hover:border-white/25 hover:bg-white/[0.06] transition-all group"
               style={{ background: '#0d0d15' }}
             >
@@ -94,7 +102,7 @@ export default function CompareSection({ currentActor, suggestions }: CompareSec
             ref={inputRef}
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Search any actor…"
+            placeholder={`Search any ${actorGender === 'F' ? 'actress' : 'actor'}…`}
             className="flex-1 bg-transparent py-3.5 text-white placeholder-white/25 outline-none text-sm"
           />
           {loading && (
@@ -113,7 +121,7 @@ export default function CompareSection({ currentActor, suggestions }: CompareSec
               <button
                 key={a.id}
                 onMouseDown={e => e.preventDefault()}
-                onClick={() => navigate(a.id)}
+                onClick={() => navigate(a.name)}
                 className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/[0.08] transition-colors text-left border-b border-white/[0.05] last:border-0"
               >
                 <ActorAvatar name={a.name} size={32} />

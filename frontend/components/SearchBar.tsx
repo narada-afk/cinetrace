@@ -23,7 +23,8 @@ export default function SearchBar() {
       const results = await res.json()
 
       if (results.length > 0) {
-        router.push(`/actors/${results[0].id}`)
+        const slug = results[0].name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+        router.push(`/actors/${slug}`)
       } else {
         setNotFound(true)
         setLoading(false)

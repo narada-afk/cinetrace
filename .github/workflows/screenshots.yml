@@ -1,0 +1,79 @@
+name: Automated Screenshots
+
+on:
+  schedule:
+    - cron: "0 6 * * *"   # 06:00 UTC
+    - cron: "0 18 * * *"  # 18:00 UTC
+  workflow_dispatch:        # manual trigger
+
+jobs:
+  screenshot:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── 2. Node setup ────────────────────────────────────────────────────────
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # ── 3. Install root deps (playwright + wait-on) ──────────────────────────
+      - name: Install script deps
+        run: npm install
+
+      # ── 4. Install Playwright browser ─────────────────────────────────────────
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      # ── 5. Install frontend deps + build ─────────────────────────────────────
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build Next.js
+        working-directory: frontend
+        env:
+          API_URL: http://localhost:8000
+          NEXT_PUBLIC_API_URL: http://localhost:8000
+        run: npm run build
+
+      # ── 6. Start backend + DB ────────────────────────────────────────────────
+      - name: Start backend services
+        run: docker compose up -d postgres backend
+
+      - name: Wait for backend
+        run: npx wait-on http://localhost:8000/health --timeout 60000
+
+      # ── 7. Start Next.js ─────────────────────────────────────────────────────
+      - name: Start Next.js
+        working-directory: frontend
+        env:
+          API_URL: http://localhost:8000
+          NEXT_PUBLIC_API_URL: http://localhost:8000
+        run: npm run start &
+
+      - name: Wait for Next.js
+        run: npx wait-on http://localhost:3000 --timeout 30000
+
+      # ── 8. Take screenshots ──────────────────────────────────────────────────
+      - name: Run screenshot script
+        env:
+          SCREENSHOT_URL: http://localhost:3000
+        run: node scripts/screenshot.js
+
+      # ── 9. Commit results ─────────────────────────────────────────────────────
+      - name: Commit screenshots
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add screenshots/
+          git diff --staged --quiet || git commit -m "📸 Automated screenshots $(date -u '+%Y-%m-%d %H:%M UTC')"
+          git push

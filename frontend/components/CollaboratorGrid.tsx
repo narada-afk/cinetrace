@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import ActorAvatar from './ActorAvatar'
+import { toActorSlug } from '@/lib/api'
 import type { Collaborator } from '@/lib/api'
 
 interface CollaboratorGridProps {
@@ -43,7 +44,7 @@ export default function CollaboratorGrid({
         )
 
         return actorId ? (
-          <Link key={collab.actor} href={`/actors/${actorId}`}>
+          <Link key={collab.actor} href={`/actors/${toActorSlug(collab.actor)}`}>
             {inner}
           </Link>
         ) : (
