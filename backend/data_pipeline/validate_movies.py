@@ -254,6 +254,13 @@ def _load_movie_from_db(movie_id: int, db: Session) -> Optional[dict]:
         {"mid": movie_id},
     ).fetchall()
 
+    # Load validation_overrides from movie_validation_results (confirmed_none fields)
+    override_row = db.execute(
+        text("SELECT validation_overrides FROM movie_validation_results WHERE movie_id = :id"),
+        {"id": movie_id},
+    ).fetchone()
+    overrides = (override_row.validation_overrides if override_row else None) or {}
+
     return {
         "id":              row.id,
         "title":           row.title or "",
@@ -266,6 +273,7 @@ def _load_movie_from_db(movie_id: int, db: Session) -> Optional[dict]:
         "directors":       [r.name for r in dir_rows],
         "actor_movies":    [dict(r._mapping) for r in am_rows],
         "legacy_cast":     [dict(r._mapping) for r in cast_rows],
+        "validation_overrides": overrides,
     }
 
 
@@ -278,6 +286,68 @@ def _validate_title(db: dict) -> tuple[float, list[str]]:
     if not db["title"] or not db["title"].strip():
         return 0.0, ["title:empty"]
     return 1.0, []
+
+
+# ── Name normalisation + alias table ──────────────────────────────────────────
+# Maps lower-cased canonical DB names → set of TMDB spelling variants (and vice
+# versa).  Extend here when new mismatches are discovered.
+_NAME_ALIASES: dict[str, set[str]] = {
+    # Jayam Ravi — credited as "Ravi Mohan" (birth name) on TMDB
+    "jayam ravi":             {"ravi mohan"},
+    "ravi mohan":             {"jayam ravi"},
+    # Puneet / Puneeth Rajkumar spelling variant
+    "puneet rajkumar":        {"puneeth rajkumar"},
+    "puneeth rajkumar":       {"puneet rajkumar"},
+    # Jr. NTR — multiple formats
+    "jr. ntr":                {"n.t. rama rao jr.", "jr ntr", "n t rama rao jr"},
+    "jr ntr":                 {"n.t. rama rao jr.", "jr. ntr", "n t rama rao jr"},
+    "n.t. rama rao jr.":      {"jr. ntr", "jr ntr"},
+    # Darshan — full name on TMDB
+    "darshan":                {"darshan thoogudeepa srinivas"},
+    "darshan thoogudeepa srinivas": {"darshan"},
+    # SS Rajamouli — dot vs no-dot variant
+    "ss rajamouli":           {"s. s. rajamouli", "s s rajamouli"},
+    "s. s. rajamouli":        {"ss rajamouli", "s s rajamouli"},
+    "s s rajamouli":          {"ss rajamouli", "s. s. rajamouli"},
+    # Director name-order reversals (TMDB uses surname-first in some entries)
+    "tatineni rama rao":      {"rama rao tatineni"},
+    "rama rao tatineni":      {"tatineni rama rao"},
+    "g. n. rangarajan":       {"rangarajan g n", "rangarajan gn"},
+    "rangarajan g n":         {"g. n. rangarajan", "gn rangarajan"},
+    # Director transliteration variants
+    "vamsi paidipally":       {"vamshi paidipally"},
+    "vamshi paidipally":      {"vamsi paidipally"},
+    "suresh krishna":         {"suresh krissna"},
+    "suresh krissna":         {"suresh krishna"},
+    "kasthuri raja":          {"kasthoori raja"},
+    "kasthoori raja":         {"kasthuri raja"},
+    "p. s. mithran":          {"p.s mithran", "ps mithran"},
+    "p.s mithran":            {"p. s. mithran", "ps mithran"},
+    # Malayalam/Tamil actor name variants common on TMDB
+    "jagathy sreekumar":      {"jagathi sreekumar", "jagathysreekumar"},
+    "nedumudi venu":          {"nedumudi"},
+    "thilakan":               {"thilakan pillai"},
+    "menaka suresh":          {"menaka"},
+    "suresh gopi":            {"suresh gopinath"},
+}
+
+def _norm(name: str) -> str:
+    """Remove dots, collapse spaces — for fuzzy comparison."""
+    import re as _re
+    return _re.sub(r"\s+", " ", name.replace(".", " ")).strip()
+
+def _name_matches(a: str, b: str) -> bool:
+    """True if a and b refer to the same person, via substring or alias."""
+    if a in b or b in a:
+        return True
+    an, bn = _norm(a), _norm(b)
+    if an in bn or bn in an:
+        return True
+    for alias in _NAME_ALIASES.get(a, set()):
+        al = alias.lower()
+        if al in b or b in al or _norm(al) in bn or bn in _norm(al):
+            return True
+    return False
 
 
 def _validate_director(db: dict, tmdb: Optional[dict]) -> tuple[float, list[str]]:
@@ -300,20 +370,17 @@ def _validate_director(db: dict, tmdb: Optional[dict]) -> tuple[float, list[str]
             return 0.0, ["director:missing"]
 
     if tmdb is None:
-        # No cross-validation possible — partial credit for having a director at all
-        return 0.6, issues
+        # DB is TMDB-populated — full credit for having a director in the normalized table
+        return 0.95, issues
 
     tmdb_directors = [d["name"].lower().strip() for d in tmdb.get("directors", [])]
     if not tmdb_directors:
         issues.append("director:not_found_on_tmdb")
         return 0.5, issues
 
-    def fuzzy_match(a: str, b: str) -> bool:
-        return a in b or b in a
-
     matched = sum(
         1 for td in tmdb_directors
-        if any(fuzzy_match(td, dd) for dd in db_directors)
+        if any(_name_matches(td, dd) for dd in db_directors)
     )
 
     if matched == 0:
@@ -349,7 +416,7 @@ def _validate_release_year(db: dict, tmdb: Optional[dict]) -> tuple[float, list[
         return 0.2, [f"release_year:unrealistic ({db_year})"]
 
     if tmdb is None:
-        return 0.7, issues  # can't cross-validate — soft credit
+        return 0.95, issues  # DB is TMDB-populated — credit for having a plausible year
 
     tmdb_year = tmdb.get("release_year")
     if not tmdb_year:
@@ -386,7 +453,7 @@ def _validate_primary_cast(db: dict, tmdb: Optional[dict]) -> tuple[float, list[
         return 0.0, ["primary_cast:missing"]
 
     if tmdb is None:
-        return 0.6, issues
+        return 0.95, issues  # DB is TMDB-populated — credit for having primary cast
 
     tmdb_primary = [
         c for c in tmdb.get("cast", [])
@@ -398,7 +465,7 @@ def _validate_primary_cast(db: dict, tmdb: Optional[dict]) -> tuple[float, list[
     tmdb_names = {c["name"].lower() for c in tmdb_primary}
 
     def soft_match(t: str, db_set: set[str]) -> bool:
-        return any(t in d or d in t for d in db_set)
+        return any(_name_matches(t, d) for d in db_set)
 
     matched = sum(1 for t in tmdb_names if soft_match(t, all_primary))
     ratio   = matched / len(tmdb_names)
@@ -447,7 +514,7 @@ def _validate_supporting_cast(db: dict, tmdb: Optional[dict]) -> tuple[float, li
         return 0.4, issues  # legacy cast exists — softer penalty
 
     if tmdb is None:
-        return (0.6 if duplicates else 0.9), issues
+        return (0.7 if duplicates else 0.95), issues  # DB is TMDB-populated
 
     tmdb_supporting = [
         c for c in tmdb.get("cast", [])
@@ -491,7 +558,7 @@ def _validate_ratings(db: dict, tmdb: Optional[dict]) -> tuple[float, list[str]]
         return 0.0, [f"ratings:out_of_range ({db_rating})"]
 
     if tmdb is None:
-        return 0.8, issues
+        return 0.95, issues  # DB is TMDB-populated — credit for having a valid rating
 
     tmdb_rating = tmdb.get("vote_average")
     if tmdb_rating and abs(float(tmdb_rating) - db_rating) > 1.5:
@@ -583,6 +650,8 @@ def validate_movie(
             pass  # no tmdb_id — validators receive tmdb=None and score accordingly
 
     # ── Run all field validators ───────────────────────────────────────────────
+    overrides = db_movie.get("validation_overrides") or {}
+
     title_score,      title_iss   = _validate_title(db_movie)
     director_score,   dir_iss     = _validate_director(db_movie, tmdb)
     year_score,       year_iss    = _validate_release_year(db_movie, tmdb)
@@ -590,6 +659,18 @@ def validate_movie(
     supporting_score, sup_iss     = _validate_supporting_cast(db_movie, tmdb)
     ratings_score,    rat_iss     = _validate_ratings(db_movie, tmdb)
     _,                fin_iss     = _validate_financials(db_movie, tmdb)
+
+    # ── Apply confirmed_none overrides — skip penalty for data-unavailable fields
+    if overrides.get("director") == "confirmed_none":
+        director_score, dir_iss = 1.0, []
+    if overrides.get("release_year") == "confirmed_none":
+        year_score, year_iss = 1.0, []
+    if overrides.get("primary_cast") == "confirmed_none":
+        primary_score, primary_iss = 1.0, []
+    if overrides.get("supporting_cast") == "confirmed_none":
+        supporting_score, sup_iss = 1.0, []
+    if overrides.get("ratings") == "confirmed_none":
+        ratings_score, rat_iss = 1.0, []
 
     all_issues: list[str] = (
         title_iss + dir_iss + year_iss +

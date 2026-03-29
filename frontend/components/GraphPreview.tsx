@@ -444,6 +444,11 @@ export default function GraphPreview({
                 <feComposite in="SourceGraphic" in2="b" operator="over"/>
               </filter>
 
+              {/* Diffraction spike blur — soft ray dissolve */}
+              <filter id="gp-spike" x="-300%" y="-300%" width="700%" height="700%">
+                <feGaussianBlur in="SourceGraphic" stdDeviation="1.0"/>
+              </filter>
+
               {/* Per-line gradient: golden centre → node colour */}
               {nodes.map((_, i) => {
                 const p = positions[i]
@@ -566,6 +571,38 @@ export default function GraphPreview({
                     filter="url(#gp-nglow2)"
                     style={{ transition: 'opacity 0.22s ease' }}
                   />
+                  {/* Diffraction spikes — 4 main + 4 diagonal rays */}
+                  {(() => {
+                    const spikeMain = coreR * (isHov ? 7.5 : 5.0) * (0.7 + d * 0.3)
+                    const spikeDiag = spikeMain * 0.55
+                    const rot       = sr(i * 11 + 7) * 28
+                    const spikeOp   = isHov ? 0.55 : 0.22 * d
+                    const diagOp    = isHov ? 0.35 : 0.14 * d
+                    const toRad     = (deg: number) => (deg + rot) * Math.PI / 180
+                    const mainAngles = [0, 90, 180, 270]
+                    const diagAngles = [45, 135, 225, 315]
+                    return (
+                      <g filter="url(#gp-spike)">
+                        {mainAngles.map(a => (
+                          <line key={a}
+                            x1={p.x} y1={p.y}
+                            x2={p.x + spikeMain * Math.cos(toRad(a))}
+                            y2={p.y + spikeMain * Math.sin(toRad(a))}
+                            stroke="white" strokeWidth="0.9" opacity={spikeOp}
+                          />
+                        ))}
+                        {diagAngles.map(a => (
+                          <line key={a}
+                            x1={p.x} y1={p.y}
+                            x2={p.x + spikeDiag * Math.cos(toRad(a))}
+                            y2={p.y + spikeDiag * Math.sin(toRad(a))}
+                            stroke="white" strokeWidth="0.6" opacity={diagOp}
+                          />
+                        ))}
+                      </g>
+                    )
+                  })()}
+
                   {/* Bright white core dot */}
                   <circle
                     cx={p.x} cy={p.y}
@@ -574,11 +611,11 @@ export default function GraphPreview({
                     opacity={isHov ? 1 : 0.72 + d * 0.26}
                     style={{ transition: 'r 0.22s ease, opacity 0.22s ease' }}
                   />
-                  {/* Name — always visible, brightness varies with depth */}
+                  {/* Name — subtle star label, brightens on hover */}
                   <text
                     x={p.x} y={p.y + glowR + 12}
                     textAnchor="middle" fontSize="8"
-                    fill={isHov ? 'rgba(255,255,255,0.92)' : `rgba(255,255,255,${(0.22 + d * 0.25).toFixed(2)})`}
+                    fill={isHov ? 'rgba(255,255,255,0.65)' : `rgba(255,255,255,${(0.14 + d * 0.14).toFixed(2)})`}
                     style={{ userSelect: 'none', transition: 'fill 0.22s ease' }}
                   >
                     {node.name.split(' ')[0]}

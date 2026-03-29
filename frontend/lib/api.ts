@@ -54,6 +54,7 @@ export interface ActorMovie {
   backdrop_url: string | null
   vote_average: number | null
   popularity: number | null
+  box_office: number | null
 }
 
 export interface Collaborator {
