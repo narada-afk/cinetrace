@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import Header from '@/components/Header'
 import ActorHero from '@/components/ActorHero'
 import FilmographyPreview from '@/components/FilmographyPreview'
@@ -22,9 +22,10 @@ export const dynamic = 'force-dynamic'
 
 interface PageProps {
   params: { slug: string }
+  searchParams: { compare?: string }
 }
 
-export default async function ActorPage({ params }: PageProps) {
+export default async function ActorPage({ params, searchParams }: PageProps) {
   const slug = params.slug
 
   // Resolve slug → numeric actor ID
@@ -35,6 +36,22 @@ export default async function ActorPage({ params }: PageProps) {
     const searchResults = await searchActors(nameFromSlug).catch(() => [])
     if (!searchResults.length) notFound()
     id = searchResults[0].id
+  }
+
+  // ?compare=<id> — redirect to the dedicated compare page
+  // e.g. /actors/kamalhaasan?compare=2  →  /compare/kamalhaasan-vs-rajinikanth
+  if (searchParams.compare) {
+    const compareId = searchParams.compare
+    const [actor, compareActor] = await Promise.all([
+      getActor(id).catch(() => null),
+      getActor(compareId).catch(() => null),
+    ])
+    if (actor && compareActor) {
+      const slug1 = actor.name.toLowerCase().replace(/\s+/g, '')
+      const slug2 = compareActor.name.toLowerCase().replace(/\s+/g, '')
+      redirect(`/compare/${slug1}-vs-${slug2}`)
+    }
+    // If either actor doesn't exist, fall through to normal page rendering
   }
 
   // Fetch all data in parallel — individual failures are caught gracefully

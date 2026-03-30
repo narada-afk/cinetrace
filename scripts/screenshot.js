@@ -19,26 +19,21 @@ const PAGES = [
   {
     name:     'home',
     path:     '/',
-    waitFor:  'text=Actor Connection Finder',
-  },
-  {
-    name:     'network_actor_1',
-    path:     '/?actor=1',
-    waitFor:  'text=Network',
-  },
-  {
-    name:     'actor_1',
-    path:     '/actors/1',
     waitFor:  'main',
   },
   {
-    name:     'actor_2',
-    path:     '/actors/2',
+    name:     'actor_rajinikanth',
+    path:     '/actors/rajinikanth',
     waitFor:  'main',
   },
   {
-    name:     'compare_1_2',
-    path:     '/actors/1?compare=2',
+    name:     'actor_kamalhaasan',
+    path:     '/actors/kamalhaasan',
+    waitFor:  'main',
+  },
+  {
+    name:     'compare_rajinikanth_vs_kamalhaasan',
+    path:     '/compare/rajinikanth-vs-kamalhaasan',
     waitFor:  'main',
   },
 ]
