@@ -6,6 +6,7 @@ interface ActorAvatarProps {
   name: string
   avatarSlug?: string | null
   size?: number
+  industry?: string | null
 }
 
 function getInitials(name: string): string {

@@ -500,10 +500,10 @@ export default function ActorInsightsCarousel({
     }
   }
 
-  // N7. Cross-industry — worked in multiple film industries
-  const industries = new Set(datedMovies.map(m => m.industry).filter(Boolean))
+  // N7. Cross-industry — worked in multiple film languages/industries
+  const industries = new Set(datedMovies.map(m => m.language).filter(Boolean))
   if (industries.size >= 3) {
-    const homeCount = datedMovies.filter(m => m.industry === actor.industry).length
+    const homeCount = datedMovies.filter(m => m.language === actor.industry).length
     const crossover = datedMovies.length - homeCount
     cards.push({
       emoji:    '🌍',
