@@ -173,6 +173,7 @@ async function fetchNetworkData(
         id:    nameToId.get(c.actor.toLowerCase().trim()) ?? null,
         name:  c.actor,
         films: c.films,
+        kind:  'supporting' as const,
       }))
 
     if (nodes.length === 0) return null
