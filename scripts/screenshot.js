@@ -28,12 +28,12 @@ const PAGES = [
   },
   {
     name:     'actor_kamalhaasan',
-    path:     '/actors/kamalhaasan',
+    path:     '/actors/kamal-haasan',
     waitFor:  'main',
   },
   {
     name:     'compare_rajinikanth_vs_kamalhaasan',
-    path:     '/compare/rajinikanth-vs-kamalhaasan',
+    path:     '/compare/rajinikanth-vs-kamal-haasan',
     waitFor:  'main',
   },
 ]
