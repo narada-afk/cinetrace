@@ -60,6 +60,7 @@ services:
     environment:
       API_URL: http://backend:8000               # Server-side (SSR/RSC) — Docker internal
       NEXT_PUBLIC_API_URL: http://localhost:8000 # Client-side (browser) — host-exposed
+      WATCHPACK_POLLING: "true"                  # Fix hot reload on macOS Docker volumes
     depends_on:
       - backend
     volumes:
