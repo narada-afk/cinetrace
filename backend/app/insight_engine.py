@@ -472,7 +472,8 @@ def _pick_diverse(candidates: list, n: int = 3) -> list:
 
 def compute_wow_insights(db: Session) -> list:
     """
-    Run all WOW patterns, score candidates, return top 3 diverse insights.
+    Run all WOW patterns, score candidates, return top 6 diverse insights
+    (one per type — there are 6 patterns so up to 6 unique cards).
 
     Fail-safe: a broken pattern is silently skipped — one bad SQL query
     must not crash the entire homepage.
@@ -497,7 +498,7 @@ def compute_wow_insights(db: Session) -> list:
         except Exception:
             pass   # one broken pattern must not crash the whole page
 
-    return _pick_diverse(candidates)
+    return _pick_diverse(candidates, n=6)  # one per type — up to all 6 patterns
 
 
 # ── Public entry point (thread-safe TTL cache) ────────────────────────────────

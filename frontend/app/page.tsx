@@ -13,7 +13,7 @@ import type { NetworkCenter, NetworkNode } from '@/components/GraphPreview'
 
 // ── Gradient palette ──────────────────────────────────────────────────────────
 
-const GRADIENTS: InsightCardData['gradient'][] = ['red', 'purple', 'orange', 'blue']
+const GRADIENTS: InsightCardData['gradient'][] = ['red', 'purple', 'orange', 'blue', 'green', 'amber']
 
 const INSIGHT_META: Record<string, { emoji: string; label: string }> = {
   // Legacy insight types
@@ -72,8 +72,8 @@ async function fetchPageData(industry: string) {
     console.log('[homepage] API response insights:', insights.length, 'items')
     if (!insights.length) return { insightCards: FALLBACK_INSIGHT_CARDS }
 
-    // Build insight cards — take first 3 (any type)
-    const insightCards: InsightCardData[] = insights.slice(0, 3).map((insight, i) => {
+    // Build insight cards — take up to 6 (one per pattern type)
+    const insightCards: InsightCardData[] = insights.slice(0, 6).map((insight, i) => {
       const meta = INSIGHT_META[insight.type] ?? { emoji: '🎭', label: 'Cinema Fact' }
 
       function toSlug(name: string) {
