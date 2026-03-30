@@ -354,7 +354,7 @@ export default function GraphPreview({
       const eligibleCollabs = collaborators.filter(
         c => !dirNameSet.has(c.actor.toLowerCase().trim())
       )
-      const TARGET = 35
+      const TARGET = 50
       // Walk down film counts until we'd exceed TARGET; use that as floor
       let threshold = 1
       for (let t = 1; t <= (eligibleCollabs[0]?.films ?? 1); t++) {
