@@ -48,14 +48,13 @@ _cache_expiry: float = 0.0
 
 # ── Pattern 1: Collaboration Shock ────────────────────────────────────────────
 
-def _collaboration_shock(db: Session) -> Optional[dict]:
+def _collaboration_shock(db: Session, limit: int = 5) -> list:
     """
-    A legendary duo that worked together many times but hasn't shared
-    the screen in 8+ years.  The gap is what makes it surprising.
+    Legendary duos that worked together many times but haven't shared
+    the screen in 8+ years.  Returns up to `limit` pairs.
     """
-    row = db.execute(text("""
+    rows = db.execute(text("""
         WITH shared_years AS (
-            -- TMDB pipeline
             SELECT
                 LEAST(am1.actor_id, am2.actor_id)    AS a1_id,
                 GREATEST(am1.actor_id, am2.actor_id) AS a2_id,
@@ -70,7 +69,6 @@ def _collaboration_shock(db: Session) -> Optional[dict]:
 
             UNION ALL
 
-            -- Wikidata pipeline
             SELECT
                 LEAST(c1.actor_id, c2.actor_id)    AS a1_id,
                 GREATEST(c1.actor_id, c2.actor_id) AS a2_id,
@@ -104,36 +102,36 @@ def _collaboration_shock(db: Session) -> Optional[dict]:
           AND  ac.collaboration_count >= 10
           AND  bl.last_year <= :cutoff
         ORDER  BY ac.collaboration_count DESC, bl.last_year ASC
-        LIMIT  1
-    """), {"cutoff": CURRENT_YEAR - 8}).fetchone()
+        LIMIT  :limit
+    """), {"cutoff": CURRENT_YEAR - 8, "limit": limit}).fetchall()
 
-    if not row:
-        return None
-
-    gap = CURRENT_YEAR - row.last_year
-    return {
-        "type":      "collab_shock",
-        "category":  "collaboration",
-        "title":     f"{row.actor1_name} & {row.actor2_name}",
-        "value":     row.films,
-        "unit":      "films together",
-        "actors":    [row.actor1_name, row.actor2_name],
-        "actor_ids": [row.actor1_id, row.actor2_id],
-        "subtext":   (
-            f"Worked together {row.films} times — but haven't shared "
-            f"the screen in {gap}+ years."
-        ),
-    }
+    results = []
+    for row in rows:
+        gap = CURRENT_YEAR - row.last_year
+        results.append({
+            "type":      "collab_shock",
+            "category":  "collaboration",
+            "title":     f"{row.actor1_name} & {row.actor2_name}",
+            "value":     row.films,
+            "unit":      "films together",
+            "actors":    [row.actor1_name, row.actor2_name],
+            "actor_ids": [row.actor1_id, row.actor2_id],
+            "subtext":   (
+                f"Worked together {row.films} times — but haven't shared "
+                f"the screen in {gap}+ years."
+            ),
+        })
+    return results
 
 
 # ── Pattern 2: Hidden Dominance ───────────────────────────────────────────────
 
-def _hidden_dominance(db: Session) -> Optional[dict]:
+def _hidden_dominance(db: Session, limit: int = 5) -> list:
     """
-    A supporting actor whose total film count rivals most lead actors —
-    always in the background, never in the spotlight.
+    Supporting actors whose total film count rivals most lead actors.
+    Returns up to `limit` actors.
     """
-    row = db.execute(text("""
+    rows = db.execute(text("""
         SELECT
             a.id,
             a.name,
@@ -145,13 +143,12 @@ def _hidden_dominance(db: Session) -> Optional[dict]:
         GROUP  BY a.id, a.name
         HAVING COUNT(am.movie_id) >= 20
         ORDER  BY film_count DESC
-        LIMIT  1
-    """)).fetchone()
+        LIMIT  :limit
+    """), {"limit": limit}).fetchall()
 
-    if not row:
-        return None
+    if not rows:
+        return []
 
-    # Average film count among primary actors for context
     avg_row = db.execute(text("""
         SELECT AVG(ast.film_count) AS avg_films
         FROM   actor_stats ast
@@ -160,28 +157,32 @@ def _hidden_dominance(db: Session) -> Optional[dict]:
     """)).fetchone()
     avg = int(avg_row.avg_films or 0) if avg_row else 0
 
-    return {
-        "type":      "hidden_dominance",
-        "category":  "career",
-        "title":     row.name,
-        "value":     row.film_count,
-        "unit":      "films",
-        "actors":    [row.name],
-        "actor_ids": [row.id],
-        "subtext":   (
-            f"Always in the background — {row.film_count} films, "
-            f"rivalling most lead actors (avg {avg})."
-        ),
-    }
+    results = []
+    for row in rows:
+        results.append({
+            "type":      "hidden_dominance",
+            "category":  "career",
+            "title":     row.name,
+            "value":     row.film_count,
+            "unit":      "films",
+            "actors":    [row.name],
+            "actor_ids": [row.id],
+            "subtext":   (
+                f"Always in the background — {row.film_count} films, "
+                f"rivalling most lead actors (avg {avg})."
+            ),
+        })
+    return results
 
 
 # ── Pattern 3: Cross-Industry Reach ──────────────────────────────────────────
 
-def _cross_industry_reach(db: Session) -> Optional[dict]:
+def _cross_industry_reach(db: Session, limit: int = 5) -> list:
     """
-    A primary actor who crossed language barriers to work in 3+ industries.
+    Primary actors who crossed language barriers to work in 3+ industries.
+    Returns up to `limit` actors.
     """
-    row = db.execute(text("""
+    rows = db.execute(text("""
         SELECT
             a.id,
             a.name,
@@ -198,35 +199,35 @@ def _cross_industry_reach(db: Session) -> Optional[dict]:
         GROUP  BY a.id, a.name
         HAVING COUNT(DISTINCT LOWER(m.industry)) >= 3
         ORDER  BY ind_count DESC, film_count DESC
-        LIMIT  1
-    """)).fetchone()
+        LIMIT  :limit
+    """), {"limit": limit}).fetchall()
 
-    if not row:
-        return None
-
-    return {
-        "type":      "cross_industry",
-        "category":  "industry",
-        "title":     row.name,
-        "value":     row.ind_count,
-        "unit":      "industries",
-        "actors":    [row.name],
-        "actor_ids": [row.id],
-        "subtext":   (
-            f"Crossed language barriers across {row.ind_count} industries "
-            f"in {row.film_count}+ films: {row.industries}."
-        ),
-    }
+    return [
+        {
+            "type":      "cross_industry",
+            "category":  "industry",
+            "title":     row.name,
+            "value":     row.ind_count,
+            "unit":      "industries",
+            "actors":    [row.name],
+            "actor_ids": [row.id],
+            "subtext":   (
+                f"Crossed language barriers across {row.ind_count} industries "
+                f"in {row.film_count}+ films: {row.industries}."
+            ),
+        }
+        for row in rows
+    ]
 
 
 # ── Pattern 4: Career Peak Window ────────────────────────────────────────────
 
-def _career_peak_window(db: Session) -> Optional[dict]:
+def _career_peak_window(db: Session, limit: int = 5) -> list:
     """
-    The single densest 5-year window in an actor's career — their golden era —
-    where they accounted for ≥35% of their total output.
+    The densest 5-year career windows — one per actor (their golden era).
+    Returns up to `limit` actors.
     """
-    row = db.execute(text("""
+    rows = db.execute(text("""
         WITH yearly AS (
             SELECT
                 am.actor_id,
@@ -268,35 +269,35 @@ def _career_peak_window(db: Session) -> Optional[dict]:
         WHERE  bw.win_films >= 8
           AND  bw.win_films::float / NULLIF(ast.film_count, 0) >= 0.35
         ORDER  BY bw.win_films DESC
-        LIMIT  1
-    """)).fetchone()
+        LIMIT  :limit
+    """), {"limit": limit}).fetchall()
 
-    if not row:
-        return None
-
-    return {
-        "type":      "career_peak",
-        "category":  "career",
-        "title":     row.name,
-        "value":     f"{row.peak_start}–{row.peak_end}",   # string range — kept as-is
-        "unit":      "peak years",
-        "actors":    [row.name],
-        "actor_ids": [row.id],
-        "subtext":   (
-            f"{row.win_films} of their {row.total_films} films packed into "
-            f"just 5 years ({row.peak_start}–{row.peak_end}) — their golden era."
-        ),
-    }
+    return [
+        {
+            "type":      "career_peak",
+            "category":  "career",
+            "title":     row.name,
+            "value":     f"{row.peak_start}–{row.peak_end}",
+            "unit":      "peak years",
+            "actors":    [row.name],
+            "actor_ids": [row.id],
+            "subtext":   (
+                f"{row.win_films} of their {row.total_films} films packed into "
+                f"just 5 years ({row.peak_start}–{row.peak_end}) — their golden era."
+            ),
+        }
+        for row in rows
+    ]
 
 
 # ── Pattern 5: Network Power ──────────────────────────────────────────────────
 
-def _network_power(db: Session) -> Optional[dict]:
+def _network_power(db: Session, limit: int = 5) -> list:
     """
-    The actor connected to the most unique co-stars across all industries —
-    the ultimate bridge builder.
+    Actors connected to the most unique co-stars across all industries.
+    Returns up to `limit` actors.
     """
-    row = db.execute(text("""
+    rows = db.execute(text("""
         SELECT
             a.id, a.name,
             COUNT(DISTINCT ac.actor2_id) AS costar_count,
@@ -308,35 +309,35 @@ def _network_power(db: Session) -> Optional[dict]:
         GROUP  BY a.id, a.name, ast.film_count
         HAVING COUNT(DISTINCT ac.actor2_id) >= 30
         ORDER  BY costar_count DESC
-        LIMIT  1
-    """)).fetchone()
+        LIMIT  :limit
+    """), {"limit": limit}).fetchall()
 
-    if not row:
-        return None
-
-    return {
-        "type":      "network_power",
-        "category":  "network",
-        "title":     row.name,
-        "value":     row.costar_count,
-        "unit":      "connections",
-        "actors":    [row.name],
-        "actor_ids": [row.id],
-        "subtext":   (
-            f"Connected to {row.costar_count} unique actors across all industries "
-            f"— the ultimate bridge builder in South Indian cinema."
-        ),
-    }
+    return [
+        {
+            "type":      "network_power",
+            "category":  "network",
+            "title":     row.name,
+            "value":     row.costar_count,
+            "unit":      "connections",
+            "actors":    [row.name],
+            "actor_ids": [row.id],
+            "subtext":   (
+                f"Connected to {row.costar_count} unique actors across all industries "
+                f"— the ultimate bridge builder in South Indian cinema."
+            ),
+        }
+        for row in rows
+    ]
 
 
 # ── Pattern 6: Director Loyalty ───────────────────────────────────────────────
 
-def _director_loyalty(db: Session) -> Optional[dict]:
+def _director_loyalty(db: Session, limit: int = 5) -> list:
     """
-    An actor who spent ≥30% of their career with a single director —
-    a defining creative partnership.
+    Actors who spent ≥30% of their career with a single director.
+    Returns up to `limit` actor-director pairs.
     """
-    row = db.execute(text("""
+    rows = db.execute(text("""
         SELECT
             a.id                                                     AS actor_id,
             ads.actor_name,
@@ -351,25 +352,25 @@ def _director_loyalty(db: Session) -> Optional[dict]:
           AND  ads.film_count >= 8
           AND  ads.film_count * 100.0 / NULLIF(ast.film_count, 0) >= 30
         ORDER  BY pct DESC, ads.film_count DESC
-        LIMIT  1
-    """)).fetchone()
+        LIMIT  :limit
+    """), {"limit": limit}).fetchall()
 
-    if not row:
-        return None
-
-    return {
-        "type":      "director_loyalty",
-        "category":  "collaboration",
-        "title":     row.actor_name,
-        "value":     row.dir_films,
-        "unit":      f"films with {row.director_name}",
-        "actors":    [row.actor_name],
-        "actor_ids": [row.actor_id],
-        "subtext":   (
-            f"{int(row.pct)}% of their career alongside director "
-            f"{row.director_name} — a defining creative partnership."
-        ),
-    }
+    return [
+        {
+            "type":      "director_loyalty",
+            "category":  "collaboration",
+            "title":     row.actor_name,
+            "value":     row.dir_films,
+            "unit":      f"films with {row.director_name}",
+            "actors":    [row.actor_name],
+            "actor_ids": [row.actor_id],
+            "subtext":   (
+                f"{int(row.pct)}% of their career alongside director "
+                f"{row.director_name} — a defining creative partnership."
+            ),
+        }
+        for row in rows
+    ]
 
 
 # ── Scoring helpers ───────────────────────────────────────────────────────────
@@ -433,10 +434,13 @@ def _score(insight: dict) -> float:
 
 # ── Diversity picker ──────────────────────────────────────────────────────────
 
-def _pick_diverse(candidates: list, n: int = 3) -> list:
+def _pick_diverse(candidates: list, n: int = 30, max_per_type: int = 5) -> list:
     """
-    Return top-n insights with at most 1 per type, ranked by score.
-    Attaches 'confidence' (0–1) to each candidate and logs progress.
+    Return up to n insights, allowing at most max_per_type per pattern type,
+    ranked by score.  Attaches 'confidence' (0–1) to each candidate.
+
+    Default n=30 (5 types × 6 patterns) gives a carousel long enough that
+    the infinite-loop repeat is barely noticeable.
     """
     print(f"[INSIGHT] {len(candidates)} candidates generated")
 
@@ -444,8 +448,6 @@ def _pick_diverse(candidates: list, n: int = 3) -> list:
     scored: list = []
     for ins in candidates:
         s = _score(ins)
-        # Divide by 100 (not 50) so confidence stays spread across the 0–1 range
-        # and doesn't saturate prematurely on common high-scoring patterns.
         ins["confidence"] = round(min(1.0, s / 100), 3)
         scored.append((s, ins))
         print(
@@ -454,12 +456,13 @@ def _pick_diverse(candidates: list, n: int = 3) -> list:
             f"title={ins['title']!r}"
         )
 
-    # Pick top-N with type diversity
-    seen: set = set()
+    # Pick top-N with per-type cap for variety
+    type_counts: dict = {}
     result: list = []
     for _, insight in sorted(scored, key=lambda x: x[0], reverse=True):
-        if insight["type"] not in seen:
-            seen.add(insight["type"])
+        t = insight["type"]
+        if type_counts.get(t, 0) < max_per_type:
+            type_counts[t] = type_counts.get(t, 0) + 1
             result.append(insight)
         if len(result) >= n:
             break
@@ -492,13 +495,15 @@ def compute_wow_insights(db: Session) -> list:
     candidates = []
     for pattern in patterns:
         try:
-            result = pattern(db)
-            if result:
-                candidates.append(result)
+            results = pattern(db)          # each pattern now returns a list
+            if results:
+                candidates.extend(results) # flatten into one pool
         except Exception:
             pass   # one broken pattern must not crash the whole page
 
-    return _pick_diverse(candidates, n=6)  # one per type — up to all 6 patterns
+    # Up to 30 cards (5 per type × 6 types) — long enough that the carousel
+    # triple-loop repeat happens after 90 scroll positions.
+    return _pick_diverse(candidates, n=30, max_per_type=5)
 
 
 # ── Public entry point (thread-safe TTL cache) ────────────────────────────────

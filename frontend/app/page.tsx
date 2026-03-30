@@ -72,8 +72,8 @@ async function fetchPageData(industry: string) {
     console.log('[homepage] API response insights:', insights.length, 'items')
     if (!insights.length) return { insightCards: FALLBACK_INSIGHT_CARDS }
 
-    // Build insight cards — take up to 6 (one per pattern type)
-    const insightCards: InsightCardData[] = insights.slice(0, 6).map((insight, i) => {
+    // Build insight cards — take up to 30 (5 per type × 6 types)
+    const insightCards: InsightCardData[] = insights.slice(0, 30).map((insight, i) => {
       const meta = INSIGHT_META[insight.type] ?? { emoji: '🎭', label: 'Cinema Fact' }
 
       function toSlug(name: string) {
