@@ -13,7 +13,7 @@ const path = require('path')
 
 const BASE_URL  = process.env.SCREENSHOT_URL || 'http://localhost:3000'
 const VIEWPORT  = { width: 1280, height: 800 }
-const DELAY_MS  = 1500   // wait after page load for animations
+const DELAY_MS  = 3500   // wait after page load for animations + lazy images
 
 const PAGES = [
   {
@@ -74,7 +74,7 @@ function sleep(ms) {
 
     console.log(`📸 ${name} → ${url}`)
     try {
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 })
+      await page.goto(url, { waitUntil: 'networkidle', timeout: 45_000 })
       await page.waitForSelector(waitFor, { timeout: 15_000 })
       await sleep(DELAY_MS)
       await page.screenshot({ path: file, fullPage: true })
