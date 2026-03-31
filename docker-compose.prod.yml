@@ -49,6 +49,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+    # Run migrations then start gunicorn.
+    command: >
+      sh -c "alembic upgrade head && gunicorn -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:8000 --workers 4 --timeout 60"
     restart: unless-stopped
     # No volume mount — code is baked into the image at build time
 

@@ -42,7 +42,10 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: redis://redis:6379/0
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    # Run migrations then start the dev server.
+    # To skip migrations (e.g. existing DB): replace with just the uvicorn line.
+    command: >
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     depends_on:
       postgres:
         condition: service_healthy

@@ -74,5 +74,26 @@ class _Cache:
         except Exception as exc:
             logger.warning("cache.delete failed: %s", exc)
 
+    def delete_pattern(self, pattern: str) -> int:
+        """
+        Delete all keys matching a glob pattern (e.g. "actor:*", "compare:*").
+        Uses SCAN to avoid blocking Redis on large key sets.
+        Returns the number of keys deleted, or 0 on error / no Redis.
+        """
+        client = _get_client()
+        if client is None:
+            return 0
+        try:
+            deleted = 0
+            for key in client.scan_iter(match=pattern, count=100):
+                client.delete(key)
+                deleted += 1
+            if deleted:
+                logger.info("cache.delete_pattern %r: removed %d keys", pattern, deleted)
+            return deleted
+        except Exception as exc:
+            logger.warning("cache.delete_pattern failed: %s", exc)
+            return 0
+
 
 cache = _Cache()

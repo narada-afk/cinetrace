@@ -32,10 +32,21 @@ class Settings:
         "CORS_ORIGINS", "http://localhost:3000,http://localhost:3001"
     ).split(",")
 
+    # ── Graph versioning ───────────────────────────────────────────────────────
+    # Bump this value (e.g. "2", "3") whenever you ingest new data and want
+    # every Gunicorn worker to rebuild its in-memory graph on the next request.
+    # Workers compare their built version to this on each request (O(1) string
+    # compare) and rebuild only on mismatch — no rebuild on every request.
+    GRAPH_VERSION: str = os.getenv("GRAPH_VERSION", "1")
+
     # ── Redis cache ────────────────────────────────────────────────────────────
     # Optional — leave unset to disable Redis caching (app falls back gracefully).
     REDIS_URL: str | None = os.getenv("REDIS_URL")          # e.g. redis://redis:6379/0
     CACHE_TTL: int = int(os.getenv("CACHE_TTL", "300"))     # seconds (default 5 min)
+
+    # ── Sentry ─────────────────────────────────────────────────────────────────
+    # Leave unset in dev/CI — Sentry is fully disabled when DSN is absent.
+    SENTRY_DSN: str | None = os.getenv("SENTRY_DSN")
 
     # ── Admin ──────────────────────────────────────────────────────────────────
     # Required to call POST /admin/rebuild-graph.

@@ -1,5 +1,6 @@
 # Pinned on Python 3.11 — regenerate with:
 # pip install <top-level deps> && pip freeze > requirements.txt
+alembic==1.18.4
 annotated-types==0.7.0
 anyio==4.13.0
 beautifulsoup4==4.14.3
@@ -9,6 +10,7 @@ click==8.3.1
 fastapi==0.135.2
 gunicorn==25.3.0
 redis==7.4.0
+sentry-sdk[fastapi]==2.57.0
 slowapi==0.1.9
 greenlet==3.3.2
 h11==0.16.0

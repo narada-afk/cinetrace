@@ -29,6 +29,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 
+import sentry_sdk
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+from sentry_sdk.integrations.starlette import StarletteIntegration
+
 from .core.config import settings
 from .core.limiter import limiter
 from .core.logging import configure_logging
@@ -38,6 +42,15 @@ from .routers import actors, analytics, stats, health, data_health, admin
 
 configure_logging()
 logger = logging.getLogger(__name__)
+
+if settings.SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        integrations=[StarletteIntegration(), FastApiIntegration()],
+        traces_sample_rate=0.0,   # disable performance tracing — error capture only
+        send_default_pii=False,
+    )
+    logger.info("Sentry error monitoring enabled")
 
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────
@@ -102,6 +115,9 @@ _req_logger = logging.getLogger("api.request")
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
+    # Version check is a free string compare on the hot path;
+    # rebuild only happens when GRAPH_VERSION env var has changed.
+    graph_service.ensure_current()
     start = time.monotonic()
     response = await call_next(request)
     ms = (time.monotonic() - start) * 1000

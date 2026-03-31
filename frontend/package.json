@@ -8,6 +8,7 @@
     "start": "next start"
   },
   "dependencies": {
+    "@sentry/nextjs": "^9",
     "next": "14.2.3",
     "posthog-js": "^1.221.0",
     "react": "^18",

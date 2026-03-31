@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Security, status
 from fastapi.security.api_key import APIKeyHeader
 from pydantic import BaseModel
 
+from ..core.cache import cache
 from ..core.config import settings
 from ..database import SessionLocal
 from ..services.graph_service import graph_service
@@ -59,6 +60,11 @@ def rebuild_graph() -> RebuildResponse:
         ) from exc
     finally:
         db.close()
+
+    # Invalidate cached actor and compare responses so the next request
+    # fetches fresh data. Silent no-op if Redis is unavailable.
+    cache.delete_pattern("actor:*")
+    cache.delete_pattern("compare:*")
 
     return RebuildResponse(
         status="ok",
