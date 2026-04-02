@@ -284,6 +284,27 @@ class HealthOut(BaseModel):
     movies: int
 
 
+class TrustSignalOut(BaseModel):
+    """
+    Response shape for GET /trust.
+    Exposes the system data confidence snapshot to the frontend.
+    """
+    data_confidence_score: Optional[float] = None   # 0–100, system-level
+    avg_actor_score:       Optional[float] = None
+    avg_movie_score:       Optional[float] = None
+    collab_integrity:      Optional[float] = None
+    validation_passed:     Optional[bool]  = None
+    ghost_collab_count:    int = 0
+    duplicate_count:       int = 0
+    invalid_link_count:    int = 0
+    total_actors:          int = 0
+    total_movies:          int = 0
+    total_collab_pairs:    int = 0
+    sources_used:          list[str] = []
+    last_verified:         Optional[str] = None     # ISO-8601 string
+    last_verified_human:   Optional[str] = None     # "2 hours ago" style
+
+
 # ===========================================================================
 # Legacy Schemas  (kept for backward compatibility — do not remove)
 # ===========================================================================

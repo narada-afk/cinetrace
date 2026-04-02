@@ -7,6 +7,7 @@ import GraphPreview from '@/components/GraphPreview'
 import InsightsCarousel from '@/components/InsightsCarousel'
 import { type InsightCardData } from '@/components/InsightCard'
 import ConnectionFinder from '@/components/stats/ConnectionFinder'
+import TrustBadgeFull from '@/components/TrustBadge'
 import { getInsights, getActors, getActorCollaborators, getActor } from '@/lib/api'
 import type { TrendingChip } from '@/components/HeroSearch'
 import type { NetworkCenter, NetworkNode } from '@/components/GraphPreview'
@@ -240,6 +241,14 @@ export default async function HomePage({
             🔥 Cinema Insights
           </h2>
           <InsightsCarousel cards={insightCards} />
+        </section>
+
+        {/* ── 5. Data Quality ──────────────────────────────────────────────── */}
+        <section className="mt-16 max-w-sm">
+          <h2 className="text-xs font-semibold uppercase tracking-widest text-white/40 mb-5">
+            🛡 Data Quality
+          </h2>
+          <TrustBadgeFull />
         </section>
 
       </main>
