@@ -65,6 +65,48 @@ const FALLBACK_INSIGHT_CARDS: InsightCardData[] = [
   },
 ]
 
+// ── Personalised one-liner per insight ───────────────────────────────────────
+//
+// Uses actor names from the insight so every card reads as a specific story,
+// not a generic template. Falls back to meta.blurb when names are unavailable.
+
+function personalizedBlurb(
+  type: string,
+  actors: string[],
+  fallback: string,
+): string {
+  const a1 = actors[0] ?? ''
+  const a2 = actors[1] ?? ''
+  if (!a1) return fallback
+
+  switch (type) {
+    case 'collab_shock':
+      return a2
+        ? `${a1} & ${a2} just wouldn't stop making films together`
+        : `${a1} and their co-star just wouldn't stop making films`
+    case 'hidden_dominance':
+      return `${a1} — South cinema's most underrated icon`
+    case 'cross_industry':
+      return `${a1} crossed every South Indian industry`
+    case 'career_peak':
+      return `${a1}'s most explosive creative run, ever`
+    case 'network_power':
+      return `${a1} is connected to nearly everyone in South cinema`
+    case 'director_loyalty':
+      return `${a1}'s entire career shaped by one director`
+    case 'collaboration':
+      return a2
+        ? `${a1} & ${a2} — a pairing South cinema never forgot`
+        : `${a1} — an iconic screen presence`
+    case 'director':
+      return `${a1} — shaped by one brilliant director`
+    case 'supporting':
+      return `${a1} — always in the frame, never forgotten`
+    default:
+      return fallback
+  }
+}
+
 // ── Industry diversity selection ──────────────────────────────────────────────
 //
 // Ensures the carousel shows at most 1 card per industry before repeating.
@@ -156,8 +198,8 @@ async function fetchPageData(industry: string) {
       return {
         emoji:    meta.emoji,
         label:    meta.label,
-        // blurb = short crafted one-liner (meaning); actor names are shown via avatars only
-        headline: meta.blurb,
+        // personalised one-liner using actual actor names from the insight
+        headline: personalizedBlurb(insight.type, insight.actors, meta.blurb),
         stat,
         subtext,
         actors:   insight.actors

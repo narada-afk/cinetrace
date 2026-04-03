@@ -109,7 +109,7 @@ export default function InsightCard({
   return (
     <Link href={href} className="block h-full">
       <div
-        className="group relative rounded-2xl h-[220px] flex cursor-pointer
+        className="group relative rounded-2xl overflow-hidden h-[220px] flex cursor-pointer
                    hover:scale-[1.02] hover:brightness-110 transition-all duration-200
                    border border-white/5"
         style={{ background: bgColor }}
