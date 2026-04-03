@@ -192,23 +192,23 @@ export default function InsightCard({
               style={{ background: `linear-gradient(to right, ${bgColor} 0%, transparent 100%)` }}
             />
 
-            {/* Single actor — face visible, left edge fades into card */}
+            {/* Single actor — radial mask keeps face/body, dissolves background on all sides */}
             {singleActor && actors[0].avatarSlug && (
               <Image
                 src={`/avatars/${actors[0].avatarSlug}.png`}
                 alt={actors[0].name}
-                width={190}
-                height={190}
+                width={200}
+                height={200}
                 className="object-cover object-top"
                 style={{
-                  maskImage:       'linear-gradient(to right, transparent 0%, black 35%)',
-                  WebkitMaskImage: 'linear-gradient(to right, transparent 0%, black 35%)',
+                  maskImage:       'radial-gradient(ellipse 70% 80% at 68% 38%, black 30%, transparent 78%)',
+                  WebkitMaskImage: 'radial-gradient(ellipse 70% 80% at 68% 38%, black 30%, transparent 78%)',
                 }}
                 onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
               />
             )}
 
-            {/* Two actors — overlapping, left edge fades into card */}
+            {/* Two actors — overlapping, same radial fade */}
             {multiActor && (
               <div className="relative flex items-center">
                 {actors.slice(0, 2).map((actor, i) => (
@@ -221,12 +221,12 @@ export default function InsightCard({
                       <Image
                         src={`/avatars/${actor.avatarSlug}.png`}
                         alt={actor.name}
-                        width={130}
-                        height={130}
+                        width={136}
+                        height={136}
                         className="object-cover object-top"
                         style={{
-                          maskImage:       'linear-gradient(to right, transparent 0%, black 40%)',
-                          WebkitMaskImage: 'linear-gradient(to right, transparent 0%, black 40%)',
+                          maskImage:       'radial-gradient(ellipse 70% 80% at 68% 38%, black 25%, transparent 75%)',
+                          WebkitMaskImage: 'radial-gradient(ellipse 70% 80% at 68% 38%, black 25%, transparent 75%)',
                         }}
                         onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
                       />
