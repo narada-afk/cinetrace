@@ -146,13 +146,6 @@ export default function InsightCard({
           }}
         />
 
-        {/* Text-readability scrim — dark left, fades toward image on right */}
-        <div
-          className="absolute inset-0 pointer-events-none rounded-2xl z-[1]"
-          style={{
-            background: 'linear-gradient(to right, rgba(0,0,0,0.45) 0%, rgba(0,0,0,0.15) 55%, transparent 100%)',
-          }}
-        />
 
         {/* ── LEFT: text content ──────────────────────────────── */}
         <div
@@ -202,7 +195,7 @@ export default function InsightCard({
 
             {/* Single actor — larger portrait, bleeds below + right of card */}
             {singleActor && (
-              <div className="relative self-end mb-[-30px] mr-[-18px]" style={{ opacity: 0.35 }}>
+              <div className="relative self-end mb-[-30px] mr-[-18px]" style={{ opacity: 0.65 }}>
                 <div
                   className="absolute inset-0 blur-2xl scale-75"
                   style={{ background: glowColor }}
@@ -229,7 +222,7 @@ export default function InsightCard({
 
             {/* Two actors — larger overlapping portraits, bleed bottom-right */}
             {multiActor && (
-              <div className="relative flex items-end self-end mb-[-30px] mr-[-14px]" style={{ opacity: 0.35 }}>
+              <div className="relative flex items-end self-end mb-[-30px] mr-[-14px]" style={{ opacity: 0.65 }}>
                 {actors.slice(0, 2).map((actor, i) => (
                   <div
                     key={actor.name}
