@@ -72,14 +72,15 @@ logger = logging.getLogger(__name__)
 CURRENT_YEAR = 2026
 
 # Minimum composite score an insight must reach to be eligible for selection.
-# 50 gives career_peak and director_loyalty room to qualify while still
-# blocking obscure low-fame candidates.
-_MIN_SCORE = 50.0
+# 40 is the practical floor — below this, either the actor is obscure or
+# the stat is too small to be interesting. Still filters junk while
+# allowing career_peak / director_loyalty / supporting industry cards through.
+_MIN_SCORE = 40.0
 
 # Maximum insights returned to the carousel.
-# 8 unique cards × 3 (carousel triple) = 24 scroll slots — enough variety
-# that users never notice the loop within a normal session.
-_MAX_INSIGHTS = 8
+# Aim for 12 unique cards — carousel triples them for 36 scroll slots,
+# enough that the loop is never noticed in a normal session.
+_MAX_INSIGHTS = 12
 
 
 # ── Module-level TTL cache ────────────────────────────────────────────────────
@@ -876,7 +877,7 @@ def _pick_diverse(candidates: list) -> list:
       • Max 1 supporting-actor insight (hidden_dominance)
       • Candidates with no _score_breakdown are not admitted (safety)
     """
-    _FALLBACK_SCORE_THRESHOLD = 60.0   # min score to be admitted in pass 2
+    _FALLBACK_SCORE_THRESHOLD = 42.0   # min score to be admitted in pass 2
 
     logger.info("_pick_diverse: %d candidates entering", len(candidates))
 
