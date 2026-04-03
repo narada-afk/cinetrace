@@ -29,6 +29,17 @@ v4 additions:
   • hidden_dominance — minimum raised from 20 → 100 films (filters obscure actors)
   • _score()    — four components: magnitude, type weight, primary bonus, clarity
   • _pick_diverse() — one insight per category max; min score floor; hard cap of 4
+
+v5 additions:
+  • _enrich_with_fame() — single bulk SQL stamps film_count + costar_count onto
+                          every candidate after collection (no per-insight queries)
+  • _fame_score()       — tiered points for film_count / costar_count / is_primary
+  • _relatability_score() — rewards integer values and clear count-based units
+  • _wow_score()        — tiered magnitude bonuses + pattern-specific surprises
+  • _hard_filter()      — removes insights below per-type value floors and
+                          collab_shock pairs where either actor has < 50 films
+  • _score()            — now composes the three sub-scores + a type base weight
+  • _MIN_SCORE raised to 55 — ensures only high-fame or high-wow cards survive
 """
 
 import logging
@@ -45,9 +56,9 @@ logger = logging.getLogger(__name__)
 
 CURRENT_YEAR = 2026
 
-# Minimum score an insight must reach to be eligible for selection.
-# Prevents low-magnitude or obscure-actor cards from appearing.
-_MIN_SCORE = 45.0
+# Minimum composite score an insight must reach to be eligible for selection.
+# Raised to 55 in v5 — ensures every card combines meaningful fame + wow.
+_MIN_SCORE = 55.0
 
 # Maximum insights returned to the carousel.
 _MAX_INSIGHTS = 4
@@ -414,7 +425,62 @@ def _director_loyalty(db: Session, limit: int = 50) -> list:
     ]
 
 
-# ── Scoring ───────────────────────────────────────────────────────────────────
+# ── Fame enrichment ───────────────────────────────────────────────────────────
+
+def _enrich_with_fame(candidates: list, db: Session) -> None:
+    """
+    Stamp actor career stats onto every candidate via ONE bulk SQL query.
+
+    After this runs, each insight dict carries:
+      _actor_stats: list of {film_count, costar_count, is_primary} dicts
+                    — one entry per actor_id in actor_ids[].
+
+    Directors are not in the actors table so they won't appear in the result;
+    director_loyalty insights will have _actor_stats with 1 entry (the actor).
+    """
+    all_ids: set = set()
+    for ins in candidates:
+        for aid in (ins.get("actor_ids") or []):
+            if aid:
+                all_ids.add(int(aid))
+
+    if not all_ids:
+        for ins in candidates:
+            ins["_actor_stats"] = []
+        return
+
+    rows = db.execute(text("""
+        SELECT
+            a.id,
+            ast.film_count,
+            COUNT(DISTINCT ac.actor2_id) AS costar_count,
+            a.is_primary_actor
+        FROM   actors a
+        JOIN   actor_stats ast ON ast.actor_id = a.id
+        LEFT JOIN actor_collaborations ac ON ac.actor1_id = a.id
+        WHERE  a.id = ANY(:ids)
+        GROUP  BY a.id, ast.film_count, a.is_primary_actor
+    """), {"ids": list(all_ids)}).fetchall()
+
+    # Build lookup: actor_id → stats dict
+    lookup: dict = {
+        r.id: {
+            "film_count":   r.film_count   or 0,
+            "costar_count": r.costar_count or 0,
+            "is_primary":   r.is_primary_actor,
+        }
+        for r in rows
+    }
+
+    for ins in candidates:
+        ins["_actor_stats"] = [
+            lookup[aid]
+            for aid in (ins.get("actor_ids") or [])
+            if aid in lookup
+        ]
+
+
+# ── Scoring helpers ───────────────────────────────────────────────────────────
 
 def _extract_number(value) -> Optional[float]:
     """
@@ -430,55 +496,250 @@ def _extract_number(value) -> Optional[float]:
     return None
 
 
-def _score(insight: dict) -> float:
+def _fame_score(insight: dict) -> float:
     """
-    Four-component scoring.  Higher = more impressive and shareable.
+    0–40 points.  Rewards well-known, high-volume actors.
 
-    1. Magnitude  — log-scaled film/connection count.  career_peak now
-                    contributes meaningfully because value is an integer.
-    2. Type weight — curiosity and shareability ranking per insight type.
-    3. Primary bonus — +20 when both/all actors are primary lead actors.
-                       Suppresses obscure supporting-only cards without
-                       hard-removing them (hidden_dominance still competes
-                       when its film count is extraordinary).
-    4. Clarity bonus — +8 when value is already an integer (no string parsing
-                       needed; card renders a clean large number).
+    Uses tiered thresholds rather than log-scaling so that the difference
+    between a 60-film actor and a 200-film actor is meaningfully large.
+
+    film_count tiers   (max 25 pts):  200+ → 25, 100+ → 18, 50+ → 10, 20+ → 4
+    costar_count tiers (max 15 pts):  200+ → 15, 100+ → 10, 50+ →  5
+    is_primary bonus                : +8 per primary actor
+
+    For multi-actor insights (collab_shock, director_loyalty) the score is
+    the average across all actor entries — both actors must be famous for
+    the insight to score high, not just one of them.
+    """
+    stats_list = insight.get("_actor_stats", [])
+    if not stats_list:
+        return 0.0
+
+    total = 0.0
+    for s in stats_list:
+        fc = s["film_count"]
+        cc = s["costar_count"]
+
+        # Film count — how prolific is this actor?
+        if fc >= 200:
+            total += 25
+        elif fc >= 100:
+            total += 18
+        elif fc >= 50:
+            total += 10
+        elif fc >= 20:
+            total += 4
+
+        # Co-star count — how well-connected / recognised by collaborators?
+        if cc >= 200:
+            total += 15
+        elif cc >= 100:
+            total += 10
+        elif cc >= 50:
+            total += 5
+
+        # Primary lead actor bonus
+        if s["is_primary"]:
+            total += 8
+
+    avg = total / len(stats_list)
+    return min(40.0, avg)
+
+
+def _relatability_score(insight: dict) -> float:
+    """
+    0–18 points.  Rewards stats that are immediately understandable on a card.
+
+    Integer value  → +8  (renders as clean large number, no parsing needed)
+    Count-based unit → +10  (films, connections, industries are universally legible)
+    Abstract unit  → -10  (percentages, ratios, peak years confuse casual readers)
     """
     score = 0.0
+    value = insight.get("value")
+    unit  = insight.get("unit", "")
 
-    # 1. Magnitude
-    numeric = _extract_number(insight.get("value"))
-    if numeric is not None:
-        score += math.log(numeric + 1) * 12
-
-    # 2. Type weight
-    type_weight: dict = {
-        "collab_shock":     25,   # two names + big number = most shareable
-        "network_power":    22,   # enormous connection count = jaw-dropping
-        "hidden_dominance": 20,   # shocking film count for a background actor
-        "cross_industry":   18,   # clear, visual, relatable across audiences
-        "career_peak":      16,   # now numeric — direct comparison possible
-        "director_loyalty": 14,   # duo but director name less recognised
-        # Legacy types — kept for backward compatibility
-        "collaboration":    20,
-        "director":         12,
-        "supporting":       15,
-    }
-    score += type_weight.get(insight.get("type", ""), 10)
-
-    # 3. Primary actor bonus
-    if insight.get("is_primary"):
-        score += 20
-
-    # 4. Clarity bonus — value is a plain integer (not a string range)
-    if isinstance(insight.get("value"), int):
+    if isinstance(value, int):
         score += 8
 
-    # Optional rarity flag — set insight["rarity"] = True in any pattern to boost
-    if insight.get("rarity"):
+    RELATABLE_UNITS = {"films", "films together", "connections", "films in 5 years", "industries"}
+    ABSTRACT_UNITS  = {"peak years", "pct", "ratio", "%"}
+
+    if unit in RELATABLE_UNITS:
+        score += 10
+    elif unit in ABSTRACT_UNITS:
+        score -= 10
+
+    return max(0.0, score)
+
+
+def _wow_score(insight: dict) -> float:
+    """
+    0–30 points.  Rewards extreme magnitudes and genuinely surprising patterns.
+
+    Magnitude tiers (the raw numeric value):
+      500+  → 30    jaw-dropping (Brahmanandam 522 films, Kamal 557 connections)
+      200+  → 22
+      100+  → 16
+       50+  → 10
+       30+  →  7
+       15+  →  4
+        6+  →  2
+
+    Pattern-specific bonuses (stacked on top of magnitude):
+      collab_shock:     gap >= 20 years → +10,  gap >= 10 → +5
+      cross_industry:   value >= 5 industries → +8   (genuinely rare)
+      hidden_dominance: value >= 400 films    → +10  (extraordinary output)
+    """
+    score = 0.0
+    value = insight.get("value")
+    itype = insight.get("type", "")
+
+    numeric = _extract_number(value)
+    if numeric is not None:
+        if numeric >= 500:
+            score += 30
+        elif numeric >= 200:
+            score += 22
+        elif numeric >= 100:
+            score += 16
+        elif numeric >= 50:
+            score += 10
+        elif numeric >= 30:
+            score += 7
+        elif numeric >= 15:
+            score += 4
+        elif numeric >= 6:
+            score += 2
+
+    # Pattern-specific surprise bonuses
+    if itype == "collab_shock":
+        gap_match = re.search(r"(\d+)\+ years", insight.get("subtext", ""))
+        if gap_match:
+            gap = int(gap_match.group(1))
+            if gap >= 20:
+                score += 10
+            elif gap >= 10:
+                score += 5
+
+    if itype == "cross_industry" and isinstance(value, int) and value >= 5:
+        score += 8
+
+    if itype == "hidden_dominance" and isinstance(value, int) and value >= 400:
         score += 10
 
-    return score
+    return min(30.0, score)
+
+
+def _score(insight: dict) -> float:
+    """
+    Composite score = type_base + fame + relatability + wow.
+
+    Theoretical range: 5–103.  Minimum for selection: _MIN_SCORE = 55.
+
+    type_base  — fixed per-type weight encoding the inherent curiosity value
+                 of the insight category (unchanged from v4).
+    fame       — 0–40: how well-known and prolific are the actors?
+    relatability — 0–18: how immediately understandable is the stat?
+    wow        — 0–30: how extreme or surprising is the number/pattern?
+
+    Sub-scores are stored in insight["_score_breakdown"] for debug logging.
+    """
+    TYPE_BASE: dict = {
+        "collab_shock":     15,
+        "network_power":    12,
+        "hidden_dominance": 10,
+        "cross_industry":   12,
+        "career_peak":      10,
+        "director_loyalty":  8,
+        # Legacy backward-compat
+        "collaboration":    12,
+        "director":          8,
+        "supporting":       10,
+    }
+    base   = TYPE_BASE.get(insight.get("type", ""), 5)
+    fame   = _fame_score(insight)
+    relate = _relatability_score(insight)
+    wow    = _wow_score(insight)
+    total  = base + fame + relate + wow
+
+    insight["_score_breakdown"] = {
+        "base":          round(base,   1),
+        "fame":          round(fame,   1),
+        "relatability":  round(relate, 1),
+        "wow":           round(wow,    1),
+        "total":         round(total,  1),
+    }
+    return total
+
+
+# ── Hard filter ───────────────────────────────────────────────────────────────
+
+def _hard_filter(candidates: list) -> list:
+    """
+    Remove insights that fail minimum quality bars regardless of score.
+
+    Rules applied in order:
+    1. Must have at least one actor_id — no ID means no URL, no portrait.
+    2. Value must be a numeric type (int or float).  String values (old
+       career_peak year ranges) render poorly and are dropped as a safety net.
+    3. Per-type minimum value thresholds — removes low-magnitude candidates
+       before scoring to avoid polluting the pool.
+    4. collab_shock: both actors must have film_count >= 50 from _actor_stats.
+       This filters primary-actor pairs who technically qualify but have thin
+       filmographies that make the insight unimpressive.
+    5. hidden_dominance with no _actor_stats: actor not in actor_stats table,
+       skip rather than crash.
+    """
+    # Per-type minimum value to even enter scoring
+    MIN_VALUE: dict = {
+        "hidden_dominance": 150,   # 150+ supporting films (obscure actors below this)
+        "collab_shock":      20,   # 20+ films together for a primary pair
+        "network_power":    100,   # 100+ unique co-stars
+        "cross_industry":     4,   # 4+ industries (3 is the minimum, barely surprising)
+        "career_peak":       20,   # 20+ films in the 5-year window
+        "director_loyalty":  10,   # 10+ films with that director
+    }
+
+    filtered = []
+    for ins in candidates:
+        itype = ins.get("type", "")
+        value = ins.get("value")
+
+        # Rule 1: must have actor_id
+        if not ins.get("actor_ids"):
+            logger.debug("hard_filter: drop %s — no actor_ids", itype)
+            continue
+
+        # Rule 2: value must be numeric
+        if not isinstance(value, (int, float)):
+            logger.debug("hard_filter: drop %s — non-numeric value %r", itype, value)
+            continue
+
+        # Rule 3: per-type value floor
+        floor = MIN_VALUE.get(itype, 0)
+        if value < floor:
+            logger.debug("hard_filter: drop %s value=%s < floor %s", itype, value, floor)
+            continue
+
+        # Rule 4: collab_shock — both actors need a substantial filmography
+        if itype == "collab_shock":
+            stats = ins.get("_actor_stats", [])
+            if len(stats) >= 2 and any(s["film_count"] < 50 for s in stats):
+                logger.debug(
+                    "hard_filter: drop collab_shock %r — thin actor filmography %s",
+                    ins.get("headline"), [s["film_count"] for s in stats],
+                )
+                continue
+
+        # Rule 5: hidden_dominance must have resolved actor stats
+        if itype == "hidden_dominance" and not ins.get("_actor_stats"):
+            logger.debug("hard_filter: drop hidden_dominance %r — no actor_stats", ins.get("headline"))
+            continue
+
+        filtered.append(ins)
+
+    logger.info("hard_filter: %d → %d candidates", len(candidates), len(filtered))
+    return filtered
 
 
 # ── Diversity picker ──────────────────────────────────────────────────────────
@@ -488,42 +749,37 @@ def _pick_diverse(candidates: list) -> list:
     Select the best 3–4 insights with strict diversity enforcement.
 
     Algorithm:
-      1. Score every candidate; discard those below _MIN_SCORE.
-      2. Sort survivors highest-score first.
-      3. Pick greedily: add a candidate only if its category has not yet
-         appeared in the result set.
-      4. Stop when _MAX_INSIGHTS is reached or candidates are exhausted.
+      1. Score every candidate; store breakdown in _score_breakdown.
+      2. Apply _MIN_SCORE floor — discard below-threshold candidates.
+      3. Sort survivors highest-score first.
+      4. Greedy one-per-category pick: add a candidate only if its category
+         has not yet appeared in the result.
+      5. Stop at _MAX_INSIGHTS or when candidates are exhausted.
 
-    Category map (4 categories → natural 1-per-category diversity):
+    Categories (4 buckets → natural diversity):
       collaboration → collab_shock, director_loyalty
       network       → network_power
       career        → hidden_dominance, career_peak
       industry      → cross_industry
-
-    If fewer than _MAX_INSIGHTS candidates survive the category filter
-    (e.g. only 2 categories have qualifying insights), the result list
-    is shorter rather than duplicating a category.
     """
-    logger.info("insight candidates before scoring: %d", len(candidates))
+    logger.info("_pick_diverse: %d candidates entering", len(candidates))
 
-    # Score everything
     for ins in candidates:
         s = _score(ins)
         ins["_score"] = s
         ins["confidence"] = round(min(1.0, s / 100), 3)
+        bd = ins["_score_breakdown"]
         logger.debug(
-            "insight type=%-20s score=%5.1f primary=%-5s value=%-8s headline=%r",
-            ins["type"], s, ins.get("is_primary"), ins.get("value"), ins.get("headline"),
+            "score %-20s  total=%5.1f  fame=%4.1f  relate=%4.1f  wow=%4.1f  | %r",
+            ins["type"], s, bd["fame"], bd["relatability"], bd["wow"],
+            ins.get("headline"),
         )
 
-    # Apply minimum score floor
     eligible = [ins for ins in candidates if ins["_score"] >= _MIN_SCORE]
-    logger.info("insight candidates after score floor (>= %.0f): %d", _MIN_SCORE, len(eligible))
+    logger.info("_pick_diverse: %d above score floor %.0f", len(eligible), _MIN_SCORE)
 
-    # Sort highest score first
     eligible.sort(key=lambda x: x["_score"], reverse=True)
 
-    # Greedy one-per-category selection
     seen_categories: set = set()
     result: list = []
 
@@ -537,9 +793,9 @@ def _pick_diverse(candidates: list) -> list:
             break
 
     logger.info(
-        "insights selected: %d  types=%s",
+        "insights selected: %d  %s",
         len(result),
-        [f"{i['type']}({i['_score']:.0f})" for i in result],
+        [(i["type"], i["_score_breakdown"]["total"]) for i in result],
     )
     return result
 
@@ -548,10 +804,14 @@ def _pick_diverse(candidates: list) -> list:
 
 def compute_wow_insights(db: Session) -> list:
     """
-    Run all WOW patterns, score candidates, return top 3–4 diverse insights.
+    Run all WOW patterns → enrich with actor fame → hard-filter → score & pick.
 
-    Fail-safe: a broken pattern is silently skipped — one bad SQL query
-    must not crash the entire homepage.
+    Pipeline:
+      1. Run 6 patterns (fail-safe: broken pattern is skipped).
+      2. _enrich_with_fame() — single bulk SQL, stamps _actor_stats on every candidate.
+      3. _hard_filter()      — removes non-numeric values, thin filmographies, floors.
+      4. _pick_diverse()     — scores (fame + relatability + wow), enforces
+                               one-per-category, caps at _MAX_INSIGHTS.
 
     Returns an empty list if no patterns fire (triggers frontend fallback).
     """
@@ -573,6 +833,18 @@ def compute_wow_insights(db: Session) -> list:
         except Exception as e:
             db.rollback()
             logger.warning("insight pattern %s failed: %s", pattern.__name__, e)
+
+    # Enrich all candidates with actor fame stats in one query
+    try:
+        _enrich_with_fame(candidates, db)
+    except Exception as e:
+        db.rollback()
+        logger.warning("_enrich_with_fame failed: %s — proceeding without fame data", e)
+        for ins in candidates:
+            ins.setdefault("_actor_stats", [])
+
+    # Hard-filter before scoring to keep the scoring pool clean
+    candidates = _hard_filter(candidates)
 
     return _pick_diverse(candidates)
 
