@@ -84,26 +84,28 @@ function personalizedBlurb(
   switch (type) {
     case 'collab_shock':
       return a2
-        ? `${a1} & ${a2} just wouldn't stop making films together`
-        : `${a1} and their co-star just wouldn't stop making films`
+        ? `${a1} & ${a2} — together so many times it became a ritual`
+        : `${a1} — a collaboration nobody could stop watching`
     case 'hidden_dominance':
-      return `${a1} — South cinema's most underrated icon`
+      return `${a1} was in more films than most stars will ever dream of`
     case 'cross_industry':
-      return `${a1} crossed every South Indian industry`
+      return `${a1} refused to stay in one language`
     case 'career_peak':
-      return `${a1}'s most explosive creative run, ever`
+      return `${a1} was everywhere — and nothing could slow them down`
     case 'network_power':
-      return `${a1} is connected to nearly everyone in South cinema`
+      return `${a1} knows everyone. Every. Single. One.`
     case 'director_loyalty':
-      return `${a1}'s entire career shaped by one director`
+      return a2
+        ? `${a1} kept coming back to ${a2} — film after film`
+        : `${a1}'s best work? Always with the same director`
     case 'collaboration':
       return a2
-        ? `${a1} & ${a2} — a pairing South cinema never forgot`
-        : `${a1} — an iconic screen presence`
+        ? `${a1} & ${a2} — the duo that defined an era`
+        : `${a1} — an icon the screen never forgot`
     case 'director':
-      return `${a1} — shaped by one brilliant director`
+      return `${a1} — one director changed everything`
     case 'supporting':
-      return `${a1} — always in the frame, never forgotten`
+      return `${a1} — blink and you'd miss them. But you never did`
     default:
       return fallback
   }
