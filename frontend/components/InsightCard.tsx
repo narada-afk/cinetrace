@@ -189,66 +189,58 @@ export default function InsightCard({
 
             {/* Left-to-right fade — blends portrait into the continuous card background */}
             <div
-              className="absolute inset-y-0 left-0 w-24 z-10"
+              className="absolute inset-y-0 left-0 w-32 z-10"
               style={{ background: `linear-gradient(to right, ${bgColor} 0%, transparent 100%)` }}
             />
 
             {/* Single actor */}
             {singleActor && (
-              <div className="relative" style={{ opacity: 0.65 }}>
-                <div
-                  className="absolute inset-0 blur-2xl scale-75"
-                  style={{ background: glowColor }}
-                />
+              <div className="relative" style={{ opacity: 0.75 }}>
                 {actors[0].avatarSlug ? (
                   <Image
                     src={`/avatars/${actors[0].avatarSlug}.png`}
                     alt={actors[0].name}
-                    width={158}
-                    height={158}
+                    width={180}
+                    height={180}
                     className="relative object-cover object-top"
                     style={{
-                      maskImage:       'radial-gradient(ellipse 70% 90% at 60% 55%, rgba(0,0,0,0.9) 35%, rgba(0,0,0,0) 100%)',
-                      WebkitMaskImage: 'radial-gradient(ellipse 70% 90% at 60% 55%, rgba(0,0,0,0.9) 35%, rgba(0,0,0,0) 100%)',
-                      filter:          'drop-shadow(0 8px 24px rgba(0,0,0,0.6))',
+                      maskImage:       'radial-gradient(ellipse 95% 95% at 100% 100%, black 25%, transparent 72%)',
+                      WebkitMaskImage: 'radial-gradient(ellipse 95% 95% at 100% 100%, black 25%, transparent 72%)',
+                      filter:          'drop-shadow(0 8px 24px rgba(0,0,0,0.5))',
                     }}
                     onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
                   />
                 ) : (
-                  <ActorAvatar name={actors[0].name} size={146} />
+                  <ActorAvatar name={actors[0].name} size={160} />
                 )}
               </div>
             )}
 
             {/* Two actors — overlapping */}
             {multiActor && (
-              <div className="relative flex items-end" style={{ opacity: 0.65 }}>
+              <div className="relative flex items-end" style={{ opacity: 0.75 }}>
                 {actors.slice(0, 2).map((actor, i) => (
                   <div
                     key={actor.name}
                     className="relative"
-                    style={{ marginLeft: i === 0 ? 0 : -26, zIndex: i === 0 ? 2 : 1 }}
+                    style={{ marginLeft: i === 0 ? 0 : -30, zIndex: i === 0 ? 2 : 1 }}
                   >
-                    <div
-                      className="absolute inset-0 blur-xl scale-75"
-                      style={{ background: glowColor, opacity: 0.45 }}
-                    />
                     {actor.avatarSlug ? (
                       <Image
                         src={`/avatars/${actor.avatarSlug}.png`}
                         alt={actor.name}
-                        width={108}
-                        height={108}
+                        width={120}
+                        height={120}
                         className="relative object-cover object-top"
                         style={{
-                          maskImage:       'radial-gradient(ellipse 70% 90% at 60% 55%, rgba(0,0,0,0.85) 35%, rgba(0,0,0,0) 100%)',
-                          WebkitMaskImage: 'radial-gradient(ellipse 70% 90% at 60% 55%, rgba(0,0,0,0.85) 35%, rgba(0,0,0,0) 100%)',
-                          filter:          'drop-shadow(0 6px 16px rgba(0,0,0,0.65))',
+                          maskImage:       'radial-gradient(ellipse 95% 95% at 100% 100%, black 20%, transparent 70%)',
+                          WebkitMaskImage: 'radial-gradient(ellipse 95% 95% at 100% 100%, black 20%, transparent 70%)',
+                          filter:          'drop-shadow(0 6px 16px rgba(0,0,0,0.55))',
                         }}
                         onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
                       />
                     ) : (
-                      <ActorAvatar name={actor.name} size={96} />
+                      <ActorAvatar name={actor.name} size={100} />
                     )}
                   </div>
                 ))}
