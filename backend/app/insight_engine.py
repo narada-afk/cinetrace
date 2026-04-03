@@ -2,11 +2,8 @@
 insight_engine.py — WOW Insight Engine for South Cinema Analytics
 
 Generates surprising, story-driven insights for the homepage.
-Each pattern returns a single insight dict (or None if the condition
-is not met by the current dataset).
-
-The engine collects all candidates, scores them by impact, and
-returns the top 3 diverse insights — at most 1 per type.
+Each pattern returns a list of candidates; the engine scores and
+selects the best 3–4 diverse insights for display.
 
 Fail-safe: a broken pattern is silently skipped so one bad query
 never crashes the homepage.
@@ -22,6 +19,16 @@ v3 additions (backward-compatible):
   • Smoother confidence curve — score / 100 instead of score / 50
   • title field — replaces headline for consistent API contract
   • category field — "collaboration" | "network" | "career" | "industry"
+
+v4 additions:
+  • collab_shock — requires BOTH actors to be primary (filters obscure pairs)
+  • career_peak  — value is now win_films (int), not a year-range string;
+                   unit = "films in 5 years"; year range kept in subtext only
+  • director_loyalty — director name added to actors[] so card renders as duo;
+                       unit = "films together" (consistent with collab_shock)
+  • hidden_dominance — minimum raised from 20 → 100 films (filters obscure actors)
+  • _score()    — four components: magnitude, type weight, primary bonus, clarity
+  • _pick_diverse() — one insight per category max; min score floor; hard cap of 4
 """
 
 import logging
@@ -37,6 +44,13 @@ from sqlalchemy import text
 logger = logging.getLogger(__name__)
 
 CURRENT_YEAR = 2026
+
+# Minimum score an insight must reach to be eligible for selection.
+# Prevents low-magnitude or obscure-actor cards from appearing.
+_MIN_SCORE = 45.0
+
+# Maximum insights returned to the carousel.
+_MAX_INSIGHTS = 4
 
 
 # ── Module-level TTL cache ────────────────────────────────────────────────────
@@ -54,7 +68,11 @@ _cache_expiry: float = 0.0
 def _collaboration_shock(db: Session, limit: int = 50) -> list:
     """
     Legendary duos that worked together many times but haven't shared
-    the screen in 8+ years.  Returns up to `limit` pairs.
+    the screen in 8+ years.
+
+    v4 change: both actors must be is_primary_actor = TRUE so only
+    well-known lead pairings surface (filters character-actor pairs like
+    Ali Basha + M. S. Narayana that score low on recognisability).
     """
     rows = db.execute(text("""
         WITH shared_years AS (
@@ -104,6 +122,8 @@ def _collaboration_shock(db: Session, limit: int = 50) -> list:
         WHERE  ac.actor1_id < ac.actor2_id
           AND  ac.collaboration_count >= 10
           AND  bl.last_year <= :cutoff
+          AND  a1.is_primary_actor = TRUE
+          AND  a2.is_primary_actor = TRUE
         ORDER  BY ac.collaboration_count DESC, bl.last_year ASC
         LIMIT  :limit
     """), {"cutoff": CURRENT_YEAR - 8, "limit": limit}).fetchall()
@@ -112,14 +132,15 @@ def _collaboration_shock(db: Session, limit: int = 50) -> list:
     for row in rows:
         gap = CURRENT_YEAR - row.last_year
         results.append({
-            "type":      "collab_shock",
-            "category":  "collaboration",
-            "headline":     f"{row.actor1_name} & {row.actor2_name}",
-            "value":     row.films,
-            "unit":      "films together",
-            "actors":    [row.actor1_name, row.actor2_name],
-            "actor_ids": [row.actor1_id, row.actor2_id],
-            "subtext":   (
+            "type":       "collab_shock",
+            "category":   "collaboration",
+            "headline":   f"{row.actor1_name} & {row.actor2_name}",
+            "value":      row.films,
+            "unit":       "films together",
+            "actors":     [row.actor1_name, row.actor2_name],
+            "actor_ids":  [row.actor1_id, row.actor2_id],
+            "is_primary": True,   # both actors guaranteed primary by SQL filter
+            "subtext":    (
                 f"Worked together {row.films} times — but haven't shared "
                 f"the screen in {gap}+ years."
             ),
@@ -132,7 +153,11 @@ def _collaboration_shock(db: Session, limit: int = 50) -> list:
 def _hidden_dominance(db: Session, limit: int = 50) -> list:
     """
     Supporting actors whose total film count rivals most lead actors.
-    Returns up to `limit` actors.
+
+    v4 change: minimum raised from 20 → 100 films.  This filters actors with
+    a modest filmography (20–99 films) who produce uninteresting, low-magnitude
+    cards.  Only actors with genuinely extraordinary output (Brahmanandam 522,
+    Sukumari 460, etc.) remain eligible.
     """
     rows = db.execute(text("""
         SELECT
@@ -144,7 +169,7 @@ def _hidden_dominance(db: Session, limit: int = 50) -> list:
         WHERE  am.role_type = 'supporting'
           AND  a.is_primary_actor = FALSE
         GROUP  BY a.id, a.name
-        HAVING COUNT(am.movie_id) >= 20
+        HAVING COUNT(am.movie_id) >= 100
         ORDER  BY film_count DESC
         LIMIT  :limit
     """), {"limit": limit}).fetchall()
@@ -163,14 +188,15 @@ def _hidden_dominance(db: Session, limit: int = 50) -> list:
     results = []
     for row in rows:
         results.append({
-            "type":      "hidden_dominance",
-            "category":  "career",
-            "headline":     row.name,
-            "value":     row.film_count,
-            "unit":      "films",
-            "actors":    [row.name],
-            "actor_ids": [row.id],
-            "subtext":   (
+            "type":       "hidden_dominance",
+            "category":   "career",
+            "headline":   row.name,
+            "value":      row.film_count,
+            "unit":       "films",
+            "actors":     [row.name],
+            "actor_ids":  [row.id],
+            "is_primary": False,   # these actors are explicitly non-primary
+            "subtext":    (
                 f"Always in the background — {row.film_count} films, "
                 f"rivalling most lead actors (avg {avg})."
             ),
@@ -183,7 +209,6 @@ def _hidden_dominance(db: Session, limit: int = 50) -> list:
 def _cross_industry_reach(db: Session, limit: int = 50) -> list:
     """
     Primary actors who crossed language barriers to work in 3+ industries.
-    Returns up to `limit` actors.
     """
     rows = db.execute(text("""
         SELECT
@@ -207,14 +232,15 @@ def _cross_industry_reach(db: Session, limit: int = 50) -> list:
 
     return [
         {
-            "type":      "cross_industry",
-            "category":  "industry",
-            "headline":     row.name,
-            "value":     row.ind_count,
-            "unit":      "industries",
-            "actors":    [row.name],
-            "actor_ids": [row.id],
-            "subtext":   (
+            "type":       "cross_industry",
+            "category":   "industry",
+            "headline":   row.name,
+            "value":      row.ind_count,
+            "unit":       "industries",
+            "actors":     [row.name],
+            "actor_ids":  [row.id],
+            "is_primary": True,
+            "subtext":    (
                 f"Crossed language barriers across {row.ind_count} industries "
                 f"in {row.film_count}+ films: {row.industries}."
             ),
@@ -228,7 +254,11 @@ def _cross_industry_reach(db: Session, limit: int = 50) -> list:
 def _career_peak_window(db: Session, limit: int = 50) -> list:
     """
     The densest 5-year career windows — one per actor (their golden era).
-    Returns up to `limit` actors.
+
+    v4 change: value is now win_films (integer) instead of the year-range
+    string "YYYY–YYYY".  This lets the card render a big, punchy number
+    ("160 films in 5 years") rather than a year that looks like data.
+    The year range is preserved in subtext for context.
     """
     rows = db.execute(text("""
         WITH yearly AS (
@@ -277,16 +307,18 @@ def _career_peak_window(db: Session, limit: int = 50) -> list:
 
     return [
         {
-            "type":      "career_peak",
-            "category":  "career",
-            "headline":     row.name,
-            "value":     f"{row.peak_start}–{row.peak_end}",
-            "unit":      "peak years",
-            "actors":    [row.name],
-            "actor_ids": [row.id],
-            "subtext":   (
-                f"{row.win_films} of their {row.total_films} films packed into "
-                f"just 5 years ({row.peak_start}–{row.peak_end}) — their golden era."
+            "type":       "career_peak",
+            "category":   "career",
+            "headline":   row.name,
+            # Integer now — renders as a large number on the card ("160")
+            "value":      int(row.win_films),
+            "unit":       "films in 5 years",
+            "actors":     [row.name],
+            "actor_ids":  [row.id],
+            "is_primary": True,
+            "subtext":    (
+                f"{row.win_films} films in just 5 years "
+                f"({row.peak_start}–{row.peak_end}) — their golden era."
             ),
         }
         for row in rows
@@ -298,7 +330,6 @@ def _career_peak_window(db: Session, limit: int = 50) -> list:
 def _network_power(db: Session, limit: int = 50) -> list:
     """
     Actors connected to the most unique co-stars across all industries.
-    Returns up to `limit` actors.
     """
     rows = db.execute(text("""
         SELECT
@@ -317,14 +348,15 @@ def _network_power(db: Session, limit: int = 50) -> list:
 
     return [
         {
-            "type":      "network_power",
-            "category":  "network",
-            "headline":     row.name,
-            "value":     row.costar_count,
-            "unit":      "connections",
-            "actors":    [row.name],
-            "actor_ids": [row.id],
-            "subtext":   (
+            "type":       "network_power",
+            "category":   "network",
+            "headline":   row.name,
+            "value":      row.costar_count,
+            "unit":       "connections",
+            "actors":     [row.name],
+            "actor_ids":  [row.id],
+            "is_primary": True,
+            "subtext":    (
                 f"Connected to {row.costar_count} unique actors across all industries "
                 f"— the ultimate bridge builder in South Indian cinema."
             ),
@@ -338,7 +370,10 @@ def _network_power(db: Session, limit: int = 50) -> list:
 def _director_loyalty(db: Session, limit: int = 50) -> list:
     """
     Actors who spent ≥30% of their career with a single director.
-    Returns up to `limit` actor-director pairs.
+
+    v4 change: director_name is now included in actors[] so the card
+    renders as a duo (actor portrait + director name visible).
+    unit changed to "films together" for consistency with collab_shock.
     """
     rows = db.execute(text("""
         SELECT
@@ -360,28 +395,31 @@ def _director_loyalty(db: Session, limit: int = 50) -> list:
 
     return [
         {
-            "type":      "director_loyalty",
-            "category":  "collaboration",
-            "headline":     row.actor_name,
-            "value":     row.dir_films,
-            "unit":      f"films with {row.director_name}",
-            "actors":    [row.actor_name],
-            "actor_ids": [row.actor_id],
-            "subtext":   (
-                f"{int(row.pct)}% of their career alongside director "
-                f"{row.director_name} — a defining creative partnership."
+            "type":       "director_loyalty",
+            "category":   "collaboration",
+            "headline":   f"{row.actor_name} & {row.director_name}",
+            # Duo: actor first, director second.  Director has no actor_id
+            # so actor_ids carries only the actor's DB id.
+            "value":      row.dir_films,
+            "unit":       "films together",
+            "actors":     [row.actor_name, row.director_name],
+            "actor_ids":  [row.actor_id],
+            "is_primary": True,
+            "subtext":    (
+                f"{int(row.pct)}% of {row.actor_name}'s career alongside "
+                f"director {row.director_name} — a defining creative partnership."
             ),
         }
         for row in rows
     ]
 
 
-# ── Scoring helpers ───────────────────────────────────────────────────────────
+# ── Scoring ───────────────────────────────────────────────────────────────────
 
 def _extract_number(value) -> Optional[float]:
     """
     Safely pull a numeric value from an insight's 'value' field.
-    Handles int, float, and strings like '2015–2020' (returns first number found).
+    Handles int, float, and strings (returns first digit sequence found).
     """
     if isinstance(value, (int, float)):
         return float(value)
@@ -394,86 +432,115 @@ def _extract_number(value) -> Optional[float]:
 
 def _score(insight: dict) -> float:
     """
-    Weighted log-based scoring.
+    Four-component scoring.  Higher = more impressive and shareable.
 
-    Formula:
-      base  = log(value + 1) × 10        — magnitude (log-scaled, avoids large-number bias)
-      base += type_weight[type]           — category importance
-      base += 15 if insight has 'rarity'  — bonus for rare patterns
-
-    Returns a float; higher = more impressive / surprising.
+    1. Magnitude  — log-scaled film/connection count.  career_peak now
+                    contributes meaningfully because value is an integer.
+    2. Type weight — curiosity and shareability ranking per insight type.
+    3. Primary bonus — +20 when both/all actors are primary lead actors.
+                       Suppresses obscure supporting-only cards without
+                       hard-removing them (hidden_dominance still competes
+                       when its film count is extraordinary).
+    4. Clarity bonus — +8 when value is already an integer (no string parsing
+                       needed; card renders a clean large number).
     """
-    base = 0.0
+    score = 0.0
 
+    # 1. Magnitude
     numeric = _extract_number(insight.get("value"))
-    # Skip year-shaped numbers (≥ 1000) — they are labels, not magnitudes.
-    # e.g. career_peak stores "2010–2015" in value; scoring on the year itself
-    # would inflate its score by ~76 points, drowning out film/costar counts.
-    if numeric is not None and numeric < 1000:
-        base += math.log(numeric + 1) * 10
+    if numeric is not None:
+        score += math.log(numeric + 1) * 12
 
-    # Per-category importance weights
+    # 2. Type weight
     type_weight: dict = {
-        # WOW engine types
-        "collab_shock":     20,
-        "network_power":    18,
-        "hidden_dominance": 17,
-        "career_peak":      15,
-        "cross_industry":   15,
-        "director_loyalty": 12,
-        # Legacy types from crud.get_insights() — kept for backward compat
+        "collab_shock":     25,   # two names + big number = most shareable
+        "network_power":    22,   # enormous connection count = jaw-dropping
+        "hidden_dominance": 20,   # shocking film count for a background actor
+        "cross_industry":   18,   # clear, visual, relatable across audiences
+        "career_peak":      16,   # now numeric — direct comparison possible
+        "director_loyalty": 14,   # duo but director name less recognised
+        # Legacy types — kept for backward compatibility
         "collaboration":    20,
         "director":         12,
         "supporting":       15,
     }
-    base += type_weight.get(insight.get("type", ""), 10)
+    score += type_weight.get(insight.get("type", ""), 10)
 
-    # Optional rarity bonus — set insight["rarity"] = True in any pattern to boost it
+    # 3. Primary actor bonus
+    if insight.get("is_primary"):
+        score += 20
+
+    # 4. Clarity bonus — value is a plain integer (not a string range)
+    if isinstance(insight.get("value"), int):
+        score += 8
+
+    # Optional rarity flag — set insight["rarity"] = True in any pattern to boost
     if insight.get("rarity"):
-        base += 15
+        score += 10
 
-    return base
+    return score
 
 
 # ── Diversity picker ──────────────────────────────────────────────────────────
 
 def _pick_diverse(candidates: list) -> list:
     """
-    Return ALL qualifying insights in a round-robin interleaved sequence so
-    the carousel flows naturally — no artificial caps.
+    Select the best 3–4 insights with strict diversity enforcement.
 
     Algorithm:
-      1. Score every candidate and sort each type's bucket highest → lowest.
-      2. Round-robin across type buckets: take the best remaining insight from
-         each type in turn, cycling until all buckets are exhausted.
+      1. Score every candidate; discard those below _MIN_SCORE.
+      2. Sort survivors highest-score first.
+      3. Pick greedily: add a candidate only if its category has not yet
+         appeared in the result set.
+      4. Stop when _MAX_INSIGHTS is reached or candidates are exhausted.
 
-    This guarantees the carousel never shows the same type twice in a row,
-    and each insight appears exactly once regardless of how many the DB has.
+    Category map (4 categories → natural 1-per-category diversity):
+      collaboration → collab_shock, director_loyalty
+      network       → network_power
+      career        → hidden_dominance, career_peak
+      industry      → cross_industry
+
+    If fewer than _MAX_INSIGHTS candidates survive the category filter
+    (e.g. only 2 categories have qualifying insights), the result list
+    is shorter rather than duplicating a category.
     """
-    logger.info("insight candidates generated: %d", len(candidates))
+    logger.info("insight candidates before scoring: %d", len(candidates))
 
-    # Score and attach confidence
+    # Score everything
     for ins in candidates:
         s = _score(ins)
+        ins["_score"] = s
         ins["confidence"] = round(min(1.0, s / 100), 3)
-        logger.debug("insight type=%-20s score=%5.1f confidence=%.3f headline=%r",
-                     ins["type"], s, ins["confidence"], ins["headline"])
+        logger.debug(
+            "insight type=%-20s score=%5.1f primary=%-5s value=%-8s headline=%r",
+            ins["type"], s, ins.get("is_primary"), ins.get("value"), ins.get("headline"),
+        )
 
-    # Group by type, sorted best-first within each bucket
-    buckets: dict = {}
-    for ins in sorted(candidates, key=_score, reverse=True):
-        buckets.setdefault(ins["type"], []).append(ins)
+    # Apply minimum score floor
+    eligible = [ins for ins in candidates if ins["_score"] >= _MIN_SCORE]
+    logger.info("insight candidates after score floor (>= %.0f): %d", _MIN_SCORE, len(eligible))
 
-    # Round-robin interleave across buckets
-    # Order buckets by their top score so the strongest type leads
-    ordered_types = sorted(buckets, key=lambda t: _score(buckets[t][0]), reverse=True)
+    # Sort highest score first
+    eligible.sort(key=lambda x: x["_score"], reverse=True)
+
+    # Greedy one-per-category selection
+    seen_categories: set = set()
     result: list = []
-    while any(buckets[t] for t in ordered_types):
-        for t in ordered_types:
-            if buckets[t]:
-                result.append(buckets[t].pop(0))
 
-    logger.info("insights selected: %d types=%s", len(result), [i["type"] for i in result])
+    for ins in eligible:
+        cat = ins.get("category", "")
+        if cat in seen_categories:
+            continue
+        seen_categories.add(cat)
+        result.append(ins)
+        if len(result) >= _MAX_INSIGHTS:
+            break
+
+    logger.info(
+        "insights selected: %d  types=%s",
+        len(result),
+        [f"{i['type']}({i['_score']:.0f})" for i in result],
+    )
     return result
 
 
@@ -481,8 +548,7 @@ def _pick_diverse(candidates: list) -> list:
 
 def compute_wow_insights(db: Session) -> list:
     """
-    Run all WOW patterns, score candidates, return top 6 diverse insights
-    (one per type — there are 6 patterns so up to 6 unique cards).
+    Run all WOW patterns, score candidates, return top 3–4 diverse insights.
 
     Fail-safe: a broken pattern is silently skipped — one bad SQL query
     must not crash the entire homepage.
@@ -501,14 +567,13 @@ def compute_wow_insights(db: Session) -> list:
     candidates = []
     for pattern in patterns:
         try:
-            results = pattern(db)          # each pattern now returns a list
+            results = pattern(db)
             if results:
-                candidates.extend(results) # flatten into one pool
+                candidates.extend(results)
         except Exception as e:
-            db.rollback()  # clear aborted transaction so next pattern can run
+            db.rollback()
             logger.warning("insight pattern %s failed: %s", pattern.__name__, e)
 
-    # No cap — return every qualifying insight, interleaved by type.
     return _pick_diverse(candidates)
 
 
@@ -516,7 +581,7 @@ def compute_wow_insights(db: Session) -> list:
 
 def get_wow_insights(db: Session) -> list:
     """
-    Returns top 3 WOW insights, cached for 10 minutes.
+    Returns top 3–4 WOW insights, cached for 10 minutes.
 
     Thread-safety design:
       1. Check cache under lock — return immediately on hit (no contention).
@@ -535,9 +600,6 @@ def get_wow_insights(db: Session) -> list:
         if _cache_data is not None and now < _cache_expiry:
             return _cache_data
 
-    # Compute outside the lock — this is the slow part (6 SQL queries).
-    # Multiple threads may enter here on concurrent cache-miss; that is fine —
-    # the work is idempotent and the last write wins.
     insights = compute_wow_insights(db)
 
     with _cache_lock:
