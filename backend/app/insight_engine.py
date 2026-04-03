@@ -72,11 +72,14 @@ logger = logging.getLogger(__name__)
 CURRENT_YEAR = 2026
 
 # Minimum composite score an insight must reach to be eligible for selection.
-# Raised to 55 in v5 — ensures every card combines meaningful fame + wow.
-_MIN_SCORE = 55.0
+# 50 gives career_peak and director_loyalty room to qualify while still
+# blocking obscure low-fame candidates.
+_MIN_SCORE = 50.0
 
 # Maximum insights returned to the carousel.
-_MAX_INSIGHTS = 4
+# 8 unique cards × 3 (carousel triple) = 24 scroll slots — enough variety
+# that users never notice the loop within a normal session.
+_MAX_INSIGHTS = 8
 
 
 # ── Module-level TTL cache ────────────────────────────────────────────────────
@@ -873,7 +876,7 @@ def _pick_diverse(candidates: list) -> list:
       • Max 1 supporting-actor insight (hidden_dominance)
       • Candidates with no _score_breakdown are not admitted (safety)
     """
-    _FALLBACK_SCORE_THRESHOLD = 75.0   # min score to be admitted in pass 2
+    _FALLBACK_SCORE_THRESHOLD = 60.0   # min score to be admitted in pass 2
 
     logger.info("_pick_diverse: %d candidates entering", len(candidates))
 
@@ -917,8 +920,8 @@ def _pick_diverse(candidates: list) -> list:
             if ins["_score"] <= _FALLBACK_SCORE_THRESHOLD:
                 continue
             cat = ins.get("category", "")
-            # Allow a second card from a category only if it scored high enough
-            if category_count.get(cat, 0) < 2:
+            # Allow up to 3 cards from the same category in the fallback pass
+            if category_count.get(cat, 0) < 3:
                 category_count[cat] = category_count.get(cat, 0) + 1
                 result.append(ins)
                 used_ids.add(id(ins))
