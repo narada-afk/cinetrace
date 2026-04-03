@@ -183,19 +183,19 @@ export default function InsightCard({
 
         </div>
 
-        {/* ── RIGHT: actor portrait(s) ──────────────────────── */}
+        {/* ── RIGHT: actor portrait — absolutely positioned so the card bg is seamless */}
         {actors.length > 0 && (
-          <div className="relative flex-shrink-0 flex items-center self-stretch">
+          <div className="absolute bottom-0 right-0 pointer-events-none z-[2]">
 
-            {/* Left-edge gradient — wide fade from card bg into avatar zone */}
+            {/* Left-to-right fade — blends portrait into the continuous card background */}
             <div
-              className="absolute inset-y-0 left-0 w-20 pointer-events-none z-10"
+              className="absolute inset-y-0 left-0 w-24 z-10"
               style={{ background: `linear-gradient(to right, ${bgColor} 0%, transparent 100%)` }}
             />
 
-            {/* Single actor — larger portrait, bleeds below + right of card */}
+            {/* Single actor */}
             {singleActor && (
-              <div className="relative self-end mb-[-30px] mr-[-18px]" style={{ opacity: 0.65 }}>
+              <div className="relative" style={{ opacity: 0.65 }}>
                 <div
                   className="absolute inset-0 blur-2xl scale-75"
                   style={{ background: glowColor }}
@@ -208,8 +208,8 @@ export default function InsightCard({
                     height={158}
                     className="relative object-cover object-top"
                     style={{
-                      maskImage:       'radial-gradient(ellipse 72% 88% at 65% 52%, rgba(0,0,0,0.88) 38%, rgba(0,0,0,0) 100%)',
-                      WebkitMaskImage: 'radial-gradient(ellipse 72% 88% at 65% 52%, rgba(0,0,0,0.88) 38%, rgba(0,0,0,0) 100%)',
+                      maskImage:       'radial-gradient(ellipse 70% 90% at 60% 55%, rgba(0,0,0,0.9) 35%, rgba(0,0,0,0) 100%)',
+                      WebkitMaskImage: 'radial-gradient(ellipse 70% 90% at 60% 55%, rgba(0,0,0,0.9) 35%, rgba(0,0,0,0) 100%)',
                       filter:          'drop-shadow(0 8px 24px rgba(0,0,0,0.6))',
                     }}
                     onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
@@ -220,9 +220,9 @@ export default function InsightCard({
               </div>
             )}
 
-            {/* Two actors — larger overlapping portraits, bleed bottom-right */}
+            {/* Two actors — overlapping */}
             {multiActor && (
-              <div className="relative flex items-end self-end mb-[-30px] mr-[-14px]" style={{ opacity: 0.65 }}>
+              <div className="relative flex items-end" style={{ opacity: 0.65 }}>
                 {actors.slice(0, 2).map((actor, i) => (
                   <div
                     key={actor.name}
@@ -241,8 +241,8 @@ export default function InsightCard({
                         height={108}
                         className="relative object-cover object-top"
                         style={{
-                          maskImage:       'radial-gradient(ellipse 72% 88% at 65% 52%, rgba(0,0,0,0.82) 38%, rgba(0,0,0,0) 100%)',
-                          WebkitMaskImage: 'radial-gradient(ellipse 72% 88% at 65% 52%, rgba(0,0,0,0.82) 38%, rgba(0,0,0,0) 100%)',
+                          maskImage:       'radial-gradient(ellipse 70% 90% at 60% 55%, rgba(0,0,0,0.85) 35%, rgba(0,0,0,0) 100%)',
+                          WebkitMaskImage: 'radial-gradient(ellipse 70% 90% at 60% 55%, rgba(0,0,0,0.85) 35%, rgba(0,0,0,0) 100%)',
                           filter:          'drop-shadow(0 6px 16px rgba(0,0,0,0.65))',
                         }}
                         onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
