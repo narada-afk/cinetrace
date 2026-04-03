@@ -169,29 +169,25 @@ export default function InsightCard({
         {actors.length > 0 && (
           <div className="absolute bottom-0 right-0 pointer-events-none z-[2]">
 
-            {/* Soft left-edge fade so portrait doesn't cut hard into the text column */}
+            {/* Left-edge fade — blends portrait into the text column */}
             <div
-              className="absolute inset-y-0 left-0 w-20 z-10"
+              className="absolute inset-y-0 left-0 w-24 z-10"
               style={{ background: `linear-gradient(to right, ${bgColor} 0%, transparent 100%)` }}
             />
 
-            {/* Single actor — tight radial mask, face + upper body only */}
+            {/* Single actor — full image, no mask */}
             {singleActor && actors[0].avatarSlug && (
               <Image
                 src={`/avatars/${actors[0].avatarSlug}.png`}
                 alt={actors[0].name}
-                width={210}
-                height={210}
+                width={220}
+                height={220}
                 className="object-cover object-top"
-                style={{
-                  maskImage:       'radial-gradient(ellipse 62% 72% at 62% 32%, black 25%, transparent 65%)',
-                  WebkitMaskImage: 'radial-gradient(ellipse 62% 72% at 62% 32%, black 25%, transparent 65%)',
-                }}
                 onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
               />
             )}
 
-            {/* Two actors — overlapping, same tight radial fade */}
+            {/* Two actors — overlapping, full images */}
             {multiActor && (
               <div className="relative flex items-center">
                 {actors.slice(0, 2).map((actor, i) => (
@@ -204,13 +200,9 @@ export default function InsightCard({
                       <Image
                         src={`/avatars/${actor.avatarSlug}.png`}
                         alt={actor.name}
-                        width={140}
-                        height={140}
+                        width={150}
+                        height={150}
                         className="object-cover object-top"
-                        style={{
-                          maskImage:       'radial-gradient(ellipse 62% 72% at 62% 32%, black 20%, transparent 62%)',
-                          WebkitMaskImage: 'radial-gradient(ellipse 62% 72% at 62% 32%, black 20%, transparent 62%)',
-                        }}
                         onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
                       />
                     </div>
