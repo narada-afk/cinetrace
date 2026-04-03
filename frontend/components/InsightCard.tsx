@@ -148,41 +148,38 @@ export default function InsightCard({
 
         {/* ── LEFT: text content ──────────────────────────────── */}
         <div
-          className="relative z-10 flex flex-col p-6 pr-4 flex-1 min-w-0"
+          className="relative z-10 flex flex-col justify-between p-6 pr-4 flex-1 min-w-0"
           style={{ maxWidth: '62%' }}
         >
-          {/* ── Top group: label → stat (tightly coupled) ── */}
-          <div className="flex flex-col gap-[14px]">
 
-            {/* Label — small, colored, all-caps */}
-            <span
-              className="text-[10px] font-bold uppercase tracking-widest leading-none"
-              style={{ color: accentColor }}
-            >
-              {label}
-            </span>
+          {/* Row 1 — Header / hook */}
+          <span
+            className="text-[10px] font-bold uppercase tracking-widest leading-none"
+            style={{ color: accentColor }}
+          >
+            {label}
+          </span>
 
-            {/* Stat — dominant numeral + smaller unit line */}
-            <div>
-              <div className="text-[3rem] font-black text-white leading-none tracking-tight">
-                {statMain}
-              </div>
-              {statUnit && (
-                <div
-                  className="text-[12px] font-semibold mt-[6px] leading-none tracking-wide"
-                  style={{ color: accentColor, opacity: 0.75 }}
-                >
-                  {statUnit}
-                </div>
-              )}
+          {/* Row 2 — Stat: dominant numeral + accent unit */}
+          <div>
+            <div className="text-[3rem] font-black text-white leading-none tracking-tight">
+              {statMain}
             </div>
-
+            {statUnit && (
+              <div
+                className="text-[12px] font-semibold mt-[5px] leading-none tracking-wide"
+                style={{ color: accentColor, opacity: 0.7 }}
+              >
+                {statUnit}
+              </div>
+            )}
           </div>
 
-          {/* ── Description — pinned to bottom ── */}
-          <p className="text-[11px] text-white/30 leading-snug line-clamp-1 min-w-0 mt-auto">
+          {/* Row 3 — One-liner insight */}
+          <p className="text-[11px] text-white/35 leading-snug line-clamp-1 min-w-0">
             {headline}
           </p>
+
         </div>
 
         {/* ── RIGHT: actor portrait(s) ──────────────────────── */}
@@ -195,9 +192,9 @@ export default function InsightCard({
               style={{ background: `linear-gradient(to right, ${bgColor} 0%, transparent 100%)` }}
             />
 
-            {/* Single actor — portrait anchored bottom-right, slight bleed */}
+            {/* Single actor — portrait anchored bottom-right, ghosted (35% opacity) */}
             {singleActor && (
-              <div className="relative self-end mb-[-22px] mr-[-12px]">
+              <div className="relative self-end mb-[-22px] mr-[-12px]" style={{ opacity: 0.35 }}>
                 <div
                   className="absolute inset-0 blur-2xl scale-75"
                   style={{ background: glowColor }}
@@ -222,9 +219,9 @@ export default function InsightCard({
               </div>
             )}
 
-            {/* Two actors — overlapping portraits, anchored bottom-right */}
+            {/* Two actors — overlapping portraits, anchored bottom-right, ghosted (35% opacity) */}
             {multiActor && (
-              <div className="relative flex items-end self-end mb-[-22px] mr-[-8px]">
+              <div className="relative flex items-end self-end mb-[-22px] mr-[-8px]" style={{ opacity: 0.35 }}>
                 {actors.slice(0, 2).map((actor, i) => (
                   <div
                     key={actor.name}

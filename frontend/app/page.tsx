@@ -16,18 +16,18 @@ import type { NetworkCenter, NetworkNode } from '@/components/GraphPreview'
 
 const GRADIENTS: InsightCardData['gradient'][] = ['red', 'purple', 'orange', 'blue', 'green', 'amber']
 
-const INSIGHT_META: Record<string, { emoji: string; label: string }> = {
+const INSIGHT_META: Record<string, { emoji: string; label: string; blurb: string }> = {
   // Legacy insight types
-  collaboration:    { emoji: '🔥', label: 'Iconic Duo' },
-  director:         { emoji: '🎬', label: 'Director Partnership' },
-  supporting:       { emoji: '⭐', label: 'Character Icon' },
+  collaboration:    { emoji: '🔥', label: 'Iconic Duo',                  blurb: 'A pairing South cinema never forgot'           },
+  director:         { emoji: '🎬', label: 'Director Partnership',         blurb: 'One director shaped their entire career'       },
+  supporting:       { emoji: '⭐', label: 'Character Icon',               blurb: 'Always in the background, never forgettable'  },
   // WOW insight types (insight_engine.py)
-  collab_shock:     { emoji: '⚡', label: 'Wait… how many films??' },
-  hidden_dominance: { emoji: '👀', label: 'Still everywhere' },
-  cross_industry:   { emoji: '🌏', label: 'No language barriers' },
-  career_peak:      { emoji: '🔥', label: 'Golden run' },
-  network_power:    { emoji: '🕸️', label: 'The ultimate connector' },
-  director_loyalty: { emoji: '🤝', label: 'One director. Always.' },
+  collab_shock:     { emoji: '⚡', label: 'Wait… how many films??',       blurb: 'They just kept making films together'          },
+  hidden_dominance: { emoji: '👀', label: 'Still everywhere',             blurb: 'The most overlooked icon in South cinema'     },
+  cross_industry:   { emoji: '🌏', label: 'No language barriers',         blurb: 'One actor across every South Indian industry'  },
+  career_peak:      { emoji: '🔥', label: 'Golden run',                   blurb: 'Their most explosive creative run, ever'      },
+  network_power:    { emoji: '🕸️', label: 'The ultimate connector',      blurb: 'Connected to more actors than anyone else'    },
+  director_loyalty: { emoji: '🤝', label: 'One director. Always.',        blurb: 'A creative bond that defined a career'        },
 }
 
 // ── Static fallbacks ──────────────────────────────────────────────────────────
@@ -156,7 +156,8 @@ async function fetchPageData(industry: string) {
       return {
         emoji:    meta.emoji,
         label:    meta.label,
-        headline: insight.headline,
+        // blurb = short crafted one-liner (meaning); actor names are shown via avatars only
+        headline: meta.blurb,
         stat,
         subtext,
         actors:   insight.actors
