@@ -78,9 +78,9 @@ CURRENT_YEAR = 2026
 _MIN_SCORE = 40.0
 
 # Maximum insights returned to the carousel.
-# Aim for 12 unique cards — carousel triples them for 36 scroll slots,
-# enough that the loop is never noticed in a normal session.
-_MAX_INSIGHTS = 12
+# 100 cards → long scroll session for the user.
+# 7 patterns × limit=200 = 1400 raw candidates; after score filter we expect 100–300 eligible.
+_MAX_INSIGHTS = 100
 
 
 # ── Module-level TTL cache ────────────────────────────────────────────────────
@@ -219,7 +219,7 @@ def _hidden_dominance(db: Session, limit: int = 50) -> list:
     for row in rows:
         results.append({
             "type":       "hidden_dominance",
-            "category":   "career",
+            "category":   "supporting",
             "headline":   row.name,
             "value":      row.film_count,
             "unit":       "films",
@@ -255,7 +255,7 @@ def _cross_industry_reach(db: Session, limit: int = 50) -> list:
           AND  m.industry <> ''
           AND  a.is_primary_actor = TRUE
         GROUP  BY a.id, a.name
-        HAVING COUNT(DISTINCT LOWER(m.industry)) >= 3
+        HAVING COUNT(DISTINCT LOWER(m.industry)) >= 2
         ORDER  BY ind_count DESC, film_count DESC
         LIMIT  :limit
     """), {"limit": limit}).fetchall()
@@ -329,8 +329,8 @@ def _career_peak_window(db: Session, limit: int = 50) -> list:
         FROM   best_window bw
         JOIN   actors      a   ON a.id         = bw.actor_id
         JOIN   actor_stats ast ON ast.actor_id = bw.actor_id
-        WHERE  bw.win_films >= 8
-          AND  bw.win_films::float / NULLIF(ast.film_count, 0) >= 0.35
+        WHERE  bw.win_films >= 6
+          AND  bw.win_films::float / NULLIF(ast.film_count, 0) >= 0.25
         ORDER  BY bw.win_films DESC
         LIMIT  :limit
     """), {"limit": limit}).fetchall()
@@ -342,7 +342,7 @@ def _career_peak_window(db: Session, limit: int = 50) -> list:
             "headline":   row.name,
             # Integer now — renders as a large number on the card ("160")
             "value":      int(row.win_films),
-            "unit":       "films in 5 years",
+            "unit":       f"films  ·  {row.peak_start}–{row.peak_end}",
             "actors":     [row.name],
             "actor_ids":  [row.id],
             "is_primary": True,
@@ -408,8 +408,8 @@ def _director_loyalty(db: Session, limit: int = 50) -> list:
     rows = db.execute(text("""
         SELECT
             a.id                                                     AS actor_id,
-            ads.actor_name,
-            ads.director_name,
+            a.name                                                   AS actor_name,
+            ads.director                                             AS director_name,
             ads.film_count                                           AS dir_films,
             ast.film_count                                           AS total_films,
             ROUND(ads.film_count * 100.0 / NULLIF(ast.film_count, 0)) AS pct
@@ -417,16 +417,15 @@ def _director_loyalty(db: Session, limit: int = 50) -> list:
         JOIN   actor_stats ast ON ast.actor_id = ads.actor_id
         JOIN   actors      a   ON a.id         = ads.actor_id
         WHERE  a.is_primary_actor = TRUE
-          AND  ads.film_count >= 8
-          AND  ads.film_count * 100.0 / NULLIF(ast.film_count, 0) >= 30
-        ORDER  BY pct DESC, ads.film_count DESC
+          AND  ads.film_count >= 15
+        ORDER  BY ads.film_count DESC, pct DESC
         LIMIT  :limit
     """), {"limit": limit}).fetchall()
 
     return [
         {
             "type":       "director_loyalty",
-            "category":   "collaboration",
+            "category":   "director",
             "headline":   f"{row.actor_name} & {row.director_name}",
             # Duo: actor first, director second.  Director has no actor_id
             # so actor_ids carries only the actor's DB id.
@@ -438,6 +437,58 @@ def _director_loyalty(db: Session, limit: int = 50) -> list:
             "subtext":    (
                 f"{int(row.pct)}% of {row.actor_name}'s career alongside "
                 f"director {row.director_name} — a defining creative partnership."
+            ),
+        }
+        for row in rows
+    ]
+
+
+# ── Pattern 7: Director Box Office ────────────────────────────────────────────
+
+def _director_box_office(db: Session, limit: int = 50) -> list:
+    """
+    Directors whose total box office across all films exceeds 1000 Cr.
+
+    Value  = total box office (integer Cr).
+    Subtext calls out the biggest single hit by name and figure.
+    actor_ids is empty (directors are not in the actors table);
+    hard_filter rule 1 is bypassed for this type.
+    """
+    rows = db.execute(text("""
+        SELECT
+            m.director,
+            ROUND(SUM(m.box_office))                              AS total_cr,
+            ROUND(MAX(m.box_office))                              AS biggest_cr,
+            (
+                SELECT m2.title
+                FROM   movies m2
+                WHERE  m2.director = m.director
+                  AND  m2.box_office IS NOT NULL
+                ORDER  BY m2.box_office DESC
+                LIMIT  1
+            )                                                     AS biggest_title
+        FROM   movies m
+        WHERE  m.box_office  IS NOT NULL
+          AND  m.director    IS NOT NULL
+        GROUP  BY m.director
+        HAVING SUM(m.box_office) >= 1000
+        ORDER  BY total_cr DESC
+        LIMIT  :limit
+    """), {"limit": limit}).fetchall()
+
+    return [
+        {
+            "type":       "director_box_office",
+            "category":   "blockbuster",
+            "headline":   row.director,
+            "value":      int(row.total_cr),
+            "unit":       "Cr box office",
+            "actors":     [row.director],
+            "actor_ids":  [],          # directors not in actors table
+            "is_primary": False,
+            "subtext":    (
+                f"Biggest hit: {row.biggest_title} — ₹{int(row.biggest_cr)} Cr. "
+                f"₹{int(row.total_cr)} Cr in total box office."
             ),
         }
         for row in rows
@@ -587,7 +638,7 @@ def _relatability_score(insight: dict) -> float:
     if isinstance(value, int):
         score += 8
 
-    RELATABLE_UNITS = {"films", "films together", "connections", "films in 5 years", "industries"}
+    RELATABLE_UNITS = {"films", "films together", "connections", "films in 5 years", "industries", "Cr box office"}
     ABSTRACT_UNITS  = {"peak years", "pct", "ratio", "%"}
 
     if unit in RELATABLE_UNITS:
@@ -696,7 +747,7 @@ def _headline_readiness(insight: dict) -> float:
     the two functions are consistent — this function exists as a hard structural
     check separate from the graduated relatability score.
     """
-    SIMPLE_UNITS = {"films", "films together", "connections", "films in 5 years", "industries"}
+    SIMPLE_UNITS = {"films", "films together", "connections", "films in 5 years", "industries", "Cr box office"}
     value = insight.get("value")
     unit  = insight.get("unit", "")
     if isinstance(value, (int, float)) and unit in SIMPLE_UNITS:
@@ -722,16 +773,17 @@ def _score(insight: dict) -> float:
     Sub-scores are stored in insight["_score_breakdown"] for debug logging.
     """
     TYPE_BASE: dict = {
-        "collab_shock":     15,
-        "network_power":    12,
-        "hidden_dominance": 10,
-        "cross_industry":   12,
-        "career_peak":      10,
-        "director_loyalty":  8,
+        "collab_shock":        15,
+        "network_power":       12,
+        "hidden_dominance":    10,
+        "cross_industry":      12,
+        "career_peak":         10,
+        "director_loyalty":     8,
+        "director_box_office": 14,
         # Legacy backward-compat
-        "collaboration":    12,
-        "director":          8,
-        "supporting":       10,
+        "collaboration":       12,
+        "director":             8,
+        "supporting":          10,
     }
     base     = TYPE_BASE.get(insight.get("type", ""), 5)
     fame     = _fame_score(insight)
@@ -773,12 +825,13 @@ def _hard_filter(candidates: list) -> list:
     """
     # Per-type minimum value to even enter scoring
     MIN_VALUE: dict = {
-        "hidden_dominance": 150,   # 150+ supporting films (obscure actors below this)
-        "collab_shock":      20,   # 20+ films together for a primary pair
-        "network_power":    100,   # 100+ unique co-stars
-        "cross_industry":     4,   # 4+ industries (3 is the minimum, barely surprising)
-        "career_peak":       20,   # 20+ films in the 5-year window
-        "director_loyalty":  10,   # 10+ films with that director
+        "hidden_dominance":    150,   # 150+ supporting films (obscure actors below this)
+        "collab_shock":         10,   # 10+ films together for a primary pair
+        "network_power":       100,   # 100+ unique co-stars
+        "cross_industry":        3,   # 3+ industries
+        "career_peak":           6,   # 6+ films in the 5-year window
+        "director_loyalty":     15,   # 15+ films with that director
+        "director_box_office": 1000,  # 1000+ Cr total box office
     }
 
     filtered = []
@@ -786,8 +839,8 @@ def _hard_filter(candidates: list) -> list:
         itype = ins.get("type", "")
         value = ins.get("value")
 
-        # Rule 1: must have actor_id
-        if not ins.get("actor_ids"):
+        # Rule 1: must have actor_id (director_box_office exempt — no actor in DB)
+        if itype != "director_box_office" and not ins.get("actor_ids"):
             logger.debug("hard_filter: drop %s — no actor_ids", itype)
             continue
 
@@ -822,7 +875,7 @@ def _hard_filter(candidates: list) -> list:
         #   All other insight types must have at least one primary actor.
         #   This prevents obscure non-primary actors from leaking into
         #   types (e.g. collab_shock) where they produce unrecognisable cards.
-        if itype != "hidden_dominance":
+        if itype not in ("hidden_dominance", "director_box_office"):
             stats = ins.get("_actor_stats", [])
             if stats and not any(s["is_primary"] for s in stats):
                 logger.debug(
@@ -877,7 +930,7 @@ def _pick_diverse(candidates: list) -> list:
       • Max 1 supporting-actor insight (hidden_dominance)
       • Candidates with no _score_breakdown are not admitted (safety)
     """
-    _FALLBACK_SCORE_THRESHOLD = 42.0   # min score to be admitted in pass 2
+    _FALLBACK_SCORE_THRESHOLD = 35.0   # min score to be admitted in pass 2
 
     logger.info("_pick_diverse: %d candidates entering", len(candidates))
 
@@ -921,8 +974,8 @@ def _pick_diverse(candidates: list) -> list:
             if ins["_score"] <= _FALLBACK_SCORE_THRESHOLD:
                 continue
             cat = ins.get("category", "")
-            # Allow up to 3 cards from the same category in the fallback pass
-            if category_count.get(cat, 0) < 3:
+            # No hard per-category ceiling — let score quality decide
+            if category_count.get(cat, 0) < 20:
                 category_count[cat] = category_count.get(cat, 0) + 1
                 result.append(ins)
                 used_ids.add(id(ins))
@@ -935,15 +988,67 @@ def _pick_diverse(candidates: list) -> list:
         to_remove = set(id(i) for i in supporting[1:])
         result = [i for i in result if id(i) not in to_remove]
 
-    # Re-sort final result highest-score first for carousel ordering
-    result.sort(key=lambda x: x["_score"], reverse=True)
+    # ── Carousel ordering ─────────────────────────────────────────────────────
+    #
+    # Rules (applied in order):
+    #   1. Single-avatar categories lead each round (one person = cleaner focus).
+    #      Multi-avatar categories (pairs/duos) trail within every round.
+    #   2. Within each avatar-group, order by top-card score so the strongest
+    #      category of that group leads.
+    #   3. Round-robin across categories — guarantees no same category back-to-back.
+    #   4. Final dedup pass — if two same-category cards are still adjacent
+    #      (can happen at round boundaries), swap the later one forward.
+    #
+    # Single-avatar categories: network, career, supporting, blockbuster, industry
+    # Multi-avatar categories : collaboration, director
+
+    _SINGLE_AVATAR_CATS = {"network", "career", "supporting", "blockbuster", "industry"}
+
+    from collections import defaultdict
+    buckets: dict = defaultdict(list)
+    for ins in sorted(result, key=lambda x: x["_score"], reverse=True):
+        buckets[ins.get("category", "other")].append(ins)
+
+    # Sort categories: single-avatar first (by best score), then multi-avatar (by best score)
+    single_cats = sorted(
+        [c for c in buckets if c in _SINGLE_AVATAR_CATS],
+        key=lambda c: buckets[c][0]["_score"], reverse=True,
+    )
+    multi_cats = sorted(
+        [c for c in buckets if c not in _SINGLE_AVATAR_CATS],
+        key=lambda c: buckets[c][0]["_score"], reverse=True,
+    )
+    cat_order = single_cats + multi_cats
+
+    # Round-robin fill
+    interleaved: list = []
+    round_idx = 0
+    while len(interleaved) < len(result):
+        added_this_round = 0
+        for cat in cat_order:
+            if round_idx < len(buckets[cat]):
+                interleaved.append(buckets[cat][round_idx])
+                added_this_round += 1
+        if added_this_round == 0:
+            break
+        round_idx += 1
+
+    # ── Safety pass: no same-category back-to-back ────────────────────────────
+    # At round boundaries the last card of round N and first of round N+1 can
+    # share a category if one bucket is larger.  Swap offenders forward.
+    for i in range(1, len(interleaved)):
+        if interleaved[i].get("category") == interleaved[i - 1].get("category"):
+            # Find the next card with a different category and swap it here
+            for j in range(i + 1, len(interleaved)):
+                if interleaved[j].get("category") != interleaved[i - 1].get("category"):
+                    interleaved[i], interleaved[j] = interleaved[j], interleaved[i]
+                    break
 
     logger.info(
-        "insights selected: %d  %s",
-        len(result),
-        [(i["type"], i["_score_breakdown"]["total"]) for i in result],
+        "insights selected: %d  single-avatar-cats=%s  multi-avatar-cats=%s",
+        len(interleaved), single_cats, multi_cats,
     )
-    return result
+    return interleaved
 
 
 # ── Core computation (no cache) ───────────────────────────────────────────────
@@ -968,12 +1073,13 @@ def compute_wow_insights(db: Session) -> list:
         _career_peak_window,
         _network_power,
         _director_loyalty,
+        _director_box_office,
     ]
 
     candidates = []
     for pattern in patterns:
         try:
-            results = pattern(db)
+            results = pattern(db, limit=200)
             if results:
                 candidates.extend(results)
         except Exception as e:

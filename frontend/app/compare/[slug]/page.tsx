@@ -2,6 +2,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
+import TrackEvent from '@/components/TrackEvent'
 import Header from '@/components/Header'
 import ActorAvatar from '@/components/ActorAvatar'
 import MissingData from '@/components/MissingData'
@@ -37,6 +38,7 @@ interface ActorData {
 
 interface PageProps {
   params: { slug: string }
+  searchParams?: { from?: string }
 }
 
 // ── Data helpers ───────────────────────────────────────────────────────────────
@@ -100,57 +102,116 @@ function buildTimeline(movies: ActorMovie[]): Map<number, number> {
   return map
 }
 
-/** Auto-generate 2–3 insight strings from actor data. */
-function generateInsights(d1: ActorData, d2: ActorData): string[] {
-  const insights: string[] = []
+// ── Structured compare insights ───────────────────────────────────────────────
 
-  // Director richness
-  const dirs1 = d1.directors.length
-  const dirs2 = d2.directors.length
-  if (Math.abs(dirs1 - dirs2) >= 3) {
-    const [more, less] = dirs1 > dirs2 ? [d1, d2] : [d2, d1]
-    insights.push(
-      `${more.profile.name} has explored ${Math.max(dirs1, dirs2)} different directors — ${Math.abs(dirs1 - dirs2)} more than ${less.profile.name}, suggesting broader creative range.`,
-    )
-  }
+interface CompareInsight {
+  emoji: string
+  hook: string
+  stat: string
+  context: string
+}
 
-  // Highest rated films
-  const top1 = highestRated(d1.movies)
-  const top2 = highestRated(d2.movies)
-  if (top1 && top2) {
-    const r1 = top1.vote_average!.toFixed(1)
-    const r2 = top2.vote_average!.toFixed(1)
-    insights.push(
-      `${d1.profile.name}'s highest-rated film is "${top1.title}" (${r1}/10), while ${d2.profile.name}'s is "${top2.title}" (${r2}/10).`,
-    )
-  }
+/** Generate up to 4 structured compare insights from actor data. */
+function generateStructuredInsights(d1: ActorData, d2: ActorData): CompareInsight[] {
+  const insights: CompareInsight[] = []
+  const p1 = d1.profile
+  const p2 = d2.profile
+  const rat1 = calcAvgRating(d1.movies)
+  const rat2 = calcAvgRating(d2.movies)
+  const yrs1 = calcYearsActive(p1)
+  const yrs2 = calcYearsActive(p2)
 
-  // Collaborator network
-  const c1 = d1.collaborators.length
-  const c2 = d2.collaborators.length
-  if (Math.abs(c1 - c2) >= 15) {
-    const more = c1 > c2 ? d1 : d2
-    insights.push(
-      `${more.profile.name} has appeared on screen with ${Math.max(c1, c2)} different co-stars — one of the widest networks in South Indian cinema.`,
-    )
-  }
-
-  // Peak year
-  const peak = (movies: ActorMovie[]) => {
+  const peakEntry = (movies: ActorMovie[]) => {
     const byYear = buildTimeline(movies)
     if (!byYear.size) return null
     return [...byYear.entries()].reduce((a, b) => (b[1] > a[1] ? b : a))
   }
-  const p1 = peak(d1.movies)
-  const p2 = peak(d2.movies)
-  if (p1 && p2 && p1[0] !== p2[0]) {
-    insights.push(
-      `${d1.profile.name} was most prolific in ${p1[0]} (${p1[1]} film${p1[1] > 1 ? 's' : ''}), while ${d2.profile.name} peaked in ${p2[0]} (${p2[1]} film${p2[1] > 1 ? 's' : ''}).`,
-    )
+  const pk1 = peakEntry(d1.movies)
+  const pk2 = peakEntry(d2.movies)
+
+  const topBO1 = Math.max(0, ...d1.movies.map((m) => m.box_office ?? 0))
+  const topBO2 = Math.max(0, ...d2.movies.map((m) => m.box_office ?? 0))
+  const topBOMovie1 = d1.movies.find((m) => (m.box_office ?? 0) === topBO1 && topBO1 > 0)
+  const topBOMovie2 = d2.movies.find((m) => (m.box_office ?? 0) === topBO2 && topBO2 > 0)
+  const fmtBO = (v: number) =>
+    v >= 1000 ? `₹${(v / 1000).toFixed(1)}K Cr` : `₹${Math.round(v)} Cr`
+
+  // 1. Film count dominance (gap ≥ 20)
+  const filmGap = Math.abs(p1.film_count - p2.film_count)
+  if (filmGap >= 20) {
+    const more = p1.film_count > p2.film_count ? p1 : p2
+    insights.push({
+      emoji: '📽️',
+      hook: `Sheer volume? ${more.name}.`,
+      stat: `${Math.max(p1.film_count, p2.film_count)} vs ${Math.min(p1.film_count, p2.film_count)} films`,
+      context: `A ${filmGap}-film gap — roughly ${Math.round(filmGap / (Math.max(yrs1, yrs2) || 1))} more per active year.`,
+    })
   }
 
-  return insights.slice(0, 3)
+  // 2. Rating contrast (gap ≥ 0.3)
+  if (rat1 > 0 && rat2 > 0 && Math.abs(rat1 - rat2) >= 0.3) {
+    const [higher, lower] =
+      rat1 >= rat2
+        ? [{ actor: p1, rat: rat1, count: p1.film_count }, { actor: p2, rat: rat2, count: p2.film_count }]
+        : [{ actor: p2, rat: rat2, count: p2.film_count }, { actor: p1, rat: rat1, count: p1.film_count }]
+    const isSurprise = higher.count < lower.count
+    insights.push({
+      emoji: isSurprise ? '⚡' : '⭐',
+      hook: isSurprise
+        ? `Fewer films. Higher bar. ${higher.actor.name} wins.`
+        : `Across the board… ${higher.actor.name} leads.`,
+      stat: `${higher.rat.toFixed(1)} vs ${lower.rat.toFixed(1)} avg rating`,
+      context: isSurprise
+        ? `${higher.actor.name} has done fewer films, yet audiences rate them higher on average.`
+        : `${Math.abs(rat1 - rat2).toFixed(1)} rating points separates these two — a meaningful gap in audience perception.`,
+    })
+  }
+
+  // 3. Peak year
+  if (pk1 && pk2) {
+    const [busier, quieter] =
+      pk1[1] >= pk2[1]
+        ? [{ actor: p1, pk: pk1 }, { actor: p2, pk: pk2 }]
+        : [{ actor: p2, pk: pk2 }, { actor: p1, pk: pk1 }]
+    insights.push({
+      emoji: '🔥',
+      hook: `${busier.actor.name}'s most explosive year`,
+      stat: `${busier.pk[1]} films in ${busier.pk[0]}`,
+      context: `${quieter.actor.name} peaked in ${quieter.pk[0]} with ${quieter.pk[1]} film${quieter.pk[1] !== 1 ? 's' : ''} that year.`,
+    })
+  }
+
+  // 4. Director diversity (gap ≥ 5)
+  const dirGap = Math.abs(d1.directors.length - d2.directors.length)
+  if (dirGap >= 5) {
+    const [more, less] = d1.directors.length > d2.directors.length ? [d1, d2] : [d2, d1]
+    insights.push({
+      emoji: '🎬',
+      hook: `More directors. More range. ${more.profile.name}.`,
+      stat: `${Math.max(d1.directors.length, d2.directors.length)} unique directors`,
+      context: `That's ${dirGap} more directors than ${less.profile.name} — a sign of broader creative range.`,
+    })
+  }
+
+  // 5. Box office blockbuster (≥ 500 Cr)
+  if (topBO1 >= 500 || topBO2 >= 500) {
+    const [bigBO, bigMovie, bigActor] =
+      topBO1 >= topBO2
+        ? [topBO1, topBOMovie1, p1]
+        : [topBO2, topBOMovie2, p2]
+    insights.push({
+      emoji: '💰',
+      hook: `Box office? ${bigActor.name} owns it.`,
+      stat: fmtBO(bigBO),
+      context: bigMovie
+        ? `"${bigMovie.title}" — ${bigActor.name}'s highest-grossing film ever.`
+        : `One of the biggest box office numbers in South Indian cinema.`,
+    })
+  }
+
+  return insights.slice(0, 4)
 }
+
 
 /** Generate a short rivalry narrative paragraph. */
 function generateRivalryStory(d1: ActorData, d2: ActorData): string {
@@ -301,7 +362,7 @@ function HeroBanner({ data1, data2 }: { data1: ActorData; data2: ActorData }) {
       </div>
 
       {/* ── VS badge — absolute centre ── */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20">
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-2">
         <div
           className="w-14 h-14 rounded-full flex items-center justify-center border border-white/10 shadow-2xl"
           style={{ background: '#0a0a0f' }}
@@ -368,32 +429,43 @@ function SharedCollaboratorsSection({
   )
 }
 
-// ── TASK 4: Did You Know ──────────────────────────────────────────────────────
+// ── TASK 4: Compare Insight Cards ────────────────────────────────────────────
 
-function DidYouKnow({ insights }: { insights: string[] }) {
+const CARD_ACCENTS = [
+  { bg: 'rgba(245,158,11,0.07)',  border: 'rgba(245,158,11,0.18)',  color: '#f59e0b' },
+  { bg: 'rgba(139,92,246,0.07)', border: 'rgba(139,92,246,0.18)', color: '#8b5cf6' },
+  { bg: 'rgba(6,182,212,0.07)',  border: 'rgba(6,182,212,0.18)',  color: '#06b6d4' },
+  { bg: 'rgba(16,185,129,0.07)', border: 'rgba(16,185,129,0.18)', color: '#10b981' },
+]
+
+function CompareInsightCards({ insights }: { insights: CompareInsight[] }) {
   if (!insights.length) return null
 
-  const EMOJIS = ['💡', '🎬', '⭐']
-
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-      {insights.map((text, i) => (
-        <div
-          key={i}
-          className="glass rounded-2xl p-5 flex flex-col gap-3"
-          style={{
-            background:
-              i === 0
-                ? 'rgba(245,158,11,0.05)'
-                : i === 1
-                ? 'rgba(255,255,255,0.03)'
-                : 'rgba(6,182,212,0.05)',
-          }}
-        >
-          <span className="text-xl">{EMOJIS[i]}</span>
-          <p className="text-sm text-white/65 leading-relaxed">{text}</p>
-        </div>
-      ))}
+    <div className="relative">
+      {/* Horizontal scroll reel */}
+      <div className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory scrollbar-hide">
+        {insights.map((ins, i) => {
+          const accent = CARD_ACCENTS[i % CARD_ACCENTS.length]
+          return (
+            <div
+              key={i}
+              className="min-w-[272px] max-w-[300px] flex-shrink-0 snap-start rounded-2xl p-5 flex flex-col gap-3 hover:scale-[1.02] transition-transform cursor-default"
+              style={{ background: accent.bg, border: `1px solid ${accent.border}` }}
+            >
+              <span className="text-2xl">{ins.emoji}</span>
+              <p className="text-sm font-semibold text-white/80 leading-snug">{ins.hook}</p>
+              <p className="text-2xl font-bold leading-none" style={{ color: accent.color }}>
+                {ins.stat}
+              </p>
+              <p className="text-xs text-white/45 leading-relaxed">{ins.context}</p>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Right-edge fade — hints at more cards */}
+      <div className="pointer-events-none absolute right-0 top-0 h-full w-14 bg-gradient-to-l from-[#0a0a0f] to-transparent" />
     </div>
   )
 }
@@ -585,6 +657,7 @@ function FilmsTogether({ films, name1, name2 }: { films: SharedFilm[]; name1: st
   )
 }
 
+
 // ── Metadata ───────────────────────────────────────────────────────────────────
 
 export async function generateMetadata({ params }: PageProps) {
@@ -599,7 +672,7 @@ export async function generateMetadata({ params }: PageProps) {
 
 // ── Page ───────────────────────────────────────────────────────────────────────
 
-export default async function ComparePage({ params }: PageProps) {
+export default async function ComparePage({ params, searchParams }: PageProps) {
   const names = parseSlug(params.slug)
   if (!names) notFound()
 
@@ -631,9 +704,14 @@ export default async function ComparePage({ params }: PageProps) {
     data2.profile.name,
   )
 
-  const insights = generateInsights(data1, data2)
+  const insights = generateStructuredInsights(data1, data2)
   const p1 = data1.profile
   const p2 = data2.profile
+
+  // Back button — context-aware via ?from param; defaults to Home
+  const from = searchParams?.from
+  const backHref = from === 'actor' ? `/actors/${p1.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}` : '/'
+  const backLabel = from === 'actor' ? p1.name : 'Home'
 
   // Pre-compute the 5 verdict metrics so Share Card stays in sync
   const shareYrs1 = calcYearsActive(p1)
@@ -675,21 +753,22 @@ export default async function ComparePage({ params }: PageProps) {
 
   return (
     <div className="min-h-screen bg-[#0a0a0f]">
+      <TrackEvent event="compare_used" props={{ actor1: data1.profile.name, actor2: data2.profile.name }} />
       <Header />
 
       <main className="max-w-[1000px] mx-auto px-4 sm:px-6 pb-28 flex flex-col gap-10">
 
         {/* Back link */}
         <div className="pt-3">
-          <Link href={`/actors/${data1.profile.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`} className="text-sm text-white/30 hover:text-white/60 transition-colors">
-            ← Back to {data1.profile.name}
+          <Link href={backHref} className="text-sm text-white/30 hover:text-white/60 transition-colors">
+            ← Back to {backLabel}
           </Link>
         </div>
 
-        {/* ── TASK 1: Hero Banner ──────────────────────────────── */}
+        {/* ── Hero Banner ───────────────────────────────────────── */}
         <HeroBanner data1={data1} data2={data2} />
 
-        {/* ── TASK 2: Verdict Card ─────────────────────────────── */}
+        {/* ── Verdict Card (Comparison Bars) ───────────────────── */}
         <section>
           <SectionLabel>🏆 Verdict</SectionLabel>
           <VerdictCard data1={data1} data2={data2} />
@@ -699,22 +778,31 @@ export default async function ComparePage({ params }: PageProps) {
           </div>
         </section>
 
-        {/* ── TASK 4: Did You Know ─────────────────────────────── */}
+        {/* ── TASK 4: Compare Insight Cards ────────────────────── */}
         {insights.length > 0 && (
           <section>
-            <SectionLabel>💡 Did You Know?</SectionLabel>
-            <DidYouKnow insights={insights} />
+            <SectionLabel>💡 By the numbers</SectionLabel>
+            <CompareInsightCards insights={insights} />
           </section>
         )}
 
         {/* ── Films Together ───────────────────────────────────── */}
         <section>
-          <div className="flex items-baseline gap-3 mb-4">
+          <div className="flex items-baseline gap-3 mb-2">
             <SectionLabel>🎬 Films Together</SectionLabel>
             <span className="text-sm text-white/30 -mt-4 ml-1">
               {sharedFilms.length} film{sharedFilms.length !== 1 ? 's' : ''}
             </span>
           </div>
+          <p className="text-xs text-white/35 mb-4 leading-relaxed">
+            {sharedFilms.length === 0
+              ? `${p1.name} and ${p2.name} haven't shared the screen in our database — two legends who travel in separate orbits.`
+              : sharedFilms.length === 1
+              ? `Just one shared film — but every legend has to start somewhere.`
+              : sharedFilms.length <= 5
+              ? `${sharedFilms.length} shared films. A rivalry forged on screen.`
+              : `${sharedFilms.length} shared films. These two have been inseparable from South cinema.`}
+          </p>
           <FilmsTogether films={sharedFilms} name1={p1.name} name2={p2.name} />
         </section>
 
@@ -730,6 +818,13 @@ export default async function ComparePage({ params }: PageProps) {
         {/* ── TASK 6: Top Collaborators ────────────────────────── */}
         <section>
           <SectionLabel>🔥 Top Collaborators</SectionLabel>
+          <p className="text-xs text-white/35 mb-5 -mt-2 leading-relaxed">
+            {data1.collaborators.length > data2.collaborators.length + 20
+              ? `${p1.name} has built a wider on-screen network — ${data1.collaborators.length} co-stars vs ${p2.name}'s ${data2.collaborators.length}. See who each keeps coming back to.`
+              : data2.collaborators.length > data1.collaborators.length + 20
+              ? `${p2.name} has built a wider on-screen network — ${data2.collaborators.length} co-stars vs ${p1.name}'s ${data1.collaborators.length}. See who each keeps coming back to.`
+              : `Both actors have built wide on-screen networks. See who they've shared the most screen time with.`}
+          </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <CompareCollaboratorList
               actorName={p1.name}

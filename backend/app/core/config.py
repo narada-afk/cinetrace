@@ -14,7 +14,7 @@ import os
 class Settings:
     # ── Database ───────────────────────────────────────────────────────────────
     DATABASE_URL: str = os.getenv(
-        "DATABASE_URL", "postgresql://sca:sca@postgres:5432/sca"
+        "DATABASE_URL", "postgresql://sca:sca@localhost:5432/sca"
     )
 
     # ── API metadata ───────────────────────────────────────────────────────────

@@ -11,7 +11,7 @@ from sqlalchemy.orm import sessionmaker
 # Default falls back to a local value for easier development.
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://sca:sca@postgres:5432/sca"
+    "postgresql://sca:sca@localhost:5432/sca"
 )
 
 # The engine is the core connection to the database.
