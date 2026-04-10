@@ -29,7 +29,8 @@ const INSIGHT_META: Record<string, { emoji: string; label: string; blurb: string
   cross_industry:   { emoji: '🌏', label: 'No language barriers',         blurb: 'One actor across every South Indian industry'  },
   career_peak:      { emoji: '🔥', label: 'Golden run',                   blurb: 'Their most explosive creative run, ever'      },
   network_power:    { emoji: '🕸️', label: 'The ultimate connector',      blurb: 'Connected to more actors than anyone else'    },
-  director_loyalty: { emoji: '🤝', label: 'One director. Always.',        blurb: 'A creative bond that defined a career'        },
+  director_loyalty:    { emoji: '🤝', label: 'One director. Always.',        blurb: 'A creative bond that defined a career'        },
+  director_box_office: { emoji: '💰', label: 'Box office giant',             blurb: 'The director who prints money at the box office' },
 }
 
 // ── Static fallbacks ──────────────────────────────────────────────────────────
@@ -106,6 +107,8 @@ function personalizedBlurb(
       return `${a1} — one director changed everything`
     case 'supporting':
       return `${a1} — blink and you'd miss them. But you never did`
+    case 'director_box_office':
+      return `${a1} — every film a blockbuster, every release an event`
     default:
       return fallback
   }

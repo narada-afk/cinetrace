@@ -5,9 +5,9 @@ const API_URL =
     ? (process.env.API_URL          ?? 'http://backend:8000')   // server
     : (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000') // browser
 
-async function apiFetch<T>(path: string): Promise<T> {
+async function apiFetch<T>(path: string, revalidate = 60): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
-    next: { revalidate: 60 },
+    next: { revalidate },
   })
   if (!res.ok) {
     throw new Error(`API error ${res.status}: ${path}`)
@@ -129,7 +129,7 @@ export async function getInsights(industry?: string): Promise<Insight[]> {
     industry && industry !== 'all' && industry !== 'explore'
       ? `?industry=${encodeURIComponent(industry)}`
       : ''
-  const data = await apiFetch<{ insights: Insight[] }>(`/analytics/insights${param}`)
+  const data = await apiFetch<{ insights: Insight[] }>(`/analytics/insights${param}`, 10)
   return data.insights
 }
 

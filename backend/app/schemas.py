@@ -194,12 +194,15 @@ class Insight(BaseModel):
                 Set by the insight engine; None for legacy insight types.
     """
     type: str
+    category: Optional[str] = None  # broad grouping: "collaboration"|"network"|"career"|"industry"|"supporting"
     headline: str
     value: Union[int, str]   # int for counts; str for ranges like "2005–2010"
     unit: str
     actors: List[str]
     actor_ids: List[int] = []
-    subtext: Optional[str] = None   # WOW story sentence (insight_engine.py)
+    subtext: Optional[str] = None    # WOW story sentence (insight_engine.py)
+    confidence: Optional[float] = None  # normalised score 0–1
+    industry: Optional[str] = None   # primary industry of actor(s) — used for diversity bucketing
 
 
 class InsightsOut(BaseModel):

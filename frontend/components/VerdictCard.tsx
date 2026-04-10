@@ -32,6 +32,32 @@ interface ActorData {
   directors: DirectorCollab[]
 }
 
+// Storytelling verdict line — "X wins Y/5. But Z owns {metric}."
+function VerdictText({
+  winner, winnerLeads, loser, metrics, winnerIsP1, winnerColor, verdictStyle,
+}: {
+  winner: { name: string }
+  winnerLeads: number
+  loser: { name: string }
+  metrics: { label: string; v1: number; v2: number }[]
+  winnerIsP1: boolean
+  winnerColor: string
+  verdictStyle: React.CSSProperties
+}) {
+  // Find the metric where the loser leads
+  const loserMetric = metrics.find(m => winnerIsP1 ? m.v2 > m.v1 : m.v1 > m.v2)?.label
+
+  const line1 = `${winner.name} wins ${winnerLeads}/5 battles.`
+  const line2 = loserMetric ? `But ${loser.name} owns ${loserMetric}.` : `A clean sweep.`
+
+  return (
+    <div style={verdictStyle}>
+      <p className="text-lg font-bold leading-snug" style={{ color: winnerColor }}>{line1}</p>
+      <p className="text-sm text-white/50 mt-0.5">{line2}</p>
+    </div>
+  )
+}
+
 export default function VerdictCard({ data1, data2 }: { data1: ActorData; data2: ActorData }) {
   const [animated, setAnimated] = useState(false)
 
@@ -63,11 +89,11 @@ export default function VerdictCard({ data1, data2 }: { data1: ActorData; data2:
     : '—'
 
   const METRICS = [
-    { label: 'Films',            v1: p1.film_count,          v2: p2.film_count,          d1: String(p1.film_count),      d2: String(p2.film_count),      delay: 0.1, sub1: null,                        sub2: null },
-    { label: 'Years Active',     v1: yrs1,                   v2: yrs2,                   d1: String(yrs1),               d2: String(yrs2),               delay: 0.2, sub1: null,                        sub2: null },
+    { label: 'Top Box Office',   v1: topBO1,                 v2: topBO2,                 d1: fmtBO(topBO1),              d2: fmtBO(topBO2),              delay: 0.1, sub1: topBOMovie1?.title ?? null, sub2: topBOMovie2?.title ?? null },
+    { label: 'Films',            v1: p1.film_count,          v2: p2.film_count,          d1: String(p1.film_count),      d2: String(p2.film_count),      delay: 0.2, sub1: null,                        sub2: null },
     { label: 'Avg Rating',       v1: rat1,                   v2: rat2,                   d1: rat1.toFixed(1),            d2: rat2.toFixed(1),            delay: 0.3, sub1: null,                        sub2: null },
-    { label: 'Unique Directors', v1: data1.directors.length, v2: data2.directors.length, d1: String(data1.directors.length), d2: String(data2.directors.length), delay: 0.4, sub1: null,              sub2: null },
-    { label: 'Top Box Office',   v1: topBO1,                 v2: topBO2,                 d1: fmtBO(topBO1),              d2: fmtBO(topBO2),              delay: 0.5, sub1: topBOMovie1?.title ?? null, sub2: topBOMovie2?.title ?? null },
+    { label: 'Years Active',     v1: yrs1,                   v2: yrs2,                   d1: String(yrs1),               d2: String(yrs2),               delay: 0.4, sub1: null,                        sub2: null },
+    { label: 'Unique Directors', v1: data1.directors.length, v2: data2.directors.length, d1: String(data1.directors.length), d2: String(data2.directors.length), delay: 0.5, sub1: null,              sub2: null },
   ]
 
   const wins1 = METRICS.filter((m) => m.v1 > m.v2).length
@@ -117,9 +143,15 @@ export default function VerdictCard({ data1, data2 }: { data1: ActorData; data2:
           <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/30">Verdict</p>
           {/* ④ Verdict pulse */}
           {winner ? (
-            <p className="text-lg font-bold" style={{ color: winnerColor, ...verdictStyle }}>
-              {winner.name} leads in {winnerLeads} of 5 metrics
-            </p>
+            <VerdictText
+              winner={winner}
+              winnerLeads={winnerLeads}
+              loser={winner.name === p1.name ? p2 : p1}
+              metrics={METRICS}
+              winnerIsP1={winner.name === p1.name}
+              winnerColor={winnerColor}
+              verdictStyle={verdictStyle}
+            />
           ) : (
             <p className="text-lg font-bold text-white/60" style={verdictStyle}>
               All square — perfectly matched

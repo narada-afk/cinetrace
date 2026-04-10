@@ -75,12 +75,12 @@ CURRENT_YEAR = 2026
 # 40 is the practical floor — below this, either the actor is obscure or
 # the stat is too small to be interesting. Still filters junk while
 # allowing career_peak / director_loyalty / supporting industry cards through.
-_MIN_SCORE = 40.0
+_MIN_SCORE = 25.0   # Lowered from 40 — lets more Telugu/Kannada candidates through
 
 # Maximum insights returned to the carousel.
-# Aim for 12 unique cards — carousel triples them for 36 scroll slots,
-# enough that the loop is never noticed in a normal session.
-_MAX_INSIGHTS = 12
+# 100 cards → long scroll session for the user.
+# 7 patterns × limit=200 = 1400 raw candidates; after score filter we expect 100–300 eligible.
+_MAX_INSIGHTS = 100
 
 
 # ── Module-level TTL cache ────────────────────────────────────────────────────
@@ -219,7 +219,7 @@ def _hidden_dominance(db: Session, limit: int = 50) -> list:
     for row in rows:
         results.append({
             "type":       "hidden_dominance",
-            "category":   "career",
+            "category":   "supporting",
             "headline":   row.name,
             "value":      row.film_count,
             "unit":       "films",
@@ -255,7 +255,7 @@ def _cross_industry_reach(db: Session, limit: int = 50) -> list:
           AND  m.industry <> ''
           AND  a.is_primary_actor = TRUE
         GROUP  BY a.id, a.name
-        HAVING COUNT(DISTINCT LOWER(m.industry)) >= 3
+        HAVING COUNT(DISTINCT LOWER(m.industry)) >= 2
         ORDER  BY ind_count DESC, film_count DESC
         LIMIT  :limit
     """), {"limit": limit}).fetchall()
@@ -329,8 +329,8 @@ def _career_peak_window(db: Session, limit: int = 50) -> list:
         FROM   best_window bw
         JOIN   actors      a   ON a.id         = bw.actor_id
         JOIN   actor_stats ast ON ast.actor_id = bw.actor_id
-        WHERE  bw.win_films >= 8
-          AND  bw.win_films::float / NULLIF(ast.film_count, 0) >= 0.35
+        WHERE  bw.win_films >= 6
+          AND  bw.win_films::float / NULLIF(ast.film_count, 0) >= 0.25
         ORDER  BY bw.win_films DESC
         LIMIT  :limit
     """), {"limit": limit}).fetchall()
@@ -342,7 +342,7 @@ def _career_peak_window(db: Session, limit: int = 50) -> list:
             "headline":   row.name,
             # Integer now — renders as a large number on the card ("160")
             "value":      int(row.win_films),
-            "unit":       "films in 5 years",
+            "unit":       f"films  ·  {row.peak_start}–{row.peak_end}",
             "actors":     [row.name],
             "actor_ids":  [row.id],
             "is_primary": True,
@@ -408,8 +408,8 @@ def _director_loyalty(db: Session, limit: int = 50) -> list:
     rows = db.execute(text("""
         SELECT
             a.id                                                     AS actor_id,
-            ads.actor_name,
-            ads.director_name,
+            a.name                                                   AS actor_name,
+            ads.director                                             AS director_name,
             ads.film_count                                           AS dir_films,
             ast.film_count                                           AS total_films,
             ROUND(ads.film_count * 100.0 / NULLIF(ast.film_count, 0)) AS pct
@@ -417,16 +417,15 @@ def _director_loyalty(db: Session, limit: int = 50) -> list:
         JOIN   actor_stats ast ON ast.actor_id = ads.actor_id
         JOIN   actors      a   ON a.id         = ads.actor_id
         WHERE  a.is_primary_actor = TRUE
-          AND  ads.film_count >= 8
-          AND  ads.film_count * 100.0 / NULLIF(ast.film_count, 0) >= 30
-        ORDER  BY pct DESC, ads.film_count DESC
+          AND  ads.film_count >= 15
+        ORDER  BY ads.film_count DESC, pct DESC
         LIMIT  :limit
     """), {"limit": limit}).fetchall()
 
     return [
         {
             "type":       "director_loyalty",
-            "category":   "collaboration",
+            "category":   "director",
             "headline":   f"{row.actor_name} & {row.director_name}",
             # Duo: actor first, director second.  Director has no actor_id
             # so actor_ids carries only the actor's DB id.
@@ -438,6 +437,58 @@ def _director_loyalty(db: Session, limit: int = 50) -> list:
             "subtext":    (
                 f"{int(row.pct)}% of {row.actor_name}'s career alongside "
                 f"director {row.director_name} — a defining creative partnership."
+            ),
+        }
+        for row in rows
+    ]
+
+
+# ── Pattern 7: Director Box Office ────────────────────────────────────────────
+
+def _director_box_office(db: Session, limit: int = 50) -> list:
+    """
+    Directors whose total box office across all films exceeds 1000 Cr.
+
+    Value  = total box office (integer Cr).
+    Subtext calls out the biggest single hit by name and figure.
+    actor_ids is empty (directors are not in the actors table);
+    hard_filter rule 1 is bypassed for this type.
+    """
+    rows = db.execute(text("""
+        SELECT
+            m.director,
+            ROUND(SUM(m.box_office))                              AS total_cr,
+            ROUND(MAX(m.box_office))                              AS biggest_cr,
+            (
+                SELECT m2.title
+                FROM   movies m2
+                WHERE  m2.director = m.director
+                  AND  m2.box_office IS NOT NULL
+                ORDER  BY m2.box_office DESC
+                LIMIT  1
+            )                                                     AS biggest_title
+        FROM   movies m
+        WHERE  m.box_office  IS NOT NULL
+          AND  m.director    IS NOT NULL
+        GROUP  BY m.director
+        HAVING SUM(m.box_office) >= 1000
+        ORDER  BY total_cr DESC
+        LIMIT  :limit
+    """), {"limit": limit}).fetchall()
+
+    return [
+        {
+            "type":       "director_box_office",
+            "category":   "blockbuster",
+            "headline":   row.director,
+            "value":      int(row.total_cr),
+            "unit":       "Cr box office",
+            "actors":     [row.director],
+            "actor_ids":  [],          # directors not in actors table
+            "is_primary": False,
+            "subtext":    (
+                f"Biggest hit: {row.biggest_title} — ₹{int(row.biggest_cr)} Cr. "
+                f"₹{int(row.total_cr)} Cr in total box office."
             ),
         }
         for row in rows
@@ -471,6 +522,7 @@ def _enrich_with_fame(candidates: list, db: Session) -> None:
     rows = db.execute(text("""
         SELECT
             a.id,
+            a.industry,
             ast.film_count,
             COUNT(DISTINCT ac.actor2_id) AS costar_count,
             a.is_primary_actor
@@ -478,7 +530,7 @@ def _enrich_with_fame(candidates: list, db: Session) -> None:
         JOIN   actor_stats ast ON ast.actor_id = a.id
         LEFT JOIN actor_collaborations ac ON ac.actor1_id = a.id
         WHERE  a.id = ANY(:ids)
-        GROUP  BY a.id, ast.film_count, a.is_primary_actor
+        GROUP  BY a.id, a.industry, ast.film_count, a.is_primary_actor
     """), {"ids": list(all_ids)}).fetchall()
 
     # Build lookup: actor_id → stats dict
@@ -487,6 +539,7 @@ def _enrich_with_fame(candidates: list, db: Session) -> None:
             "film_count":   r.film_count   or 0,
             "costar_count": r.costar_count or 0,
             "is_primary":   r.is_primary_actor,
+            "industry":     r.industry or "Unknown",
         }
         for r in rows
     }
@@ -497,6 +550,10 @@ def _enrich_with_fame(candidates: list, db: Session) -> None:
             for aid in (ins.get("actor_ids") or [])
             if aid in lookup
         ]
+        # Stamp industry on the insight itself — use the first actor's industry.
+        # For duo cards, prefer the actor with more films (already first by SQL sort).
+        if ins["_actor_stats"]:
+            ins["industry"] = ins["_actor_stats"][0]["industry"]
 
 
 # ── Scoring helpers ───────────────────────────────────────────────────────────
@@ -587,7 +644,7 @@ def _relatability_score(insight: dict) -> float:
     if isinstance(value, int):
         score += 8
 
-    RELATABLE_UNITS = {"films", "films together", "connections", "films in 5 years", "industries"}
+    RELATABLE_UNITS = {"films", "films together", "connections", "films in 5 years", "industries", "Cr box office"}
     ABSTRACT_UNITS  = {"peak years", "pct", "ratio", "%"}
 
     if unit in RELATABLE_UNITS:
@@ -696,7 +753,7 @@ def _headline_readiness(insight: dict) -> float:
     the two functions are consistent — this function exists as a hard structural
     check separate from the graduated relatability score.
     """
-    SIMPLE_UNITS = {"films", "films together", "connections", "films in 5 years", "industries"}
+    SIMPLE_UNITS = {"films", "films together", "connections", "films in 5 years", "industries", "Cr box office"}
     value = insight.get("value")
     unit  = insight.get("unit", "")
     if isinstance(value, (int, float)) and unit in SIMPLE_UNITS:
@@ -722,16 +779,17 @@ def _score(insight: dict) -> float:
     Sub-scores are stored in insight["_score_breakdown"] for debug logging.
     """
     TYPE_BASE: dict = {
-        "collab_shock":     15,
-        "network_power":    12,
-        "hidden_dominance": 10,
-        "cross_industry":   12,
-        "career_peak":      10,
-        "director_loyalty":  8,
+        "collab_shock":        15,
+        "network_power":       12,
+        "hidden_dominance":    10,
+        "cross_industry":      12,
+        "career_peak":         10,
+        "director_loyalty":     8,
+        "director_box_office": 14,
         # Legacy backward-compat
-        "collaboration":    12,
-        "director":          8,
-        "supporting":       10,
+        "collaboration":       12,
+        "director":             8,
+        "supporting":          10,
     }
     base     = TYPE_BASE.get(insight.get("type", ""), 5)
     fame     = _fame_score(insight)
@@ -773,12 +831,13 @@ def _hard_filter(candidates: list) -> list:
     """
     # Per-type minimum value to even enter scoring
     MIN_VALUE: dict = {
-        "hidden_dominance": 150,   # 150+ supporting films (obscure actors below this)
-        "collab_shock":      20,   # 20+ films together for a primary pair
-        "network_power":    100,   # 100+ unique co-stars
-        "cross_industry":     4,   # 4+ industries (3 is the minimum, barely surprising)
-        "career_peak":       20,   # 20+ films in the 5-year window
-        "director_loyalty":  10,   # 10+ films with that director
+        "hidden_dominance":    150,   # 150+ supporting films (obscure actors below this)
+        "collab_shock":         10,   # 10+ films together for a primary pair
+        "network_power":       100,   # 100+ unique co-stars
+        "cross_industry":        3,   # 3+ industries
+        "career_peak":           6,   # 6+ films in the 5-year window
+        "director_loyalty":     15,   # 15+ films with that director
+        "director_box_office": 1000,  # 1000+ Cr total box office
     }
 
     filtered = []
@@ -786,8 +845,8 @@ def _hard_filter(candidates: list) -> list:
         itype = ins.get("type", "")
         value = ins.get("value")
 
-        # Rule 1: must have actor_id
-        if not ins.get("actor_ids"):
+        # Rule 1: must have actor_id (director_box_office exempt — no actor in DB)
+        if itype != "director_box_office" and not ins.get("actor_ids"):
             logger.debug("hard_filter: drop %s — no actor_ids", itype)
             continue
 
@@ -822,7 +881,7 @@ def _hard_filter(candidates: list) -> list:
         #   All other insight types must have at least one primary actor.
         #   This prevents obscure non-primary actors from leaking into
         #   types (e.g. collab_shock) where they produce unrecognisable cards.
-        if itype != "hidden_dominance":
+        if itype not in ("hidden_dominance", "director_box_office"):
             stats = ins.get("_actor_stats", [])
             if stats and not any(s["is_primary"] for s in stats):
                 logger.debug(
@@ -850,35 +909,24 @@ def _hard_filter(candidates: list) -> list:
 
 def _pick_diverse(candidates: list) -> list:
     """
-    Select the best 3–4 insights with diversity enforcement.
+    Select up to _MAX_INSIGHTS insights with equal industry representation.
 
-    v6 algorithm (replaces strict one-per-category):
+    Algorithm:
 
-    Pass 1 — Diversity pass (one per category):
-      Score all candidates, apply _MIN_SCORE floor, sort best-first.
-      Greedy pick: add the best candidate per category.
-      Allowed categories: collaboration, network, career, industry.
+    Pass 1 — Industry quota (Tamil / Telugu / Malayalam equal; Kannada best-effort):
+      Score all candidates; filter by _MIN_SCORE floor.
+      Target = _MAX_INSIGHTS // 3  cards per primary industry (Tamil/Telugu/Malayalam).
+      Within each industry's pool: enforce category diversity (max 4 per category)
+      so no single industry is all-network or all-collab.
+      Kannada and Unknown (directors) fill up to their natural availability.
 
-    Pass 2 — Relaxed pass (fill to _MAX_INSIGHTS):
-      If result < _MAX_INSIGHTS after Pass 1, fill with the next highest-
-      scoring eligible candidate regardless of category — BUT only if its
-      score > 75 (avoids filling with mediocre cards).
-      A second insight from the same category is admitted here only if
-      the category has already contributed exactly 1 and the candidate's
-      score exceeds 75.
+    Pass 2 — Gap fill:
+      If total < _MAX_INSIGHTS after quotas, fill from any remaining eligible
+      candidates (highest score first) until the cap is reached.
 
     Pass 3 — Supporting cap:
-      At most 1 hidden_dominance (supporting-actor) insight in final output.
-      If two sneak through (possible when fallback fill fires), drop the
-      lower-scoring one.
-
-    Constraints:
-      • Max _MAX_INSIGHTS (4) total
-      • Max 1 supporting-actor insight (hidden_dominance)
-      • Candidates with no _score_breakdown are not admitted (safety)
+      At most 1 hidden_dominance insight in final output.
     """
-    _FALLBACK_SCORE_THRESHOLD = 42.0   # min score to be admitted in pass 2
-
     logger.info("_pick_diverse: %d candidates entering", len(candidates))
 
     for ins in candidates:
@@ -887,63 +935,190 @@ def _pick_diverse(candidates: list) -> list:
         ins["confidence"] = round(min(1.0, s / 100), 3)
         bd = ins["_score_breakdown"]
         logger.debug(
-            "score %-20s  total=%5.1f  fame=%4.1f  relate=%4.1f  wow=%4.1f  duo=%4.1f  hl=%4.1f  | %r",
+            "score %-20s  total=%5.1f  fame=%4.1f  relate=%4.1f  wow=%4.1f  | %r",
             ins["type"], s, bd["fame"], bd["relatability"], bd["wow"],
-            bd.get("duo_wow", 0), bd.get("headline", 0),
             ins.get("headline"),
         )
 
     eligible = [ins for ins in candidates if ins["_score"] >= _MIN_SCORE]
     logger.info("_pick_diverse: %d above score floor %.0f", len(eligible), _MIN_SCORE)
-
     eligible.sort(key=lambda x: x["_score"], reverse=True)
 
-    # ── Pass 1: one per category ──────────────────────────────────────────────
-    category_count: dict = {}   # category → count of slots used
-    result: list = []
+    from collections import defaultdict
 
+    # ── Pass 1: industry-quota selection ─────────────────────────────────────
+    # Tamil, Telugu, Malayalam get equal slots. Kannada + Unknown fill naturally.
+    PRIMARY_INDUSTRIES   = {"Tamil", "Telugu", "Malayalam"}
+    SECONDARY_INDUSTRIES = {"Kannada"}
+    # Per-category diversity caps within each industry pool.
+    # Category diversity in the carousel is also enforced by the round-robin
+    # interleave below — these caps prevent a single category from monopolising
+    # an industry's 33-card quota.
+    #
+    # hidden_dominance (type) / supporting (category) cards are capped separately
+    # because Pass 3 keeps only MAX_HIDDEN_DOMINANCE globally.  Selecting many
+    # and then culling them would waste quota slots and leave industries under-filled.
+    MAX_CAT_PER_INDUSTRY      = 10   # default cap per category
+    MAX_SUPPORTING_PER_INDUSTRY = 4  # hidden_dominance cards per industry (matches Pass 3 budget)
+
+    per_industry_target = _MAX_INSIGHTS // len(PRIMARY_INDUSTRIES)  # e.g. 33 each
+
+    # Group eligible candidates by industry
+    ind_pools: dict = defaultdict(list)
     for ins in eligible:
-        if len(result) >= _MAX_INSIGHTS:
-            break
-        cat = ins.get("category", "")
-        if category_count.get(cat, 0) == 0:
-            category_count[cat] = category_count.get(cat, 0) + 1
-            result.append(ins)
+        ind = ins.get("industry") or "Unknown"
+        ind_pools[ind].append(ins)
 
-    # ── Pass 2: fallback fill (relaxed diversity) ────────────────────────────
+    result: list = []
+    used_ids: set = set()
+
+    def _fill_from_pool(pool: list, target: int) -> list:
+        """Pick up to `target` cards from pool with per-category diversity cap."""
+        cat_count: dict = {}
+        picked = []
+        for ins in pool:   # already score-sorted
+            if len(picked) >= target:
+                break
+            cat = ins.get("category", "")
+            cap = MAX_SUPPORTING_PER_INDUSTRY if cat == "supporting" else MAX_CAT_PER_INDUSTRY
+            if cat_count.get(cat, 0) < cap:
+                cat_count[cat] = cat_count.get(cat, 0) + 1
+                picked.append(ins)
+        return picked
+
+    # Primary industries — equal quota
+    for ind in PRIMARY_INDUSTRIES:
+        picked = _fill_from_pool(ind_pools.get(ind, []), per_industry_target)
+        result.extend(picked)
+        used_ids.update(id(i) for i in picked)
+
+    # Secondary (Kannada) — take all available
+    for ind in SECONDARY_INDUSTRIES:
+        picked = _fill_from_pool(ind_pools.get(ind, []), len(ind_pools.get(ind, [])))
+        result.extend(picked)
+        used_ids.update(id(i) for i in picked)
+
+    # Unknown (directors, no industry) — take all available
+    for ins in ind_pools.get("Unknown", []):
+        if id(ins) not in used_ids:
+            result.append(ins)
+            used_ids.add(id(ins))
+
+    # ── Pass 2: gap fill ──────────────────────────────────────────────────────
     if len(result) < _MAX_INSIGHTS:
-        used_ids = {id(i) for i in result}
         for ins in eligible:
             if len(result) >= _MAX_INSIGHTS:
                 break
-            if id(ins) in used_ids:
-                continue
-            if ins["_score"] <= _FALLBACK_SCORE_THRESHOLD:
-                continue
-            cat = ins.get("category", "")
-            # Allow up to 3 cards from the same category in the fallback pass
-            if category_count.get(cat, 0) < 3:
-                category_count[cat] = category_count.get(cat, 0) + 1
+            if id(ins) not in used_ids:
                 result.append(ins)
                 used_ids.add(id(ins))
 
-    # ── Pass 3: supporting cap (max 1 hidden_dominance) ──────────────────────
+    result = result[:_MAX_INSIGHTS]
+
+    # ── Pass 3: supporting cap ────────────────────────────────────────────────
+    # Keep at most MAX_HIDDEN_DOMINANCE hidden_dominance cards total so supporting
+    # actors don't crowd the carousel.  Budget = 4 per primary industry (Tamil /
+    # Telugu / Malayalam) = 12.  _fill_from_pool already capped each industry at
+    # MAX_SUPPORTING_PER_INDUSTRY=4, so in practice we expect ≤12 here.
+    MAX_HIDDEN_DOMINANCE = 12
     supporting = [i for i in result if i.get("type") == "hidden_dominance"]
-    if len(supporting) > 1:
-        # Keep the highest-scoring one, remove the rest
+    if len(supporting) > MAX_HIDDEN_DOMINANCE:
         supporting.sort(key=lambda x: x["_score"], reverse=True)
-        to_remove = set(id(i) for i in supporting[1:])
+        to_remove = set(id(i) for i in supporting[MAX_HIDDEN_DOMINANCE:])
         result = [i for i in result if id(i) not in to_remove]
 
-    # Re-sort final result highest-score first for carousel ordering
-    result.sort(key=lambda x: x["_score"], reverse=True)
+    # ── Carousel ordering ─────────────────────────────────────────────────────
+    #
+    # Rules (applied in order):
+    #   1. Single-avatar categories lead each round (one person = cleaner focus).
+    #      Multi-avatar categories (pairs/duos) trail within every round.
+    #   2. Within each avatar-group, order by top-card score so the strongest
+    #      category of that group leads.
+    #   3. Round-robin across categories — guarantees no same category back-to-back.
+    #   4. Final dedup pass — if two same-category cards are still adjacent
+    #      (can happen at round boundaries), swap the later one forward.
+    #
+    # Single-avatar categories: network, career, supporting, blockbuster, industry
+    # Multi-avatar categories : collaboration, director
+
+    _SINGLE_AVATAR_CATS = {"network", "career", "supporting", "blockbuster", "industry"}
+
+    from collections import defaultdict
+    buckets: dict = defaultdict(list)
+    for ins in sorted(result, key=lambda x: x["_score"], reverse=True):
+        buckets[ins.get("category", "other")].append(ins)
+
+    # ── Sub-interleave each category bucket by industry ───────────────────────
+    # Within each category bucket (e.g. all network_power cards), cards are
+    # currently sorted by score — which front-loads one industry.
+    # Re-order each bucket so industries alternate: Tamil → Malayalam → Telugu
+    # → Kannada → Tamil → Malayalam → … (by each industry's best score).
+    for cat in list(buckets.keys()):
+        bucket = buckets[cat]   # already score-sorted
+        ind_groups: dict = defaultdict(list)
+        for ins in bucket:
+            ind_groups[ins.get("industry") or "Unknown"].append(ins)
+
+        # Industry order: highest-scoring industry first (ensures quality leads)
+        ind_order = sorted(
+            ind_groups.keys(),
+            key=lambda i: ind_groups[i][0]["_score"], reverse=True,
+        )
+
+        # Round-robin across industries within this bucket
+        new_bucket: list = []
+        idx = 0
+        while len(new_bucket) < len(bucket):
+            added = False
+            for ind in ind_order:
+                if idx < len(ind_groups[ind]):
+                    new_bucket.append(ind_groups[ind][idx])
+                    added = True
+            if not added:
+                break
+            idx += 1
+        buckets[cat] = new_bucket
+
+    # Sort categories: single-avatar first (by best score), then multi-avatar (by best score)
+    single_cats = sorted(
+        [c for c in buckets if c in _SINGLE_AVATAR_CATS],
+        key=lambda c: buckets[c][0]["_score"], reverse=True,
+    )
+    multi_cats = sorted(
+        [c for c in buckets if c not in _SINGLE_AVATAR_CATS],
+        key=lambda c: buckets[c][0]["_score"], reverse=True,
+    )
+    cat_order = single_cats + multi_cats
+
+    # Round-robin fill across categories
+    interleaved: list = []
+    round_idx = 0
+    while len(interleaved) < len(result):
+        added_this_round = 0
+        for cat in cat_order:
+            if round_idx < len(buckets[cat]):
+                interleaved.append(buckets[cat][round_idx])
+                added_this_round += 1
+        if added_this_round == 0:
+            break
+        round_idx += 1
+
+    # ── Safety pass: no same-category back-to-back ────────────────────────────
+    # At round boundaries the last card of round N and first of round N+1 can
+    # share a category if one bucket is larger.  Swap offenders forward.
+    for i in range(1, len(interleaved)):
+        if interleaved[i].get("category") == interleaved[i - 1].get("category"):
+            # Find the next card with a different category and swap it here
+            for j in range(i + 1, len(interleaved)):
+                if interleaved[j].get("category") != interleaved[i - 1].get("category"):
+                    interleaved[i], interleaved[j] = interleaved[j], interleaved[i]
+                    break
 
     logger.info(
-        "insights selected: %d  %s",
-        len(result),
-        [(i["type"], i["_score_breakdown"]["total"]) for i in result],
+        "insights selected: %d  single-avatar-cats=%s  multi-avatar-cats=%s",
+        len(interleaved), single_cats, multi_cats,
     )
-    return result
+    return interleaved
 
 
 # ── Core computation (no cache) ───────────────────────────────────────────────
@@ -968,12 +1143,13 @@ def compute_wow_insights(db: Session) -> list:
         _career_peak_window,
         _network_power,
         _director_loyalty,
+        _director_box_office,
     ]
 
     candidates = []
     for pattern in patterns:
         try:
-            results = pattern(db)
+            results = pattern(db, limit=200)
             if results:
                 candidates.extend(results)
         except Exception as e:
