@@ -522,6 +522,7 @@ def _enrich_with_fame(candidates: list, db: Session) -> None:
     rows = db.execute(text("""
         SELECT
             a.id,
+            a.industry,
             ast.film_count,
             COUNT(DISTINCT ac.actor2_id) AS costar_count,
             a.is_primary_actor
@@ -529,7 +530,7 @@ def _enrich_with_fame(candidates: list, db: Session) -> None:
         JOIN   actor_stats ast ON ast.actor_id = a.id
         LEFT JOIN actor_collaborations ac ON ac.actor1_id = a.id
         WHERE  a.id = ANY(:ids)
-        GROUP  BY a.id, ast.film_count, a.is_primary_actor
+        GROUP  BY a.id, a.industry, ast.film_count, a.is_primary_actor
     """), {"ids": list(all_ids)}).fetchall()
 
     # Build lookup: actor_id → stats dict
@@ -538,6 +539,7 @@ def _enrich_with_fame(candidates: list, db: Session) -> None:
             "film_count":   r.film_count   or 0,
             "costar_count": r.costar_count or 0,
             "is_primary":   r.is_primary_actor,
+            "industry":     r.industry or "Unknown",
         }
         for r in rows
     }
@@ -548,6 +550,10 @@ def _enrich_with_fame(candidates: list, db: Session) -> None:
             for aid in (ins.get("actor_ids") or [])
             if aid in lookup
         ]
+        # Stamp industry on the insight itself — use the first actor's industry.
+        # For duo cards, prefer the actor with more films (already first by SQL sort).
+        if ins["_actor_stats"]:
+            ins["industry"] = ins["_actor_stats"][0]["industry"]
 
 
 # ── Scoring helpers ───────────────────────────────────────────────────────────
@@ -1009,6 +1015,37 @@ def _pick_diverse(candidates: list) -> list:
     for ins in sorted(result, key=lambda x: x["_score"], reverse=True):
         buckets[ins.get("category", "other")].append(ins)
 
+    # ── Sub-interleave each category bucket by industry ───────────────────────
+    # Within each category bucket (e.g. all network_power cards), cards are
+    # currently sorted by score — which front-loads one industry.
+    # Re-order each bucket so industries alternate: Tamil → Malayalam → Telugu
+    # → Kannada → Tamil → Malayalam → … (by each industry's best score).
+    for cat in list(buckets.keys()):
+        bucket = buckets[cat]   # already score-sorted
+        ind_groups: dict = defaultdict(list)
+        for ins in bucket:
+            ind_groups[ins.get("industry") or "Unknown"].append(ins)
+
+        # Industry order: highest-scoring industry first (ensures quality leads)
+        ind_order = sorted(
+            ind_groups.keys(),
+            key=lambda i: ind_groups[i][0]["_score"], reverse=True,
+        )
+
+        # Round-robin across industries within this bucket
+        new_bucket: list = []
+        idx = 0
+        while len(new_bucket) < len(bucket):
+            added = False
+            for ind in ind_order:
+                if idx < len(ind_groups[ind]):
+                    new_bucket.append(ind_groups[ind][idx])
+                    added = True
+            if not added:
+                break
+            idx += 1
+        buckets[cat] = new_bucket
+
     # Sort categories: single-avatar first (by best score), then multi-avatar (by best score)
     single_cats = sorted(
         [c for c in buckets if c in _SINGLE_AVATAR_CATS],
@@ -1020,7 +1057,7 @@ def _pick_diverse(candidates: list) -> list:
     )
     cat_order = single_cats + multi_cats
 
-    # Round-robin fill
+    # Round-robin fill across categories
     interleaved: list = []
     round_idx = 0
     while len(interleaved) < len(result):
