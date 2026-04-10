@@ -75,12 +75,12 @@ CURRENT_YEAR = 2026
 # 40 is the practical floor — below this, either the actor is obscure or
 # the stat is too small to be interesting. Still filters junk while
 # allowing career_peak / director_loyalty / supporting industry cards through.
-_MIN_SCORE = 40.0
+_MIN_SCORE = 25.0   # Lowered from 40 — lets more Telugu/Kannada candidates through
 
-# Maximum insights returned to the carousel.
-# 100 cards → long scroll session for the user.
-# 7 patterns × limit=200 = 1400 raw candidates; after score filter we expect 100–300 eligible.
-_MAX_INSIGHTS = 100
+# No hard cap — return every eligible card so the carousel is limitless.
+# The score floor (_MIN_SCORE) and per-industry diversity caps are the only
+# constraints; all passing candidates are included and ordered.
+_MAX_INSIGHTS = 10_000  # effectively unlimited
 
 
 # ── Module-level TTL cache ────────────────────────────────────────────────────
@@ -909,35 +909,24 @@ def _hard_filter(candidates: list) -> list:
 
 def _pick_diverse(candidates: list) -> list:
     """
-    Select the best 3–4 insights with diversity enforcement.
+    Select up to _MAX_INSIGHTS insights with equal industry representation.
 
-    v6 algorithm (replaces strict one-per-category):
+    Algorithm:
 
-    Pass 1 — Diversity pass (one per category):
-      Score all candidates, apply _MIN_SCORE floor, sort best-first.
-      Greedy pick: add the best candidate per category.
-      Allowed categories: collaboration, network, career, industry.
+    Pass 1 — Industry quota (Tamil / Telugu / Malayalam equal; Kannada best-effort):
+      Score all candidates; filter by _MIN_SCORE floor.
+      Target = _MAX_INSIGHTS // 3  cards per primary industry (Tamil/Telugu/Malayalam).
+      Within each industry's pool: enforce category diversity (max 4 per category)
+      so no single industry is all-network or all-collab.
+      Kannada and Unknown (directors) fill up to their natural availability.
 
-    Pass 2 — Relaxed pass (fill to _MAX_INSIGHTS):
-      If result < _MAX_INSIGHTS after Pass 1, fill with the next highest-
-      scoring eligible candidate regardless of category — BUT only if its
-      score > 75 (avoids filling with mediocre cards).
-      A second insight from the same category is admitted here only if
-      the category has already contributed exactly 1 and the candidate's
-      score exceeds 75.
+    Pass 2 — Gap fill:
+      If total < _MAX_INSIGHTS after quotas, fill from any remaining eligible
+      candidates (highest score first) until the cap is reached.
 
     Pass 3 — Supporting cap:
-      At most 1 hidden_dominance (supporting-actor) insight in final output.
-      If two sneak through (possible when fallback fill fires), drop the
-      lower-scoring one.
-
-    Constraints:
-      • Max _MAX_INSIGHTS (4) total
-      • Max 1 supporting-actor insight (hidden_dominance)
-      • Candidates with no _score_breakdown are not admitted (safety)
+      At most 1 hidden_dominance insight in final output.
     """
-    _FALLBACK_SCORE_THRESHOLD = 35.0   # min score to be admitted in pass 2
-
     logger.info("_pick_diverse: %d candidates entering", len(candidates))
 
     for ins in candidates:
@@ -946,52 +935,95 @@ def _pick_diverse(candidates: list) -> list:
         ins["confidence"] = round(min(1.0, s / 100), 3)
         bd = ins["_score_breakdown"]
         logger.debug(
-            "score %-20s  total=%5.1f  fame=%4.1f  relate=%4.1f  wow=%4.1f  duo=%4.1f  hl=%4.1f  | %r",
+            "score %-20s  total=%5.1f  fame=%4.1f  relate=%4.1f  wow=%4.1f  | %r",
             ins["type"], s, bd["fame"], bd["relatability"], bd["wow"],
-            bd.get("duo_wow", 0), bd.get("headline", 0),
             ins.get("headline"),
         )
 
     eligible = [ins for ins in candidates if ins["_score"] >= _MIN_SCORE]
     logger.info("_pick_diverse: %d above score floor %.0f", len(eligible), _MIN_SCORE)
-
     eligible.sort(key=lambda x: x["_score"], reverse=True)
 
-    # ── Pass 1: one per category ──────────────────────────────────────────────
-    category_count: dict = {}   # category → count of slots used
-    result: list = []
+    from collections import defaultdict
 
+    # ── Pass 1: industry-quota selection ─────────────────────────────────────
+    # Tamil, Telugu, Malayalam get equal slots. Kannada + Unknown fill naturally.
+    PRIMARY_INDUSTRIES   = {"Tamil", "Telugu", "Malayalam"}
+    SECONDARY_INDUSTRIES = {"Kannada"}
+    # Per-category diversity caps within each industry pool.
+    # With no hard total cap, these just prevent one category from
+    # monopolising a single industry (e.g. 200 career_peak cards for Tamil).
+    # The carousel round-robin interleave below further ensures variety.
+    #
+    # hidden_dominance (supporting) cards are capped separately so supporting
+    # actors don't overwhelm the feed; Pass 3 enforces the same budget globally.
+    MAX_CAT_PER_INDUSTRY        = 50   # generous — take almost everything per category
+    MAX_SUPPORTING_PER_INDUSTRY =  6   # hidden_dominance per industry
+
+    # No artificial quota — take everything available from each industry pool.
+    per_industry_target = _MAX_INSIGHTS  # i.e. no per-industry cap either
+
+    # Group eligible candidates by industry
+    ind_pools: dict = defaultdict(list)
     for ins in eligible:
-        if len(result) >= _MAX_INSIGHTS:
-            break
-        cat = ins.get("category", "")
-        if category_count.get(cat, 0) == 0:
-            category_count[cat] = category_count.get(cat, 0) + 1
-            result.append(ins)
+        ind = ins.get("industry") or "Unknown"
+        ind_pools[ind].append(ins)
 
-    # ── Pass 2: fallback fill (relaxed diversity) ────────────────────────────
+    result: list = []
+    used_ids: set = set()
+
+    def _fill_from_pool(pool: list, target: int) -> list:
+        """Pick up to `target` cards from pool with per-category diversity cap."""
+        cat_count: dict = {}
+        picked = []
+        for ins in pool:   # already score-sorted
+            if len(picked) >= target:
+                break
+            cat = ins.get("category", "")
+            cap = MAX_SUPPORTING_PER_INDUSTRY if cat == "supporting" else MAX_CAT_PER_INDUSTRY
+            if cat_count.get(cat, 0) < cap:
+                cat_count[cat] = cat_count.get(cat, 0) + 1
+                picked.append(ins)
+        return picked
+
+    # Primary industries — equal quota
+    for ind in PRIMARY_INDUSTRIES:
+        picked = _fill_from_pool(ind_pools.get(ind, []), per_industry_target)
+        result.extend(picked)
+        used_ids.update(id(i) for i in picked)
+
+    # Secondary (Kannada) — take all available
+    for ind in SECONDARY_INDUSTRIES:
+        picked = _fill_from_pool(ind_pools.get(ind, []), len(ind_pools.get(ind, [])))
+        result.extend(picked)
+        used_ids.update(id(i) for i in picked)
+
+    # Unknown (directors, no industry) — take all available
+    for ins in ind_pools.get("Unknown", []):
+        if id(ins) not in used_ids:
+            result.append(ins)
+            used_ids.add(id(ins))
+
+    # ── Pass 2: gap fill ──────────────────────────────────────────────────────
     if len(result) < _MAX_INSIGHTS:
-        used_ids = {id(i) for i in result}
         for ins in eligible:
             if len(result) >= _MAX_INSIGHTS:
                 break
-            if id(ins) in used_ids:
-                continue
-            if ins["_score"] <= _FALLBACK_SCORE_THRESHOLD:
-                continue
-            cat = ins.get("category", "")
-            # No hard per-category ceiling — let score quality decide
-            if category_count.get(cat, 0) < 20:
-                category_count[cat] = category_count.get(cat, 0) + 1
+            if id(ins) not in used_ids:
                 result.append(ins)
                 used_ids.add(id(ins))
 
-    # ── Pass 3: supporting cap (max 1 hidden_dominance) ──────────────────────
+    result = result[:_MAX_INSIGHTS]
+
+    # ── Pass 3: supporting cap ────────────────────────────────────────────────
+    # Keep at most MAX_HIDDEN_DOMINANCE hidden_dominance cards total so supporting
+    # actors don't crowd the feed.  Budget = 6 per primary industry × 3 = 18.
+    # _fill_from_pool already capped each industry at MAX_SUPPORTING_PER_INDUSTRY=6.
+    MAX_HIDDEN_DOMINANCE = 18
     supporting = [i for i in result if i.get("type") == "hidden_dominance"]
-    if len(supporting) > 1:
-        # Keep the highest-scoring one, remove the rest
+    if len(supporting) > MAX_HIDDEN_DOMINANCE:
         supporting.sort(key=lambda x: x["_score"], reverse=True)
-        to_remove = set(id(i) for i in supporting[1:])
+        to_remove = set(id(i) for i in supporting[MAX_HIDDEN_DOMINANCE:])
         result = [i for i in result if id(i) not in to_remove]
 
     # ── Carousel ordering ─────────────────────────────────────────────────────
