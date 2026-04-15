@@ -36,6 +36,12 @@ const CENTER_R = 21
 
 const CENTER_COLOR = '#f5c518'
 
+// Expanded overlay canvas constants
+const EXP_W  = 1800
+const EXP_H  = 900
+const EXP_CX = EXP_W / 2
+const EXP_CY = EXP_H / 2
+
 // Kind colours
 const KIND_COLOR: Record<NetworkNode['kind'], string> = {
   lead:       '#f472b6',   // rose — lead actress
@@ -83,6 +89,23 @@ function scatterPos(i: number, kind: NetworkNode['kind']): { x: number; y: numbe
 
   const x = Math.max(48, Math.min(SVG_W - 48, CX + rx * Math.cos(angle) + jx))
   const y = Math.max(24, Math.min(SVG_H - 24, CY + ry * Math.sin(angle) + jy))
+  return { x, y }
+}
+
+/**
+ * Elliptical scatter for the expanded overlay (1800×900).
+ * Roughly 1.65× the radii of scatterPos to fill the bigger canvas.
+ */
+function scatterPosExpanded(i: number, kind: NetworkNode['kind']): { x: number; y: number } {
+  const angle = sr(i * 37 + 11) * 2 * Math.PI
+  const [rxMin, rxMax] = kind === 'lead'    ? [130, 610] : kind === 'director' ? [160, 650] : [190, 710]
+  const [ryMin, ryMax] = kind === 'lead'    ? [75,  350] : kind === 'director' ? [90,  380]  : [110, 420]
+  const rx = rxMin + sr(i * 23 + 7)  * (rxMax - rxMin)
+  const ry = ryMin + sr(i * 41 + 13) * (ryMax - ryMin)
+  const jx = (sr(i * 53 + 17) - 0.5) * 80
+  const jy = (sr(i * 61 + 19) - 0.5) * 50
+  const x = Math.max(80, Math.min(EXP_W - 80, EXP_CX + rx * Math.cos(angle) + jx))
+  const y = Math.max(40, Math.min(EXP_H - 40,  EXP_CY + ry * Math.sin(angle) + jy))
   return { x, y }
 }
 
@@ -172,7 +195,7 @@ function ActorPicker({
 
   if (variant === 'prominent') {
     return (
-      <div className="relative w-full max-w-sm">
+      <div className="relative w-full max-w-xs">
         <div className="flex items-center gap-2 rounded-2xl bg-white/[0.07] border border-white/[0.15] px-4 py-3 focus-within:border-white/30 focus-within:bg-white/[0.09] transition-all">
           <span className="text-white/40 text-sm">🔍</span>
           <input
@@ -288,9 +311,18 @@ export default function GraphPreview({
   const [localNodes,  setLocalNodes]        = useState<NetworkNode[]>([])
   const [fetchingNetwork, setFetchingNetwork] = useState(false)
   const [hasChosen, setHasChosen]           = useState(false)
+  const [isExpanded, setIsExpanded]         = useState(false)
+  const [graphContainerHovered, setGraphContainerHovered] = useState(false)
   const { toast, showToast } = useToast()
 
   useEffect(() => { setCenterImgError(false) }, [localCenter?.id])
+
+  // Escape key closes the expanded overlay
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') setIsExpanded(false) }
+    document.addEventListener('keydown', h)
+    return () => document.removeEventListener('keydown', h)
+  }, [])
 
   // Auto-load from server-provided networkData on first mount
   useEffect(() => {
@@ -322,6 +354,32 @@ export default function GraphPreview({
         x:  Math.max(0, Math.min(SVG_W, bx)),
         y:  Math.max(0, Math.min(SVG_H, by)),
         r:  sr(i * 19 + 3) * 1.0 + 0.12,   // band stars slightly larger but still small
+        op: sr(i * 29 + 7) * 0.50 + 0.15,
+      })
+    }
+    return stars
+  }, [])
+
+  // Background star field for expanded overlay (larger canvas)
+  const bgStarsExp = useMemo(() => {
+    const stars: { x: number; y: number; r: number; op: number }[] = []
+    for (let i = 0; i < 360; i++) {
+      stars.push({
+        x:  sr(i * 11 + 3) * EXP_W,
+        y:  sr(i * 7  + 5) * EXP_H,
+        r:  sr(i * 13 + 1) * 0.85 + 0.1,
+        op: sr(i * 17 + 2) * 0.35 + 0.04,
+      })
+    }
+    for (let i = 0; i < 230; i++) {
+      const t      = sr(i * 23 + 7)
+      const spread = (sr(i * 31 + 11) - 0.5) * EXP_H * 0.28
+      const bx     = t * (EXP_W * 1.1) - EXP_W * 0.05
+      const by     = (1 - t) * (EXP_H * 0.90) + spread + EXP_H * 0.05
+      stars.push({
+        x:  Math.max(0, Math.min(EXP_W, bx)),
+        y:  Math.max(0, Math.min(EXP_H, by)),
+        r:  sr(i * 19 + 3) * 1.0 + 0.12,
         op: sr(i * 29 + 7) * 0.50 + 0.15,
       })
     }
@@ -411,6 +469,13 @@ export default function GraphPreview({
     [nodes.map(n => `${n.name}:${n.kind}`).join(',')]
   )
 
+  // Stable expanded positions
+  const expandedPositions = useMemo(
+    () => nodes.map((n, i) => scatterPosExpanded(i, n.kind)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [nodes.map(n => `${n.name}:${n.kind}`).join(',')]
+  )
+
   // Legend counts
   const leadCount      = nodes.filter(n => n.kind === 'lead').length
   const directorCount  = nodes.filter(n => n.kind === 'director').length
@@ -468,6 +533,7 @@ export default function GraphPreview({
               onSelect={handleActorSelect}
               loading={fetchingNetwork}
               defaultSuggestions={suggestions}
+              variant="prominent"
             />
           )}
         </div>
@@ -518,7 +584,11 @@ export default function GraphPreview({
 
       {/* ── Constellation ── */}
       {hasChosen && (
-        <div className="pb-5 relative">
+        <div
+          className="pb-5 relative"
+          onMouseEnter={() => setGraphContainerHovered(true)}
+          onMouseLeave={() => setGraphContainerHovered(false)}
+        >
           {fetchingNetwork && (
             <div
               className="absolute inset-0 flex items-center justify-center z-10 rounded-2xl"
@@ -827,10 +897,275 @@ export default function GraphPreview({
             </svg>
           )}
 
-          {center && nodes.length > 0 && (
-            <p className="text-center text-[10px] text-white/20 mt-3 tracking-wide select-none">
-              Tap stars to explore connections
-            </p>
+          {/* Expand button — appears on hover when graph is ready */}
+          {hasChosen && center && nodes.length > 0 && graphContainerHovered && !isExpanded && (
+            <button
+              onClick={() => setIsExpanded(true)}
+              className="absolute bottom-4 right-4 z-20 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-white/10 border border-white/20 text-white/70 hover:bg-white/15 hover:text-white transition-all backdrop-blur-sm"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+              Expand
+            </button>
+          )}
+
+          {/* ── Fullscreen expanded overlay ── */}
+          {isExpanded && center && nodes.length > 0 && (
+            <div
+              className="fixed inset-0 z-[1000] flex flex-col"
+              style={{ background: '#07070f' }}
+            >
+              {/* Overlay header bar */}
+              <div className="flex items-center justify-between px-6 py-4 flex-shrink-0">
+                <div
+                  className="text-white/80 text-sm font-semibold tracking-wide"
+                >
+                  {center.name}&apos;s Connections
+                </div>
+                <button
+                  onClick={() => setIsExpanded(false)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-white/10 border border-white/20 text-white/70 hover:bg-white/15 hover:text-white transition-all backdrop-blur-sm"
+                >
+                  ✕ Close
+                </button>
+              </div>
+
+              {/* Expanded SVG */}
+              <svg
+                viewBox={`0 0 ${EXP_W} ${EXP_H}`}
+                className="w-full h-full"
+                preserveAspectRatio="xMidYMid meet"
+                style={{ display: 'block', touchAction: 'pan-y' }}
+                onTouchStart={() => setHovered(null)}
+              >
+                <defs>
+                  {/* Reuse shared filter ids */}
+                  <filter id="gp-galblur" x="-50%" y="-50%" width="200%" height="200%">
+                    <feGaussianBlur stdDeviation="38"/>
+                  </filter>
+                  <linearGradient id="gp-exp-gband" x1="0.08" y1="0" x2="0.78" y2="1">
+                    <stop offset="0%"   stopColor="#6496ff" stopOpacity="0"/>
+                    <stop offset="25%"  stopColor="#90b4ff" stopOpacity="0.05"/>
+                    <stop offset="42%"  stopColor="#b8ccff" stopOpacity="0.12"/>
+                    <stop offset="56%"  stopColor="#c8d8ff" stopOpacity="0.09"/>
+                    <stop offset="75%"  stopColor="#90b4ff" stopOpacity="0.04"/>
+                    <stop offset="100%" stopColor="#6496ff" stopOpacity="0"/>
+                  </linearGradient>
+                  <radialGradient id="gp-exp-gwarm" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%"   stopColor="#ff9040" stopOpacity="0.10"/>
+                    <stop offset="55%"  stopColor="#ff6820" stopOpacity="0.04"/>
+                    <stop offset="100%" stopColor="#ff4400" stopOpacity="0"/>
+                  </radialGradient>
+                  <radialGradient id="gp-exp-gcool" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%"   stopColor="#7050f8" stopOpacity="0.09"/>
+                    <stop offset="55%"  stopColor="#5538d8" stopOpacity="0.03"/>
+                    <stop offset="100%" stopColor="#3820b0" stopOpacity="0"/>
+                  </radialGradient>
+                  <radialGradient id="gp-exp-nebula" cx="50%" cy="48%" r="50%">
+                    <stop offset="0%"   stopColor="#ef4444" stopOpacity="0.10"/>
+                    <stop offset="40%"  stopColor="#7c3aed" stopOpacity="0.04"/>
+                    <stop offset="100%" stopColor="#000000" stopOpacity="0"/>
+                  </radialGradient>
+                  <radialGradient id="gp-exp-vignette" cx="50%" cy="50%" r="50%">
+                    <stop offset="40%" stopColor="#07070f" stopOpacity="0"/>
+                    <stop offset="78%" stopColor="#07070f" stopOpacity="0.55"/>
+                    <stop offset="100%" stopColor="#07070f" stopOpacity="0.90"/>
+                  </radialGradient>
+                  <clipPath id="gp-exp-centerclip">
+                    <circle cx={EXP_CX} cy={EXP_CY} r={CENTER_R - 2}/>
+                  </clipPath>
+                  <linearGradient id="gp-ring-grad-exp" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%"   stopColor="#ffcc44" stopOpacity="1"/>
+                    <stop offset="35%"  stopColor="#ff8800" stopOpacity="1"/>
+                    <stop offset="70%"  stopColor="#ffaa22" stopOpacity="1"/>
+                    <stop offset="100%" stopColor="#ffcc44" stopOpacity="1"/>
+                  </linearGradient>
+                  {/* Per-node gradient lines for expanded view */}
+                  {nodes.map((node, i) => {
+                    const { x, y } = expandedPositions[i]
+                    const col = KIND_COLOR[node.kind]
+                    return (
+                      <linearGradient
+                        key={i}
+                        id={`gp-exp-lg${i}`}
+                        x1={EXP_CX} y1={EXP_CY} x2={x} y2={y}
+                        gradientUnits="userSpaceOnUse"
+                      >
+                        <stop offset="0%"   stopColor={CENTER_COLOR} stopOpacity="0"/>
+                        <stop offset="100%" stopColor={col}           stopOpacity="0.15"/>
+                      </linearGradient>
+                    )
+                  })}
+                </defs>
+
+                {/* Galaxy atmosphere */}
+                <rect x="0" y="0" width={EXP_W} height={EXP_H}
+                  fill="url(#gp-exp-gband)" filter="url(#gp-galblur)"/>
+                <rect x="0" y={EXP_H * 0.25} width={EXP_W * 0.55} height={EXP_H * 0.75}
+                  fill="url(#gp-exp-gwarm)" filter="url(#gp-galblur)"/>
+                <rect x={EXP_W * 0.45} y="0" width={EXP_W * 0.55} height={EXP_H * 0.75}
+                  fill="url(#gp-exp-gcool)" filter="url(#gp-galblur)"/>
+
+                {/* Background micro-stars */}
+                {bgStarsExp.map((s, i) => (
+                  <circle key={i} cx={s.x} cy={s.y} r={s.r} fill="white" opacity={s.op}/>
+                ))}
+
+                {/* Nebula behind center */}
+                <rect x={EXP_CX - 280} y={EXP_CY - 210} width="560" height="420"
+                  fill="url(#gp-exp-nebula)" filter="url(#gp-galblur)" opacity="0.9"/>
+
+                {/* Connection lines */}
+                {nodes.map((node, i) => {
+                  const { x, y } = expandedPositions[i]
+                  const isHov = hovered === i || hovered === 'center'
+                  return (
+                    <g key={i} style={{ pointerEvents: 'none' }}>
+                      {isHov && (
+                        <line x1={EXP_CX} y1={EXP_CY} x2={x} y2={y}
+                          stroke={KIND_COLOR[node.kind]}
+                          strokeWidth="1.2"
+                          strokeOpacity="0.35"
+                          filter="url(#gp-lineglow)"/>
+                      )}
+                      <line x1={EXP_CX} y1={EXP_CY} x2={x} y2={y}
+                        stroke={`url(#gp-exp-lg${i})`}
+                        strokeWidth={isHov ? 0.8 : 0.5}
+                        style={{ transition: 'stroke-width 0.2s ease' }}/>
+                    </g>
+                  )
+                })}
+
+                {/* Scattered nodes */}
+                {nodes.map((node, i) => {
+                  const { x, y } = expandedPositions[i]
+                  const col      = KIND_COLOR[node.kind]
+                  const isHov    = hovered === i
+                  const cr       = coreR(node.films, isHov)
+                  const gr       = glowR(node.films)
+                  const floatAmp = 2.5 + sr(i * 7 + 1) * 3.5
+                  const floatDur = `${3.8 + sr(i * 11 + 3) * 2.8}s`
+                  const floatDel = `${sr(i * 13 + 7) * 2}s`
+
+                  return (
+                    <g
+                      key={i}
+                      style={{
+                        cursor: node.id ? 'pointer' : 'default',
+                        // @ts-ignore
+                        '--gp-amp': `-${floatAmp}px`,
+                        animation: `gp-float ${floatDur} ${floatDel} ease-in-out infinite`,
+                      }}
+                      onMouseEnter={() => setHovered(i)}
+                      onMouseLeave={() => setHovered(null)}
+                      onClick={() => { if (node.id !== null) { setIsExpanded(false); router.push(`/actors/${toSlug(node.name)}`) } }}
+                      onTouchStart={e => { e.stopPropagation(); setHovered(i) }}
+                    >
+                      <circle cx={x} cy={y} r={cr * 2.8} fill={col}
+                        opacity={isHov ? 0 : 0.12} filter="url(#gp-nglow)"/>
+                      <circle cx={x} cy={y} r={gr * 1.8} fill={col}
+                        opacity={isHov ? 0.22 : 0}
+                        filter="url(#gp-nglow)"
+                        style={{ transition: 'opacity 0.18s ease' }}/>
+                      <circle cx={x} cy={y} r={gr} fill={col}
+                        opacity={isHov ? 0.45 : 0}
+                        filter="url(#gp-nglow2)"
+                        style={{ transition: 'opacity 0.18s ease' }}/>
+                      <circle cx={x} cy={y} r={cr} fill={isHov ? '#fff' : col}
+                        opacity={isHov ? 1 : 0.80}
+                        style={{ transition: 'r 0.18s ease, fill 0.18s ease' }}/>
+                      <text
+                        x={x} y={y - cr - 5}
+                        textAnchor="middle" fontSize="11" fontWeight={isHov ? '600' : '400'}
+                        fill={isHov ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.32)'}
+                        style={{ userSelect: 'none', transition: 'fill 0.18s ease' }}
+                      >
+                        {node.name.split(' ')[0]}
+                      </text>
+                      {isHov && (
+                        <text x={x} y={y + cr + 13}
+                          textAnchor="middle" fontSize="9"
+                          fill={col} opacity="0.75"
+                          style={{ userSelect: 'none' }}
+                        >
+                          {node.kind === 'director' ? 'Dir · ' : ''}{node.films} {node.films === 1 ? 'film' : 'films'}
+                        </text>
+                      )}
+                    </g>
+                  )
+                })}
+
+                {/* Center sun */}
+                {(() => {
+                  const avatarSlug  = center.name.toLowerCase().replace(/\s+/g, '')
+                  const isHovCenter = hovered === 'center'
+                  return (
+                    <g
+                      style={{ cursor: 'pointer' }}
+                      onMouseEnter={() => setHovered('center')}
+                      onMouseLeave={() => setHovered(null)}
+                      onClick={() => { setIsExpanded(false); router.push(`/actors/${toSlug(center.name)}`) }}
+                    >
+                      <g>
+                        <animateTransform attributeName="transform" type="rotate"
+                          from={`0 ${EXP_CX} ${EXP_CY}`} to={`360 ${EXP_CX} ${EXP_CY}`}
+                          dur="7s" repeatCount="indefinite" calcMode="linear"/>
+                        <circle cx={EXP_CX} cy={EXP_CY} r={CENTER_R + 2}
+                          fill="none"
+                          stroke="url(#gp-ring-grad-exp)"
+                          strokeWidth="2.5"
+                          filter="url(#gp-ringblur)"
+                          opacity="0.65"
+                        >
+                          <animate attributeName="r"
+                            values={`${CENTER_R + 2};${CENTER_R + 2.7};${CENTER_R + 2}`}
+                            dur="3.5s" repeatCount="indefinite" calcMode="spline"
+                            keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>
+                        </circle>
+                      </g>
+                      <circle cx={EXP_CX} cy={EXP_CY} r={CENTER_R} fill="#07070f"/>
+                      {!centerImgError ? (
+                        <image
+                          href={`/avatars/${avatarSlug}.png`}
+                          x={EXP_CX - CENTER_R + 2} y={EXP_CY - CENTER_R + 2}
+                          width={(CENTER_R - 2) * 2} height={(CENTER_R - 2) * 2}
+                          clipPath="url(#gp-exp-centerclip)"
+                          preserveAspectRatio="xMidYMid slice"
+                          onError={() => setCenterImgError(true)}
+                        />
+                      ) : (
+                        <text x={EXP_CX} y={EXP_CY}
+                          textAnchor="middle" dominantBaseline="central"
+                          fontSize={CENTER_R * 0.48} fontWeight="700"
+                          fill={CENTER_COLOR} style={{ userSelect: 'none' }}
+                        >
+                          {initials(center.name)}
+                        </text>
+                      )}
+                      <text x={EXP_CX} y={EXP_CY + CENTER_R + 17}
+                        textAnchor="middle" fontSize="10" fontWeight="600"
+                        fill={isHovCenter ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.68)'}
+                        style={{ userSelect: 'none', transition: 'fill 0.22s ease' }}
+                      >
+                        {center.name.split(' ')[0]}
+                      </text>
+                      {isHovCenter && (
+                        <text x={EXP_CX} y={EXP_CY + CENTER_R + 29}
+                          textAnchor="middle" fontSize="7.5"
+                          fill="rgba(255,255,255,0.35)"
+                          style={{ userSelect: 'none' }}
+                        >
+                          tap to explore
+                        </text>
+                      )}
+                    </g>
+                  )
+                })()}
+
+                {/* Vignette */}
+                <rect x="0" y="0" width={EXP_W} height={EXP_H}
+                  fill="url(#gp-exp-vignette)" style={{ pointerEvents: 'none' }}/>
+              </svg>
+            </div>
           )}
         </div>
       )}
