@@ -142,7 +142,7 @@ export default function HeroSearch({ trendingActors = [] }: { trendingActors?: T
       </p>
 
       {/* Search bar + dropdown wrapper */}
-      <div className="relative w-full max-w-lg mt-8">
+      <div className="relative w-full max-w-3xl mt-8">
         <form onSubmit={handleSubmit}>
           <span
             className="absolute left-5 top-[22px] -translate-y-1/2 text-white/30 pointer-events-none z-10 transition-colors duration-200"
