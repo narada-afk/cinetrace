@@ -104,13 +104,6 @@ export default function Header() {
         </Link>
 
 
-        {/* ── RIGHT: signature ──────────────────────────────────────── */}
-        <div
-          className="flex-shrink-0 px-3 py-1 rounded-full border border-white/10 bg-white/[0.06] backdrop-blur text-xs text-white/50 hover:text-white/80 transition-colors duration-200 select-none cursor-default"
-        >
-          by <span className="text-white/85">Mr Narada</span>
-        </div>
-
       </div>
     </header>
   )
