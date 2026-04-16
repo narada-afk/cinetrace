@@ -214,6 +214,38 @@ def get_lead_collaborators(actor_id: int, db: Session = Depends(get_db)):
     ]
 
 
+# ── Heroine collaborators (lead actress by billing order) ────────────────────
+
+@router.get(
+    "/actors/{actor_id}/heroine-collaborators",
+    response_model=List[schemas.CollaboratorOut],
+    summary="Lead actresses (heroines) who co-starred with this actor",
+    tags=["Actors"],
+)
+def get_heroine_collaborators(
+    actor_id: int,
+    max_billing: int = 4,
+    db: Session = Depends(get_db),
+):
+    """
+    Returns female co-stars who are identified as heroines via TMDB billing_order.
+    TMDB assigns role_type='supporting' to all heroines (because the male lead
+    is top-billed), making role_type useless for heroine detection.  Instead,
+    billing_order ≤ max_billing (default 4) is used as a reliable proxy —
+    heroines typically appear at cast positions 1–3.
+
+    Falls back to actor_tier='primary' for films with missing billing data.
+    """
+    if not actor_repo.get_by_id(db, actor_id):
+        raise HTTPException(status_code=404, detail="Actor not found")
+
+    rows = actor_repo.get_heroine_collaborators(db, actor_id, max_billing=max_billing)
+    return [
+        schemas.CollaboratorOut(actor=name, films=count, actor_id=aid)
+        for aid, name, count in rows
+    ]
+
+
 # ── Directors ─────────────────────────────────────────────────────────────────
 
 @router.get(

@@ -219,6 +219,49 @@ class ActorRepository:
         )
         return result.fetchall()
 
+    def get_heroine_collaborators(
+        self, db: Session, actor_id: int, max_billing: int = 4
+    ) -> list:
+        """
+        Female co-stars who appeared as the lead actress (heroine) in the same
+        films as this actor, identified via TMDB billing_order.
+
+        Why billing_order instead of role_type:
+          TMDB ingestion assigns role_type='primary' only to the original 13 seed
+          actors, so heroines discovered via TMDB credits all get role_type='supporting'
+          regardless of their actual on-screen importance.  billing_order is a more
+          reliable signal: heroines are typically billed at position 1–3, while
+          supporting character actresses appear at position 10+.
+
+        A female actor qualifies if:
+          • billing_order IS NOT NULL AND billing_order <= max_billing (default 4)
+          • OR billing_order IS NULL but actor_tier = 'primary' (fallback for films
+            without TMDB billing data that have the actress in the primary seed set)
+
+        Returns (actor_id, name, film_count) tuples ordered by film_count DESC.
+        """
+        result = db.execute(
+            text("""
+                SELECT a.id AS actor_id, a.name,
+                       COUNT(DISTINCT am2.movie_id) AS film_count
+                FROM actor_movies am1
+                JOIN actor_movies am2
+                  ON  am2.movie_id  = am1.movie_id
+                  AND am2.actor_id != am1.actor_id
+                JOIN actors a ON a.id = am2.actor_id
+                WHERE am1.actor_id = :actor_id
+                  AND a.gender = 'F'
+                  AND (
+                    (am2.billing_order IS NOT NULL AND am2.billing_order <= :max_billing)
+                    OR (am2.billing_order IS NULL AND a.actor_tier = 'primary')
+                  )
+                GROUP BY a.id, a.name
+                ORDER BY film_count DESC
+            """),
+            {"actor_id": actor_id, "max_billing": max_billing},
+        )
+        return result.fetchall()
+
     def get_directors(self, db: Session, actor_id: int) -> list[models.ActorDirectorStat]:
         """Directors an actor has worked with, ordered by film count."""
         return (
