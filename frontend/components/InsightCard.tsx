@@ -215,7 +215,7 @@ export default function InsightCard({
 
         {/* ── RIGHT: actor portrait ────────────────────────────── */}
         {actors.length > 0 && (
-          <div className={`pointer-events-none z-[2] ${multiActor ? 'absolute bottom-0 right-0 flex items-end' : 'absolute bottom-0 right-0'}`}>
+          <div className="absolute bottom-0 right-0 pointer-events-none z-[2]">
 
             {/* Left-edge fade — blends portrait into the text column (single actor only) */}
             {singleActor && (
@@ -242,40 +242,45 @@ export default function InsightCard({
               />
             )}
 
-            {/* Two actors — circular avatar chips, overlapping */}
+            {/* Two actors — full-height portrait columns, same weight as single portrait */}
             {multiActor && (
-              <div
-                className="flex items-end pb-5 pr-5"
-                style={{ gap: 0 }}
-              >
+              <div className="flex items-end" style={{ height: 220 }}>
                 {actors.slice(0, 2).map((actor, i) => (
                   <div
                     key={actor.name}
-                    className="relative flex-shrink-0 rounded-full overflow-hidden"
+                    className="relative flex-shrink-0 overflow-hidden"
                     style={{
-                      width: 72, height: 72,
-                      marginLeft: i === 0 ? 0 : -20,
+                      width: 120,
+                      height: 220,
+                      marginLeft: i === 0 ? 0 : -24,
                       zIndex: i === 0 ? 2 : 1,
-                      border: `2.5px solid ${bgColor}`,
-                      boxShadow: '0 2px 12px rgba(0,0,0,0.5)',
-                      transform: hovered ? 'scale(1.06)' : 'scale(1)',
-                      transition: 'transform 280ms ease',
                     }}
                   >
+                    {/* Left-edge fade on first image to blend into text */}
+                    {i === 0 && (
+                      <div
+                        className="absolute inset-y-0 left-0 w-20 z-10 pointer-events-none"
+                        style={{ background: `linear-gradient(to right, ${bgColor} 0%, ${bgColor}00 100%)` }}
+                      />
+                    )}
                     {actor.avatarSlug ? (
                       <Image
                         src={`/avatars/${actor.avatarSlug}.png`}
                         alt={actor.name}
-                        width={72}
-                        height={72}
+                        width={120}
+                        height={220}
                         className="object-cover object-top w-full h-full"
+                        style={{
+                          transform:  hovered ? 'scale(1.07)' : 'scale(1.0)',
+                          transition: 'transform 280ms ease',
+                          transformOrigin: 'center bottom',
+                        }}
                         onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
                       />
                     ) : (
-                      /* Initials fallback */
                       <div
-                        className="w-full h-full flex items-center justify-center text-[15px] font-bold text-white/80"
-                        style={{ background: 'rgba(255,255,255,0.12)' }}
+                        className="w-full h-full flex items-center justify-center text-2xl font-bold text-white/60"
+                        style={{ background: 'rgba(255,255,255,0.06)' }}
                       >
                         {actor.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
                       </div>
