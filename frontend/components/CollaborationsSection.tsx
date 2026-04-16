@@ -42,6 +42,13 @@ export default function CollaborationsSection({
     }
   }
 
+  // Primary actors only — filter out supporting/character actors
+  const primaryNames = new Set(
+    allActors
+      .filter(a => a.actor_tier === 'primary')
+      .map(a => a.name.toLowerCase())
+  )
+
   // For a male actor → show female lead co-stars ("Lead Actresses")
   // For a female actor → show male lead co-stars ("Lead Actors")
   const leadLabel = actorGender === 'F' ? '🎬 Lead Actors' : '✨ Lead Actresses'
@@ -49,11 +56,18 @@ export default function CollaborationsSection({
   // Use ALL collaborators for the actresses section — NOT leadCollaborators.
   // TMDB marks heroines as role_type='supporting' (billed after the male lead),
   // so leadCollaborators (primary-role for both) misses most lead actresses.
+  // Restrict to primary-tier actors so supporting/character actors don't appear.
   const actresses = actorGender === 'F'
-    // actress page: show known males from all collaborators
-    ? collaborators.filter(c => genderMap[c.actor.toLowerCase()] === 'M')
-    // actor page: show females from all collaborators
-    : collaborators.filter(c => femaleNames.has(c.actor.toLowerCase()))
+    // actress page: show known primary male actors
+    ? collaborators.filter(c => {
+        const low = c.actor.toLowerCase()
+        return genderMap[low] === 'M' && primaryNames.has(low)
+      })
+    // actor page: show primary female actors
+    : collaborators.filter(c => {
+        const low = c.actor.toLowerCase()
+        return femaleNames.has(low) && primaryNames.has(low)
+      })
 
   // Build latest year each director worked with this actor (from movies already fetched)
   const dirLatestYear: Record<string, number> = {}

@@ -30,6 +30,7 @@ export interface Actor {
   industry?: string
   debut_year?: number | null
   gender?: 'M' | 'F' | null
+  actor_tier?: 'primary' | 'network' | null
 }
 
 export interface ActorProfile {
