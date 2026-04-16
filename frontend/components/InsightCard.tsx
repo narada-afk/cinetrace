@@ -215,13 +215,15 @@ export default function InsightCard({
 
         {/* ── RIGHT: actor portrait ────────────────────────────── */}
         {actors.length > 0 && (
-          <div className="absolute bottom-0 right-0 pointer-events-none z-[2]">
+          <div className={`pointer-events-none z-[2] ${multiActor ? 'absolute bottom-0 right-0 flex items-end' : 'absolute bottom-0 right-0'}`}>
 
-            {/* Left-edge fade — blends portrait into the text column */}
-            <div
-              className="absolute inset-y-0 left-0 w-24 z-10"
-              style={{ background: `linear-gradient(to right, ${bgColor} 0%, transparent 100%)` }}
-            />
+            {/* Left-edge fade — blends portrait into the text column (single actor only) */}
+            {singleActor && (
+              <div
+                className="absolute inset-y-0 left-0 w-24 z-10"
+                style={{ background: `linear-gradient(to right, ${bgColor} 0%, ${bgColor}00 100%)` }}
+              />
+            )}
 
             {/* Single actor — slight zoom on hover for cinematic presence */}
             {singleActor && actors[0].avatarSlug && (
@@ -240,31 +242,45 @@ export default function InsightCard({
               />
             )}
 
-            {/* Two actors — overlapping, zoom on hover */}
+            {/* Two actors — circular avatar chips, overlapping */}
             {multiActor && (
-              <div className="relative flex items-center">
+              <div
+                className="flex items-end pb-5 pr-5"
+                style={{ gap: 0 }}
+              >
                 {actors.slice(0, 2).map((actor, i) => (
-                  actor.avatarSlug ? (
-                    <div
-                      key={actor.name}
-                      className="relative"
-                      style={{ marginLeft: i === 0 ? 0 : -28, zIndex: i === 0 ? 2 : 1 }}
-                    >
+                  <div
+                    key={actor.name}
+                    className="relative flex-shrink-0 rounded-full overflow-hidden"
+                    style={{
+                      width: 72, height: 72,
+                      marginLeft: i === 0 ? 0 : -20,
+                      zIndex: i === 0 ? 2 : 1,
+                      border: `2.5px solid ${bgColor}`,
+                      boxShadow: '0 2px 12px rgba(0,0,0,0.5)',
+                      transform: hovered ? 'scale(1.06)' : 'scale(1)',
+                      transition: 'transform 280ms ease',
+                    }}
+                  >
+                    {actor.avatarSlug ? (
                       <Image
                         src={`/avatars/${actor.avatarSlug}.png`}
                         alt={actor.name}
-                        width={150}
-                        height={150}
-                        className="object-cover object-top"
-                        style={{
-                          transform:  hovered ? 'scale(1.07)' : 'scale(1.0)',
-                          transition: 'transform 280ms ease',
-                          transformOrigin: 'center bottom',
-                        }}
+                        width={72}
+                        height={72}
+                        className="object-cover object-top w-full h-full"
                         onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
                       />
-                    </div>
-                  ) : null
+                    ) : (
+                      /* Initials fallback */
+                      <div
+                        className="w-full h-full flex items-center justify-center text-[15px] font-bold text-white/80"
+                        style={{ background: 'rgba(255,255,255,0.12)' }}
+                      >
+                        {actor.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+                      </div>
+                    )}
+                  </div>
                 ))}
               </div>
             )}
