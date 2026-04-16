@@ -51,6 +51,10 @@ export default function InsightsCarousel({
     const el = scrollRef.current
     if (!el || items.length === 0) return
 
+    // ── Random start position — different card on every visit ─────────────────
+    const setWidth = el.scrollWidth / 3
+    el.scrollLeft = Math.random() * setWidth
+
     // ── RAF loop ──────────────────────────────────────────────────────────────
     let rafId: number
     let prev: DOMHighResTimeStamp | null = null
@@ -63,7 +67,6 @@ export default function InsightsCarousel({
         el.scrollLeft += SPEED * dt
 
         // Seamless reset: jump back one "set" when we cross the 1/3 boundary
-        const setWidth = el.scrollWidth / 3
         if (el.scrollLeft >= setWidth) {
           el.scrollLeft -= setWidth
         }
