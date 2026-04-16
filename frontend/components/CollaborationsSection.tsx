@@ -42,10 +42,20 @@ export default function CollaborationsSection({
     }
   }
 
-  // Primary actors only — filter out supporting/character actors
+  // Primary-tier names — used to filter male co-stars (excludes Brahmanandam etc.)
   const primaryNames = new Set(
     allActors
       .filter(a => a.actor_tier === 'primary')
+      .map(a => a.name.toLowerCase())
+  )
+
+  // Known-tier names — actors with any assigned tier ('primary' | 'network').
+  // Lead actresses in South Indian films are typically tagged 'network' (not 'primary')
+  // because 'primary' skews toward top male stars. Using knownTierNames for the
+  // female co-star filter ensures lead heroines appear while excluding extras (null tier).
+  const knownTierNames = new Set(
+    allActors
+      .filter(a => a.actor_tier !== null && a.actor_tier !== undefined)
       .map(a => a.name.toLowerCase())
   )
 
@@ -56,17 +66,17 @@ export default function CollaborationsSection({
   // Use ALL collaborators for the actresses section — NOT leadCollaborators.
   // TMDB marks heroines as role_type='supporting' (billed after the male lead),
   // so leadCollaborators (primary-role for both) misses most lead actresses.
-  // Restrict to primary-tier actors so supporting/character actors don't appear.
   const actresses = actorGender === 'F'
     // actress page: show known primary male actors
     ? collaborators.filter(c => {
         const low = c.actor.toLowerCase()
         return genderMap[low] === 'M' && primaryNames.has(low)
       })
-    // actor page: show primary female actors
+    // actor page: show female actors who have a known tier (lead or prominent supporting)
+    // knownTierNames (primary | network) catches lead actresses; null-tier extras are excluded
     : collaborators.filter(c => {
         const low = c.actor.toLowerCase()
-        return femaleNames.has(low) && primaryNames.has(low)
+        return femaleNames.has(low) && knownTierNames.has(low)
       })
 
   // Build latest year each director worked with this actor (from movies already fetched)

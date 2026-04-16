@@ -85,9 +85,11 @@ export default async function ActorPage({ params, searchParams }: PageProps) {
   // gender isn't on the single-actor endpoint — look it up from allActors list
   const actorGender = allActors.find(a => a.id === numericId)?.gender ?? null
 
-  // Compare suggestions: confirmed same gender only, excluding self
+  // Compare suggestions: primary-tier only, same gender, excluding self
+  // actor_tier === 'primary' filters out supporting/character actors (Nassar, Prakash Raj etc.)
   const suggestions = allActors
     .filter(a => a.id !== numericId)
+    .filter(a => a.actor_tier === 'primary')
     .filter(a => !actorGender || a.gender === actorGender)
     .slice(0, 8)
 
