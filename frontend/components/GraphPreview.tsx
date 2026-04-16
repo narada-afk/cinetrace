@@ -526,6 +526,7 @@ export default function GraphPreview({
   const [centerImgError, setCenterImgError]           = useState(false)
   const [localCenter, setLocalCenter]                 = useState<NetworkCenter | null>(null)
   const [localNodes, setLocalNodes]                   = useState<NetworkNode[]>([])
+  const [localAllNodes, setLocalAllNodes]             = useState<NetworkNode[]>([])
   const [fetchingNetwork, setFetchingNetwork]         = useState(false)
   const [hasChosen, setHasChosen]                     = useState(false)
   const [graphContainerHovered, setGraphContainerHovered] = useState(false)
@@ -581,6 +582,8 @@ export default function GraphPreview({
         nodes.push({ id: null, name: d.director, films: d.films, kind: 'director' })
       })
       const eligibleCollabs = collaborators.filter(c => !dirNameSet.has(c.actor.toLowerCase().trim()))
+
+      // Filtered set for the compact inline view (~50 nodes)
       const TARGET = 50
       let threshold = 1
       for (let t = 1; t <= (eligibleCollabs[0]?.films ?? 1); t++) {
@@ -596,8 +599,21 @@ export default function GraphPreview({
           kind:  leadNames.has(c.actor.toLowerCase().trim()) ? 'lead' : 'supporting',
         })
       }
+
+      // Full set — every collaborator, used in the expanded full-screen view
+      const allNodes: NetworkNode[] = [
+        ...directors.slice(0, 8).map(d => ({ id: null, name: d.director, films: d.films, kind: 'director' as const })),
+        ...eligibleCollabs.map(c => ({
+          id:    c.actor_id || null,
+          name:  c.actor,
+          films: c.films,
+          kind:  leadNames.has(c.actor.toLowerCase().trim()) ? 'lead' as const : 'supporting' as const,
+        })),
+      ]
+
       setLocalCenter({ id: actor.id, name: actor.name, gender: actor.gender ?? null })
       setLocalNodes(nodes)
+      setLocalAllNodes(allNodes)
     } catch {
       showToast('Failed to load network')
     } finally {
@@ -628,9 +644,9 @@ export default function GraphPreview({
     [nodes.map(n => `${n.name}:${n.kind}`).join(',')]
   )
   const expandedPositions = useMemo(
-    () => nodes.map((n, i) => scatterPosExpanded(i, n.kind)),
+    () => localAllNodes.map((n, i) => scatterPosExpanded(i, n.kind)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [nodes.map(n => `${n.name}:${n.kind}`).join(',')]
+    [localAllNodes.map(n => `${n.name}:${n.kind}`).join(',')]
   )
 
   const leadCount     = nodes.filter(n => n.kind === 'lead').length
@@ -780,7 +796,27 @@ export default function GraphPreview({
                 <span style={{ color: CENTER_COLOR, opacity: 0.8 }}>✦</span>
                 {center.name}&rsquo;s Connections
               </h2>
-              {legendRow}
+              <p className="text-white/30 text-xs mt-0.5 flex items-center gap-2">
+                {localAllNodes.filter(n => n.kind === 'lead').length > 0 && (
+                  <span className="flex items-center gap-1">
+                    <span style={{ color: KIND_COLOR.lead }} className="text-[9px]">●</span>
+                    <span>{localAllNodes.filter(n => n.kind === 'lead').length} leads</span>
+                  </span>
+                )}
+                {localAllNodes.filter(n => n.kind === 'director').length > 0 && (
+                  <span className="flex items-center gap-1">
+                    <span style={{ color: KIND_COLOR.director }} className="text-[9px]">●</span>
+                    <span>{localAllNodes.filter(n => n.kind === 'director').length} directors</span>
+                  </span>
+                )}
+                {localAllNodes.filter(n => n.kind === 'supporting').length > 0 && (
+                  <span className="flex items-center gap-1">
+                    <span className="text-white/40 text-[9px]">●</span>
+                    <span>{localAllNodes.filter(n => n.kind === 'supporting').length} supporting</span>
+                  </span>
+                )}
+                <span className="text-white/20">· {localAllNodes.length} total</span>
+              </p>
             </div>
             <button
               onClick={() => setIsExpanded(false)}
@@ -796,11 +832,11 @@ export default function GraphPreview({
             </button>
           </div>
 
-          {/* Full-screen SVG */}
+          {/* Full-screen SVG — uses ALL collaborators */}
           <div className="flex-1 overflow-hidden">
             <ConstellationSVG
               W={EXP_W} H={EXP_H} cx={EXP_CX} cy={EXP_CY}
-              center={center} nodes={nodes} positions={expandedPositions}
+              center={center} nodes={localAllNodes} positions={expandedPositions}
               bgStars={bgStars}
               hovered={expandHovered} setHovered={setExpandHovered}
               centerImgError={centerImgError} setCenterImgError={setCenterImgError}
