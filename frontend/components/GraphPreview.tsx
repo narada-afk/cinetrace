@@ -280,6 +280,7 @@ function ConstellationSVG({
   onNodeClick, onCenterClick,
   idPrefix = '',
   fs = { name: 8.5, detail: 7, centerName: 10, centerSub: 7.5 },
+  centerR,
 }: {
   W: number; H: number; cx: number; cy: number
   center: NetworkCenter
