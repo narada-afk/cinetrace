@@ -418,6 +418,7 @@ def _director_loyalty(db: Session, limit: int = 50) -> list:
         JOIN   actors      a   ON a.id         = ads.actor_id
         WHERE  a.is_primary_actor = TRUE
           AND  ads.film_count >= 15
+          AND  LOWER(a.name) != LOWER(ads.director)
         ORDER  BY ads.film_count DESC, pct DESC
         LIMIT  :limit
     """), {"limit": limit}).fetchall()
