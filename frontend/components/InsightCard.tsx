@@ -126,8 +126,12 @@ export default function InsightCard({
     }).catch(() => {})
   }
 
-  const singleActor = actors.length === 1
-  const multiActor  = actors.length >= 2
+  // Deduplicate actors by name — prevents self-directed "A & A" cards
+  const uniqueActors = actors.filter(
+    (a, i, arr) => arr.findIndex(b => b.name.toLowerCase() === a.name.toLowerCase()) === i
+  )
+  const singleActor = uniqueActors.length === 1
+  const multiActor  = uniqueActors.length >= 2
 
   return (
     <Link href={href} className="block h-full">
@@ -214,7 +218,7 @@ export default function InsightCard({
         </div>
 
         {/* ── RIGHT: actor portrait ────────────────────────────── */}
-        {actors.length > 0 && (
+        {uniqueActors.length > 0 && (
           <div className="absolute bottom-0 right-0 pointer-events-none z-[2]">
 
             {/* Left-edge fade — blends portrait into the text column (single actor only) */}
@@ -226,10 +230,10 @@ export default function InsightCard({
             )}
 
             {/* Single actor — slight zoom on hover for cinematic presence */}
-            {singleActor && actors[0].avatarSlug && (
+            {singleActor && uniqueActors[0].avatarSlug && (
               <Image
-                src={`/avatars/${actors[0].avatarSlug}.png`}
-                alt={actors[0].name}
+                src={`/avatars/${uniqueActors[0].avatarSlug}.png`}
+                alt={uniqueActors[0].name}
                 width={220}
                 height={220}
                 className="object-cover object-top"
@@ -245,7 +249,7 @@ export default function InsightCard({
             {/* Two actors — overlapping circular avatars */}
             {multiActor && (
               <div className="flex items-end pb-4 pr-4">
-                {actors.slice(0, 2).map((actor, i) => (
+                {uniqueActors.slice(0, 2).map((actor, i) => (
                   <div
                     key={actor.name}
                     className="relative flex-shrink-0 rounded-full overflow-hidden"
