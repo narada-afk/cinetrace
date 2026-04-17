@@ -56,7 +56,7 @@ export default function Header() {
             >
               <Image
                 src="/narada.png"
-                alt="CineScope"
+                alt="CineTrace"
                 width={44}
                 height={44}
                 className="object-cover w-full h-full scale-110"
@@ -78,7 +78,7 @@ export default function Header() {
                   className="transition-colors duration-200"
                   style={{ color: '#a5b4fc' }}
                 >
-                  Scope
+                  Trace
                 </span>
               </span>
               <span

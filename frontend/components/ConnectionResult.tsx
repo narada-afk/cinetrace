@@ -386,7 +386,7 @@ export default function ConnectionResult({ result }: { result: ConnectionPath })
 
     const shareData = {
       title: `${result.path[0]?.name} → ${result.path.at(-1)?.name}`,
-      text:  `Connected in ${result.depth} step${result.depth !== 1 ? 's' : ''} on CineScope`,
+      text:  `Connected in ${result.depth} step${result.depth !== 1 ? 's' : ''} on CineTrace`,
       url,
     }
 

@@ -81,7 +81,7 @@ export default function CompareSummary({ actorA, actorB }: CompareSummaryProps) 
 
       {/* ── Footer branding ─────────────────────────────────────── */}
       <p className="text-xs text-white/30 text-center mt-6">
-        southcinemaanalytics.com
+        cinetrace.in
       </p>
     </div>
   )

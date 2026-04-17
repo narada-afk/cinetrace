@@ -195,7 +195,7 @@ export function buildCanvas(d: ShareCardData): HTMLCanvasElement {
   ctx.fillStyle = 'rgba(255,255,255,0.18)'
   ctx.font = '13px -apple-system, system-ui, sans-serif'
   ctx.textAlign = 'center'
-  ctx.fillText('southcinemaanalytics.com', 600, 616)
+  ctx.fillText('cinetrace.in', 600, 616)
 
   return C
 }

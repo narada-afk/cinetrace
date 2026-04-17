@@ -662,10 +662,10 @@ function FilmsTogether({ films, name1, name2 }: { films: SharedFilm[]; name1: st
 
 export async function generateMetadata({ params }: PageProps) {
   const names = parseSlug(params.slug)
-  if (!names) return { title: 'Compare · CineScope' }
+  if (!names) return { title: 'Compare · CineTrace' }
   const [n1, n2] = names.map(toTitleCase)
   return {
-    title: `${n1} vs ${n2} · CineScope`,
+    title: `${n1} vs ${n2} · CineTrace`,
     description: `Cinematic head-to-head comparison of ${n1} and ${n2} — films, collaborators, directors, timeline, and shared story.`,
   }
 }

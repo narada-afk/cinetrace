@@ -6,8 +6,22 @@ import StarBackground from '@/components/StarBackground'
 import PostHogProvider from '@/components/PostHogProvider'
 
 export const metadata: Metadata = {
-  title: 'CineScope',
-  description: 'South Indian cinema intelligence — explore actors, connections and insights',
+  title: 'CineTrace',
+  description: 'Trace connections across South Indian cinema — explore actors, collaborations and insights across Telugu, Tamil, Malayalam and Kannada films.',
+  metadataBase: new URL('https://cinetrace.in'),
+  openGraph: {
+    title: 'CineTrace — South Indian Cinema Intelligence',
+    description: 'Trace connections across South Indian cinema — 8,000+ actors, 4 industries, infinite connections.',
+    url: 'https://cinetrace.in',
+    siteName: 'CineTrace',
+    locale: 'en_IN',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'CineTrace — South Indian Cinema Intelligence',
+    description: 'Trace connections across South Indian cinema — 8,000+ actors, 4 industries, infinite connections.',
+  },
   icons: {
     icon: '/narada.png',
     apple: '/narada.png',
