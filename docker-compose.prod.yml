@@ -1,9 +1,8 @@
 # docker-compose.prod.yml — PRODUCTION
 #
 # Usage:
-#   DATABASE_URL=... POSTGRES_USER=... POSTGRES_PASSWORD=... POSTGRES_DB=... \
-#   NEXT_PUBLIC_API_URL=https://api.yourdomain.com \
-#   docker compose -f docker-compose.prod.yml up -d
+#   Copy .env.example → .env, fill in all values, then:
+#   docker compose -f docker-compose.prod.yml up -d --build
 #
 # Features:
 #   - No source volume mounts — images are self-contained
@@ -40,10 +39,12 @@ services:
     build:
       context: ./backend
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"     # Bind to localhost only — Caddy proxies externally
     environment:
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: redis://redis:6379/0
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -53,7 +54,6 @@ services:
     command: >
       sh -c "alembic upgrade head && gunicorn -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:8000 --workers 4 --timeout 60"
     restart: unless-stopped
-    # No volume mount — code is baked into the image at build time
 
   frontend:
     build:
@@ -61,8 +61,11 @@ services:
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
         API_URL: http://backend:8000
+        NEXT_PUBLIC_GA_ID: ${NEXT_PUBLIC_GA_ID:-}
+        NEXT_PUBLIC_CLARITY_ID: ${NEXT_PUBLIC_CLARITY_ID:-}
+        NEXT_PUBLIC_POSTHOG_KEY: ${NEXT_PUBLIC_POSTHOG_KEY:-}
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"     # Bind to localhost only — Caddy proxies externally
     environment:
       API_URL: http://backend:8000
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}

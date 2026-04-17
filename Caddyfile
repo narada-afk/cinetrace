@@ -1,0 +1,18 @@
+# Caddyfile — reverse proxy for CineScope production
+#
+# Caddy automatically obtains and renews SSL certificates via Let's Encrypt.
+# Replace cinescope.in with your actual domain once DNS is pointed at this server.
+#
+# To run alongside docker-compose:
+#   apt install caddy   (or use the caddy Docker image)
+#   caddy run --config /path/to/Caddyfile
+
+# ── Main site (Next.js frontend) ─────────────────────────────────────────────
+cinescope.in, www.cinescope.in {
+    reverse_proxy localhost:3000
+}
+
+# ── API subdomain (FastAPI backend) ──────────────────────────────────────────
+api.cinescope.in {
+    reverse_proxy localhost:8000
+}
