@@ -40,7 +40,7 @@ export default function Header() {
             <div
               className="absolute inset-0 rounded-full pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-500"
               style={{
-                background: 'radial-gradient(circle, rgba(99,102,241,0.55) 0%, transparent 68%)',
+                background: 'radial-gradient(circle, rgba(79,172,254,0.45) 0%, rgba(168,85,247,0.30) 50%, transparent 72%)',
                 transform:  'scale(2.2)',
                 filter:     'blur(6px)',
               }}
@@ -66,17 +66,17 @@ export default function Header() {
           </div>
 
           {/* Brand text */}
-          <div className="flex flex-col gap-[3px]">
+          <div className="flex flex-col gap-[4px]">
 
             {/* Name + BETA badge */}
-            <div className="flex items-center gap-[7px]">
-              <span className="text-[15px] font-bold tracking-[-0.01em] leading-none select-none">
-                <span className="text-white/88 group-hover:text-white/95 transition-colors duration-200">
+            <div className="flex items-center gap-[8px]">
+              <span className="text-[16px] font-extrabold tracking-[0.015em] leading-none select-none">
+                <span className="text-white/90 group-hover:text-white transition-colors duration-200">
                   Cine
                 </span>
                 <span
-                  className="transition-colors duration-200"
-                  style={{ color: '#a5b4fc' }}
+                  className="bg-gradient-to-r from-[#4FACFE] to-[#A855F7] bg-clip-text text-transparent"
+                  style={{ filter: 'drop-shadow(0 0 8px rgba(168,85,247,0.40))' }}
                 >
                   Trace
                 </span>
@@ -84,9 +84,9 @@ export default function Header() {
               <span
                 className="text-[9px] font-semibold tracking-[0.07em] leading-none px-[6px] py-[3px] rounded-full select-none"
                 style={{
-                  background: 'rgba(165,180,252,0.10)',
-                  border:     '1px solid rgba(165,180,252,0.20)',
-                  color:      'rgba(165,180,252,0.60)',
+                  background: 'rgba(79,172,254,0.08)',
+                  border:     '1px solid rgba(79,172,254,0.22)',
+                  color:      'rgba(79,172,254,0.70)',
                 }}
               >
                 BETA
@@ -95,10 +95,10 @@ export default function Header() {
 
             {/* Subtitle */}
             <span
-              className="text-[10px] leading-none select-none tracking-[0.055em]"
-              style={{ color: 'rgba(255,255,255,0.30)' }}
+              className="text-[10px] leading-none select-none tracking-[0.06em] italic"
+              style={{ color: 'rgba(255,255,255,0.28)' }}
             >
-              Deep insights into South Indian Cinema 🎬
+              South Indian Cinema… traced.
             </span>
           </div>
         </Link>

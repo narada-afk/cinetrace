@@ -136,26 +136,55 @@ export default function HeroSearch({ trendingActors = [] }: { trendingActors?: T
   }
 
   return (
-    <section className="flex flex-col items-center text-center pt-10 pb-4">
+    <section className="relative flex flex-col items-center text-center pt-10 pb-4 overflow-hidden">
+
+      {/* ── Ambient center glow — behind all text, purely decorative ─────── */}
+      <div
+        aria-hidden="true"
+        className="absolute pointer-events-none select-none"
+        style={{
+          top:       '-80px',
+          left:      '50%',
+          transform: 'translateX(-50%)',
+          width:     '720px',
+          height:    '420px',
+          background:'radial-gradient(ellipse at 50% 38%, rgba(79,172,254,0.07) 0%, rgba(168,85,247,0.05) 38%, transparent 68%)',
+          filter:    'blur(36px)',
+          zIndex:    0,
+        }}
+      />
 
       {/* Rotating headline — always 2 lines via explicit <br/> */}
       <h1
-        className="text-[1.9rem] sm:text-[2.6rem] font-black text-white leading-[1.25] tracking-[-0.02em] max-w-lg"
+        className="relative text-[1.9rem] sm:text-[2.6rem] font-black text-white leading-[1.25] tracking-[-0.02em] max-w-lg"
         style={{
           opacity:    fading ? 0 : 1,
           transition: 'opacity 0.35s ease',
           minHeight:  '2.6em',
+          zIndex:     1,
         }}
       >
         {HEADLINES[headlineIdx]}
       </h1>
 
-      <p className="mt-3 text-sm text-white/40 max-w-sm leading-relaxed">
+      {/* Primary tagline */}
+      <p
+        className="relative mt-4 text-sm tracking-wide italic"
+        style={{ color: 'rgba(156,163,175,0.85)', zIndex: 1 }}
+      >
+        South Indian Cinema… traced.
+      </p>
+
+      {/* Secondary stats line */}
+      <p
+        className="relative mt-2 text-xs"
+        style={{ color: 'rgba(255,255,255,0.22)', zIndex: 1 }}
+      >
         8,000+ actors · 4 industries · infinite connections
       </p>
 
       {/* Search bar + dropdown wrapper */}
-      <div className="relative w-full max-w-3xl mt-8">
+      <div className="relative w-full max-w-3xl mt-8" style={{ zIndex: 1 }}>
         <form onSubmit={handleSubmit}>
           <span
             className="absolute left-5 top-[22px] -translate-y-1/2 text-white/30 pointer-events-none z-10 transition-colors duration-200"

@@ -139,14 +139,37 @@ export default function StarBackground({ density = 'full' }: { density?: Density
       smooth.x += (target.x - smooth.x) * 0.035
       smooth.y += (target.y - smooth.y) * 0.035
 
+      // 0. Center ambient glow — very faint blue-purple radial, sits behind hero text
+      const cx = width / 2, cy = height * 0.36
+      const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.min(width, height) * 0.48)
+      grd.addColorStop(0,    'rgba(79, 172, 254, 0.032)')
+      grd.addColorStop(0.42, 'rgba(168, 85, 247, 0.020)')
+      grd.addColorStop(1,    'rgba(0, 0, 0, 0)')
+      ctx.fillStyle = grd
+      ctx.fillRect(0, 0, width, height)
+
       // 1. Constellation lines (drawn first, beneath stars)
-      ctx.lineWidth = 0.5
+      ctx.lineWidth = 0.6
       for (const [a, b] of connections) {
         ctx.beginPath()
         ctx.moveTo(a.x + smooth.x * a.parallaxFactor, a.y + smooth.y * a.parallaxFactor)
         ctx.lineTo(b.x + smooth.x * b.parallaxFactor, b.y + smooth.y * b.parallaxFactor)
-        ctx.strokeStyle = 'rgba(160, 200, 255, 0.04)'
+        ctx.strokeStyle = 'rgba(160, 200, 255, 0.07)'
         ctx.stroke()
+      }
+
+      // 1b. Node dots at constellation endpoints — "network" feel
+      for (const [a, b] of connections) {
+        for (const s of [a, b]) {
+          ctx.beginPath()
+          ctx.arc(
+            s.x + smooth.x * s.parallaxFactor,
+            s.y + smooth.y * s.parallaxFactor,
+            1.4, 0, Math.PI * 2,
+          )
+          ctx.fillStyle = 'rgba(160, 200, 255, 0.13)'
+          ctx.fill()
+        }
       }
 
       // 2. BG + MID stars — no shadow for performance
