@@ -569,7 +569,14 @@ def get_stats_overview(db: Session) -> dict:
     total_actors = db.execute(text(
         "SELECT COUNT(*) FROM actors WHERE actor_tier IN ('primary','network')"
     )).scalar()
-    total_links = db.execute(text("SELECT COUNT(*) FROM actor_movies")).scalar()
+    # Count distinct (actor, movie) pairs across both ingestion pipelines
+    total_links = db.execute(text("""
+        SELECT COUNT(*) FROM (
+            SELECT actor_id, movie_id FROM "cast"
+            UNION
+            SELECT actor_id, movie_id FROM actor_movies
+        ) all_credits
+    """)).scalar()
     return {
         "total_movies":  total_movies,
         "total_actors":  total_actors,
@@ -581,17 +588,22 @@ def get_stats_overview(db: Session) -> dict:
 def get_most_connected_actors(db: Session, limit: int = 25) -> list:
     """Actors ranked by number of unique co-stars (primary + network tier only)."""
     rows = db.execute(text("""
-        WITH costar_counts AS (
-            SELECT am1.actor_id,
-                   COUNT(DISTINCT am2.actor_id) AS unique_costars
-            FROM actor_movies am1
-            JOIN actor_movies am2
-              ON am1.movie_id = am2.movie_id AND am1.actor_id != am2.actor_id
-            GROUP BY am1.actor_id
+        WITH all_credits AS (
+            SELECT actor_id, movie_id FROM "cast"
+            UNION
+            SELECT actor_id, movie_id FROM actor_movies
+        ),
+        costar_counts AS (
+            SELECT ac1.actor_id,
+                   COUNT(DISTINCT ac2.actor_id) AS unique_costars
+            FROM all_credits ac1
+            JOIN all_credits ac2
+              ON ac1.movie_id = ac2.movie_id AND ac1.actor_id != ac2.actor_id
+            GROUP BY ac1.actor_id
         ),
         film_counts AS (
             SELECT actor_id, COUNT(DISTINCT movie_id) AS film_count
-            FROM actor_movies
+            FROM all_credits
             GROUP BY actor_id
         )
         SELECT a.id, a.name, a.industry, a.actor_tier,
@@ -637,14 +649,19 @@ def get_industry_distribution(db: Session) -> list:
 def get_top_director_partnerships(db: Session, limit: int = 15) -> list:
     """Most prolific actor–director pairs (requires movies.director column)."""
     rows = db.execute(text("""
+        WITH all_credits AS (
+            SELECT actor_id, movie_id FROM "cast"
+            UNION
+            SELECT actor_id, movie_id FROM actor_movies
+        )
         SELECT a.name                               AS actor_name,
                m.director,
                COUNT(*)                            AS film_count,
                MAX(m.industry)                     AS industry,
                array_agg(m.title ORDER BY m.release_year DESC) AS films
-        FROM actor_movies am
-        JOIN actors a ON a.id = am.actor_id
-        JOIN movies m  ON m.id = am.movie_id
+        FROM all_credits ac
+        JOIN actors a ON a.id = ac.actor_id
+        JOIN movies m  ON m.id = ac.movie_id
         WHERE m.director IS NOT NULL
           AND m.director != ''
           AND a.actor_tier IN ('primary','network')
@@ -661,12 +678,17 @@ def get_top_director_partnerships(db: Session, limit: int = 15) -> list:
 
 
 def get_career_timeline(db: Session, actor_id: int) -> list:
-    """Films per year for a given actor."""
+    """Films per year for a given actor (unions Wikidata cast + TMDB actor_movies)."""
     rows = db.execute(text("""
+        WITH all_credits AS (
+            SELECT actor_id, movie_id FROM "cast"
+            UNION
+            SELECT actor_id, movie_id FROM actor_movies
+        )
         SELECT m.release_year AS year, COUNT(*) AS count
         FROM movies m
-        JOIN actor_movies am ON am.movie_id = m.id
-        WHERE am.actor_id = :aid
+        JOIN all_credits ac ON ac.movie_id = m.id
+        WHERE ac.actor_id = :aid
           AND m.release_year > 1950
           AND m.release_year <= EXTRACT(YEAR FROM NOW())::int
         GROUP BY m.release_year
@@ -678,14 +700,19 @@ def get_career_timeline(db: Session, actor_id: int) -> list:
 def get_top_costars(db: Session, limit: int = 15) -> list:
     """Actors with the highest unique co-star counts across all tiers."""
     rows = db.execute(text("""
-        WITH costar_counts AS (
-            SELECT am1.actor_id,
-                   COUNT(DISTINCT am2.actor_id) AS unique_costars,
-                   COUNT(DISTINCT am1.movie_id) AS film_count
-            FROM actor_movies am1
-            JOIN actor_movies am2
-              ON am1.movie_id = am2.movie_id AND am1.actor_id != am2.actor_id
-            GROUP BY am1.actor_id
+        WITH all_credits AS (
+            SELECT actor_id, movie_id FROM "cast"
+            UNION
+            SELECT actor_id, movie_id FROM actor_movies
+        ),
+        costar_counts AS (
+            SELECT ac1.actor_id,
+                   COUNT(DISTINCT ac2.actor_id) AS unique_costars,
+                   COUNT(DISTINCT ac1.movie_id) AS film_count
+            FROM all_credits ac1
+            JOIN all_credits ac2
+              ON ac1.movie_id = ac2.movie_id AND ac1.actor_id != ac2.actor_id
+            GROUP BY ac1.actor_id
         )
         SELECT a.id, a.name, a.industry, cc.unique_costars, cc.film_count
         FROM actors a
@@ -711,14 +738,21 @@ def find_actor_connection(db: Session, actor1_id: int, actor2_id: int,
 
     # Build adjacency list: actor_id -> {neighbor_id: (movie_id, movie_title)}
     # One movie per pair, chosen by highest popularity.
+    # Unions both Wikidata (cast) and TMDB (actor_movies) pipelines so the
+    # original 13 seed actors' early-career films are included in the graph.
     rows = db.execute(text("""
-        SELECT DISTINCT ON (am1.actor_id, am2.actor_id)
-            am1.actor_id, am2.actor_id, m.id, m.title
-        FROM actor_movies am1
-        JOIN actor_movies am2
-          ON am1.movie_id = am2.movie_id AND am1.actor_id < am2.actor_id
-        JOIN movies m ON m.id = am1.movie_id
-        ORDER BY am1.actor_id, am2.actor_id, m.popularity DESC NULLS LAST
+        WITH all_credits AS (
+            SELECT actor_id, movie_id FROM "cast"
+            UNION
+            SELECT actor_id, movie_id FROM actor_movies
+        )
+        SELECT DISTINCT ON (ac1.actor_id, ac2.actor_id)
+            ac1.actor_id, ac2.actor_id, m.id, m.title
+        FROM all_credits ac1
+        JOIN all_credits ac2
+          ON ac1.movie_id = ac2.movie_id AND ac1.actor_id < ac2.actor_id
+        JOIN movies m ON m.id = ac1.movie_id
+        ORDER BY ac1.actor_id, ac2.actor_id, m.popularity DESC NULLS LAST
     """)).fetchall()
 
     graph: dict[int, dict[int, tuple]] = defaultdict(dict)
@@ -837,6 +871,16 @@ def get_chart_data(
     # unique_costars and total_collaborations need a different join
     COSTAR_Y = y_axis in ("unique_costars", "total_collaborations")
 
+    # Shared CTE snippet used in every branch — unions Wikidata (cast) +
+    # TMDB (actor_movies) so original seed actors' early films are included.
+    ALL_CREDITS_CTE = """
+        WITH all_credits AS (
+            SELECT actor_id, movie_id FROM "cast"
+            UNION
+            SELECT actor_id, movie_id FROM actor_movies
+        )
+    """
+
     # ── x = year → LINE chart ────────────────────────────────────────────────
     if x_axis == "year":
         name_map = actor_name_map()
@@ -846,24 +890,26 @@ def get_chart_data(
             if COSTAR_Y:
                 agg = "COUNT(DISTINCT am2.actor_id)" if y_axis == "unique_costars" else "COUNT(am2.actor_id)"
                 rows = db.execute(text(f"""
+                    {ALL_CREDITS_CTE}
                     SELECT m.release_year, {agg}
-                    FROM actor_movies am
+                    FROM all_credits am
                     JOIN movies m ON m.id = am.movie_id
-                    JOIN actor_movies am2 ON am2.movie_id = am.movie_id AND am2.actor_id != am.actor_id
+                    JOIN all_credits am2 ON am2.movie_id = am.movie_id AND am2.actor_id != am.actor_id
                     WHERE am.actor_id = :aid
                     {industry_filter} {year_filters}
-                    AND m.release_year BETWEEN 1950 AND 2026
+                    AND m.release_year BETWEEN 1950 AND EXTRACT(YEAR FROM NOW())::int
                     GROUP BY m.release_year ORDER BY m.release_year
                 """), p).fetchall()
             else:
                 agg = Y_SQL[y_axis]
                 rows = db.execute(text(f"""
+                    {ALL_CREDITS_CTE}
                     SELECT m.release_year, {agg}
-                    FROM actor_movies am
+                    FROM all_credits am
                     JOIN movies m ON m.id = am.movie_id
                     WHERE am.actor_id = :aid
                     {industry_filter} {year_filters}
-                    AND m.release_year BETWEEN 1950 AND 2026
+                    AND m.release_year BETWEEN 1950 AND EXTRACT(YEAR FROM NOW())::int
                     GROUP BY m.release_year ORDER BY m.release_year
                 """), p).fetchall()
             series.append({
@@ -891,18 +937,20 @@ def get_chart_data(
             if COSTAR_Y:
                 agg = "COUNT(DISTINCT am2.actor_id)" if y_axis == "unique_costars" else "COUNT(am2.actor_id)"
                 rows = db.execute(text(f"""
+                    {ALL_CREDITS_CTE}
                     SELECT {DECADE_CASE} AS decade, {agg}
-                    FROM actor_movies am
+                    FROM all_credits am
                     JOIN movies m ON m.id = am.movie_id
-                    JOIN actor_movies am2 ON am2.movie_id = am.movie_id AND am2.actor_id != am.actor_id
+                    JOIN all_credits am2 ON am2.movie_id = am.movie_id AND am2.actor_id != am.actor_id
                     WHERE am.actor_id = :aid {industry_filter}
                     GROUP BY decade
                 """), p).fetchall()
             else:
                 agg = Y_SQL[y_axis]
                 rows = db.execute(text(f"""
+                    {ALL_CREDITS_CTE}
                     SELECT {DECADE_CASE} AS decade, {agg}
-                    FROM actor_movies am
+                    FROM all_credits am
                     JOIN movies m ON m.id = am.movie_id
                     WHERE am.actor_id = :aid {industry_filter}
                     GROUP BY decade
@@ -924,17 +972,19 @@ def get_chart_data(
             if COSTAR_Y:
                 agg = "COUNT(DISTINCT am2.actor_id)" if y_axis == "unique_costars" else "COUNT(am2.actor_id)"
                 row = db.execute(text(f"""
+                    {ALL_CREDITS_CTE}
                     SELECT {agg}
-                    FROM actor_movies am
+                    FROM all_credits am
                     JOIN movies m ON m.id = am.movie_id
-                    JOIN actor_movies am2 ON am2.movie_id = am.movie_id AND am2.actor_id != am.actor_id
+                    JOIN all_credits am2 ON am2.movie_id = am.movie_id AND am2.actor_id != am.actor_id
                     WHERE am.actor_id = :aid {industry_filter} {year_filters}
                 """), p).fetchone()
             else:
                 agg = Y_SQL[y_axis]
                 row = db.execute(text(f"""
+                    {ALL_CREDITS_CTE}
                     SELECT {agg}
-                    FROM actor_movies am
+                    FROM all_credits am
                     JOIN movies m ON m.id = am.movie_id
                     WHERE am.actor_id = :aid {industry_filter} {year_filters}
                 """), p).fetchone()
@@ -955,18 +1005,20 @@ def get_chart_data(
             if COSTAR_Y:
                 agg = "COUNT(DISTINCT am2.actor_id)" if y_axis == "unique_costars" else "COUNT(am2.actor_id)"
                 rows = db.execute(text(f"""
+                    {ALL_CREDITS_CTE}
                     SELECT m.industry, {agg}
-                    FROM actor_movies am
+                    FROM all_credits am
                     JOIN movies m ON m.id = am.movie_id
-                    JOIN actor_movies am2 ON am2.movie_id = am.movie_id AND am2.actor_id != am.actor_id
+                    JOIN all_credits am2 ON am2.movie_id = am.movie_id AND am2.actor_id != am.actor_id
                     WHERE am.actor_id = :aid AND m.industry = ANY(:inds) {year_filters}
                     GROUP BY m.industry ORDER BY m.industry
                 """), {**p, "inds": INDUSTRIES}).fetchall()
             else:
                 agg = Y_SQL[y_axis]
                 rows = db.execute(text(f"""
+                    {ALL_CREDITS_CTE}
                     SELECT m.industry, {agg}
-                    FROM actor_movies am
+                    FROM all_credits am
                     JOIN movies m ON m.id = am.movie_id
                     WHERE am.actor_id = :aid AND m.industry = ANY(:inds) {year_filters}
                     GROUP BY m.industry ORDER BY m.industry
@@ -986,8 +1038,9 @@ def get_chart_data(
             y_axis = "film_count"
         agg = Y_SQL.get(y_axis, "COUNT(DISTINCT am.movie_id)")
         rows = db.execute(text(f"""
+            {ALL_CREDITS_CTE}
             SELECT m.director, a.id, a.name, {agg}
-            FROM actor_movies am
+            FROM all_credits am
             JOIN movies m ON m.id = am.movie_id
             JOIN actors a ON a.id = am.actor_id
             WHERE am.actor_id = ANY(:actor_ids)
@@ -1025,13 +1078,18 @@ def get_cinema_universe(db: Session, min_shared_films: int = 2) -> dict:
     """
     # Nodes: primary actors with costar counts
     node_rows = db.execute(text("""
+        WITH all_credits AS (
+            SELECT actor_id, movie_id FROM "cast"
+            UNION
+            SELECT actor_id, movie_id FROM actor_movies
+        )
         SELECT a.id, a.name, a.industry,
-               COUNT(DISTINCT am.movie_id)  AS film_count,
-               COUNT(DISTINCT am2.actor_id) AS costar_count
+               COUNT(DISTINCT ac.movie_id)  AS film_count,
+               COUNT(DISTINCT ac2.actor_id) AS costar_count
         FROM actors a
-        JOIN actor_movies am  ON am.actor_id  = a.id
-        JOIN actor_movies am2 ON am2.movie_id = am.movie_id
-                              AND am2.actor_id != a.id
+        JOIN all_credits ac  ON ac.actor_id  = a.id
+        JOIN all_credits ac2 ON ac2.movie_id = ac.movie_id
+                             AND ac2.actor_id != a.id
         WHERE a.actor_tier = 'primary'
         GROUP BY a.id, a.name, a.industry
         ORDER BY costar_count DESC
@@ -1045,15 +1103,20 @@ def get_cinema_universe(db: Session, min_shared_films: int = 2) -> dict:
 
     # Edges: pairs of primary actors with ≥ min_shared_films together
     edge_rows = db.execute(text("""
-        SELECT am1.actor_id AS source,
-               am2.actor_id AS target,
+        WITH all_credits AS (
+            SELECT actor_id, movie_id FROM "cast"
+            UNION
+            SELECT actor_id, movie_id FROM actor_movies
+        )
+        SELECT ac1.actor_id AS source,
+               ac2.actor_id AS target,
                COUNT(*)     AS weight
-        FROM actor_movies am1
-        JOIN actor_movies am2
-          ON am1.movie_id = am2.movie_id AND am1.actor_id < am2.actor_id
-        JOIN actors a1 ON a1.id = am1.actor_id AND a1.actor_tier = 'primary'
-        JOIN actors a2 ON a2.id = am2.actor_id AND a2.actor_tier = 'primary'
-        GROUP BY am1.actor_id, am2.actor_id
+        FROM all_credits ac1
+        JOIN all_credits ac2
+          ON ac1.movie_id = ac2.movie_id AND ac1.actor_id < ac2.actor_id
+        JOIN actors a1 ON a1.id = ac1.actor_id AND a1.actor_tier = 'primary'
+        JOIN actors a2 ON a2.id = ac2.actor_id AND a2.actor_tier = 'primary'
+        GROUP BY ac1.actor_id, ac2.actor_id
         HAVING COUNT(*) >= :min_films
         ORDER BY weight DESC
     """), {"min_films": min_shared_films}).fetchall()
@@ -1071,13 +1134,19 @@ def get_gravity_center(db: Session, limit: int = 25) -> list:
     from collections import deque, defaultdict
 
     # Build adjacency list for primary actors only (keeps graph small and fast)
+    # Unions both Wikidata (cast) and TMDB (actor_movies) pipelines.
     rows = db.execute(text("""
-        SELECT DISTINCT am1.actor_id, am2.actor_id
-        FROM actor_movies am1
-        JOIN actor_movies am2
-          ON am1.movie_id = am2.movie_id AND am1.actor_id < am2.actor_id
-        JOIN actors a1 ON a1.id = am1.actor_id AND a1.actor_tier = 'primary'
-        JOIN actors a2 ON a2.id = am2.actor_id AND a2.actor_tier = 'primary'
+        WITH all_credits AS (
+            SELECT actor_id, movie_id FROM "cast"
+            UNION
+            SELECT actor_id, movie_id FROM actor_movies
+        )
+        SELECT DISTINCT ac1.actor_id, ac2.actor_id
+        FROM all_credits ac1
+        JOIN all_credits ac2
+          ON ac1.movie_id = ac2.movie_id AND ac1.actor_id < ac2.actor_id
+        JOIN actors a1 ON a1.id = ac1.actor_id AND a1.actor_tier = 'primary'
+        JOIN actors a2 ON a2.id = ac2.actor_id AND a2.actor_tier = 'primary'
     """)).fetchall()
 
     graph: dict[int, set] = defaultdict(set)
