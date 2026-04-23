@@ -124,7 +124,7 @@ export default function RootLayout({
 
               {/* Instagram */}
               <a
-                href="https://www.instagram.com/mrnarada"
+                href="https://www.instagram.com/misternarada/"
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="Mr Narada on Instagram"
