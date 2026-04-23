@@ -81,7 +81,7 @@ class GraphService:
     _full_graph:
         dict[actor_id, dict[neighbor_id, (movie_id, movie_title)]]
         Full collaboration graph — used by BFS (connection finder).
-        Covers all actors in actor_movies.
+        Covers all actors in both cast (Wikidata) and actor_movies (TMDB).
 
     _primary_graph:
         dict[actor_id, set[neighbor_id]]
@@ -112,21 +112,28 @@ class GraphService:
         """
         # ── Full graph (for BFS) ──────────────────────────────────────────────
         # DISTINCT ON picks the most popular movie per actor pair.
+        # Union of cast (Wikidata) + actor_movies (TMDB) ensures all pipelines
+        # are represented — e.g. Rajinikanth's 1970s-80s Tamil films.
         rows = db.execute(text("""
-            SELECT DISTINCT ON (am1.actor_id, am2.actor_id)
-                am1.actor_id,
-                am2.actor_id,
+            WITH all_credits AS (
+                SELECT actor_id, movie_id FROM "cast"
+                UNION
+                SELECT actor_id, movie_id FROM actor_movies
+            )
+            SELECT DISTINCT ON (ac1.actor_id, ac2.actor_id)
+                ac1.actor_id,
+                ac2.actor_id,
                 m.id          AS movie_id,
                 m.title       AS movie_title,
                 m.poster_url  AS poster_url,
                 m.tmdb_id     AS tmdb_id
-            FROM actor_movies am1
-            JOIN actor_movies am2
-              ON am1.movie_id = am2.movie_id
-             AND am1.actor_id < am2.actor_id
-            JOIN movies m ON m.id = am1.movie_id
+            FROM all_credits ac1
+            JOIN all_credits ac2
+              ON ac1.movie_id = ac2.movie_id
+             AND ac1.actor_id < ac2.actor_id
+            JOIN movies m ON m.id = ac1.movie_id
             WHERE m.is_documentary = FALSE
-            ORDER BY am1.actor_id, am2.actor_id,
+            ORDER BY ac1.actor_id, ac2.actor_id,
                      m.popularity DESC NULLS LAST
         """)).fetchall()
 
@@ -138,13 +145,18 @@ class GraphService:
 
         # ── Primary graph (for Brandes) ───────────────────────────────────────
         primary_rows = db.execute(text("""
-            SELECT DISTINCT am1.actor_id, am2.actor_id
-            FROM actor_movies am1
-            JOIN actor_movies am2
-              ON am1.movie_id = am2.movie_id
-             AND am1.actor_id < am2.actor_id
-            JOIN actors a1 ON a1.id = am1.actor_id AND a1.actor_tier = 'primary'
-            JOIN actors a2 ON a2.id = am2.actor_id AND a2.actor_tier = 'primary'
+            WITH all_credits AS (
+                SELECT actor_id, movie_id FROM "cast"
+                UNION
+                SELECT actor_id, movie_id FROM actor_movies
+            )
+            SELECT DISTINCT ac1.actor_id, ac2.actor_id
+            FROM all_credits ac1
+            JOIN all_credits ac2
+              ON ac1.movie_id = ac2.movie_id
+             AND ac1.actor_id < ac2.actor_id
+            JOIN actors a1 ON a1.id = ac1.actor_id AND a1.actor_tier = 'primary'
+            JOIN actors a2 ON a2.id = ac2.actor_id AND a2.actor_tier = 'primary'
         """)).fetchall()
 
         primary: dict[int, set[int]] = defaultdict(set)
@@ -398,14 +410,19 @@ class GraphService:
 
         # ── Fetch film + costar counts (one DB call, after algorithm) ─────────
         counts = db.execute(text("""
-            SELECT am.actor_id,
-                   COUNT(DISTINCT am.movie_id)  AS film_count,
-                   COUNT(DISTINCT am2.actor_id) AS costar_count
-            FROM actor_movies am
-            JOIN actor_movies am2
-              ON am2.movie_id = am.movie_id AND am2.actor_id != am.actor_id
-            WHERE am.actor_id = ANY(:ids)
-            GROUP BY am.actor_id
+            WITH all_credits AS (
+                SELECT actor_id, movie_id FROM "cast"
+                UNION
+                SELECT actor_id, movie_id FROM actor_movies
+            )
+            SELECT ac.actor_id,
+                   COUNT(DISTINCT ac.movie_id)   AS film_count,
+                   COUNT(DISTINCT ac2.actor_id)  AS costar_count
+            FROM all_credits ac
+            JOIN all_credits ac2
+              ON ac2.movie_id = ac.movie_id AND ac2.actor_id != ac.actor_id
+            WHERE ac.actor_id = ANY(:ids)
+            GROUP BY ac.actor_id
         """), {"ids": top_ids}).fetchall()
         cnt_map = {r[0]: (r[1], r[2]) for r in counts}
 
