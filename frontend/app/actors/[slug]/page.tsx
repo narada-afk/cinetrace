@@ -51,8 +51,8 @@ export default async function ActorPage({ params, searchParams }: PageProps) {
       getActor(compareId).catch(() => null),
     ])
     if (actor && compareActor) {
-      const slug1 = actor.name.toLowerCase().replace(/\s+/g, '')
-      const slug2 = compareActor.name.toLowerCase().replace(/\s+/g, '')
+      const slug1 = actor.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+      const slug2 = compareActor.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
       redirect(`/compare/${slug1}-vs-${slug2}`)
     }
     // If either actor doesn't exist, fall through to normal page rendering

@@ -46,6 +46,7 @@ interface PageProps {
 function parseSlug(slug: string): [string, string] | null {
   const parts = slug.split('-vs-')
   if (parts.length !== 2) return null
+  if (!parts[0].trim() || !parts[1].trim()) return null
   if (/^\d+$/.test(parts[0]) && /^\d+$/.test(parts[1])) return [parts[0], parts[1]]
   return [parts[0].replace(/-/g, ' '), parts[1].replace(/-/g, ' ')]
 }

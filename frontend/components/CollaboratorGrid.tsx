@@ -3,6 +3,8 @@ import ActorAvatar from './ActorAvatar'
 import { toActorSlug } from '@/lib/api'
 import type { Collaborator } from '@/lib/api'
 
+const GRID_LIMIT = 20
+
 interface CollaboratorGridProps {
   collaborators: Collaborator[]
   // Map of name → id for linking (populated from /actors list)
@@ -17,40 +19,48 @@ export default function CollaboratorGrid({
     return <EmptyState message="No collaborator data available." />
   }
 
-  const top = collaborators.slice(0, 8)
+  const top     = collaborators.slice(0, GRID_LIMIT)
+  const hasMore = collaborators.length > GRID_LIMIT
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-      {top.map((collab) => {
-        const actorId = actorIdMap[collab.actor]
-        const inner = (
-          <div
-            className="
-              glass rounded-xl p-4 flex flex-col items-center gap-3 text-center
-              hover:bg-white/[0.08] hover:scale-[1.02]
-              transition-all duration-200 cursor-pointer
-            "
-          >
-            <ActorAvatar name={collab.actor} size={52} />
-            <div className="flex flex-col gap-0.5">
-              <span className="text-sm font-medium text-white/90 leading-snug">
-                {collab.actor}
-              </span>
-              <span className="text-xs text-white/40">
-                {collab.films} film{collab.films !== 1 ? 's' : ''} together
-              </span>
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {top.map((collab) => {
+          const actorId = actorIdMap[collab.actor]
+          const inner = (
+            <div
+              className="
+                glass rounded-xl p-4 flex flex-col items-center gap-3 text-center
+                hover:bg-white/[0.08] hover:scale-[1.02]
+                transition-all duration-200 cursor-pointer
+              "
+            >
+              <ActorAvatar name={collab.actor} size={52} />
+              <div className="flex flex-col gap-0.5">
+                <span className="text-sm font-medium text-white/90 leading-snug">
+                  {collab.actor}
+                </span>
+                <span className="text-xs text-white/40">
+                  {collab.films} film{collab.films !== 1 ? 's' : ''} together
+                </span>
+              </div>
             </div>
-          </div>
-        )
+          )
 
-        return actorId ? (
-          <Link key={collab.actor} href={`/actors/${toActorSlug(collab.actor)}`}>
-            {inner}
-          </Link>
-        ) : (
-          <div key={collab.actor}>{inner}</div>
-        )
-      })}
+          return actorId ? (
+            <Link key={collab.actor} href={`/actors/${toActorSlug(collab.actor)}`}>
+              {inner}
+            </Link>
+          ) : (
+            <div key={collab.actor}>{inner}</div>
+          )
+        })}
+      </div>
+      {hasMore && (
+        <p className="text-xs text-white/30 text-center">
+          Showing top {GRID_LIMIT} of {collaborators.length} co-stars
+        </p>
+      )}
     </div>
   )
 }

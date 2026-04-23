@@ -169,13 +169,14 @@ const MICRO_COPY = [
 ]
 
 function formatCrore(val: number) {
-  if (val >= 1000) return `₹${(val / 1000).toFixed(2)}K Cr`
+  if (val >= 1000) return `₹${(val / 1000).toFixed(1)}K Cr`
   return `₹${Math.round(val)} Cr`
 }
 
 function BlockbustersList({ blockbusters }: { blockbusters: Blockbuster[] }) {
   const [barsReady, setBarsReady] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const hasAnimated  = useRef(false)
 
   useEffect(() => {
     const el = containerRef.current
@@ -183,11 +184,10 @@ function BlockbustersList({ blockbusters }: { blockbusters: Blockbuster[] }) {
 
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting) {
+        if (entry.isIntersecting && !hasAnimated.current) {
+          hasAnimated.current = true
           const t = setTimeout(() => setBarsReady(true), 80)
           return () => clearTimeout(t)
-        } else {
-          setBarsReady(false)
         }
       },
       { threshold: 0.15 }

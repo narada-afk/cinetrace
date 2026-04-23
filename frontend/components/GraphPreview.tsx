@@ -8,6 +8,7 @@ import {
   getActorLeadCollaborators,
   getActorDirectors,
   getActors,
+  toActorSlug,
   type Actor,
 } from '@/lib/api'
 
@@ -93,10 +94,6 @@ function glowR(films: number): number {
 
 function initials(name: string) {
   return name.split(' ').map(w => w[0] ?? '').join('').slice(0, 2).toUpperCase()
-}
-
-function toSlug(name: string) {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -661,10 +658,10 @@ export default function GraphPreview({
   const hasGraph      = hasChosen && !!center && nodes.length > 0
 
   function handleNodeClick(node: NetworkNode) {
-    if (node.id !== null) router.push(`/actors/${toSlug(node.name)}`)
+    if (node.id !== null) router.push(`/actors/${toActorSlug(node.name)}`)
   }
   function handleCenterClick() {
-    if (center) router.push(`/actors/${toSlug(center.name)}`)
+    if (center) router.push(`/actors/${toActorSlug(center.name)}`)
   }
 
   const legendRow = (

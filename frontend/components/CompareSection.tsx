@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import ActorAvatar from './ActorAvatar'
-import { searchActors, type Actor } from '@/lib/api'
+import { searchActors, toActorSlug, type Actor } from '@/lib/api'
 
 interface CompareSectionProps {
   currentActor: { id: number; name: string }
@@ -54,12 +54,8 @@ export default function CompareSection({ currentActor, suggestions, actorGender 
     return () => document.removeEventListener('mousedown', h)
   }, [])
 
-  function toSlug(name: string) {
-    return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-  }
-
   function navigate(targetName: string) {
-    router.push(`/compare/${toSlug(currentActor.name)}-vs-${toSlug(targetName)}`)
+    router.push(`/compare/${toActorSlug(currentActor.name)}-vs-${toActorSlug(targetName)}`)
   }
 
   return (
