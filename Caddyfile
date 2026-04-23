@@ -1,18 +1,15 @@
-# Caddyfile — reverse proxy for CineScope production
+# Caddyfile — reverse proxy for CineTrace production
 #
-# Caddy automatically obtains and renews SSL certificates via Let's Encrypt.
-# Replace cinetrace.in with your actual domain once DNS is pointed at this server.
-#
-# To run alongside docker-compose:
-#   apt install caddy   (or use the caddy Docker image)
-#   caddy run --config /path/to/Caddyfile
+# Cloudflare handles SSL/TLS at the edge (orange-cloud proxied DNS).
+# Caddy listens on plain HTTP — Cloudflare connects to the origin on port 80.
+# Set Cloudflare SSL/TLS mode to "Flexible" in the Cloudflare dashboard.
 
 # ── Main site (Next.js frontend) ─────────────────────────────────────────────
-cinetrace.in, www.cinetrace.in {
+http://cinetrace.in, http://www.cinetrace.in {
     reverse_proxy localhost:3000
 }
 
 # ── API subdomain (FastAPI backend) ──────────────────────────────────────────
-api.cinetrace.in {
+http://api.cinetrace.in {
     reverse_proxy localhost:8000
 }
