@@ -125,7 +125,9 @@ export default function CompareEntry() {
 
   function handleCompare() {
     if (!canCompare) return
-    router.push(`/compare/${toActorSlug(a1!.name)}-vs-${toActorSlug(a2!.name)}`)
+    // Use numeric IDs so actors with special chars (e.g. "Jr. NTR") resolve correctly.
+    // parseSlug on the compare page already handles the ^\d+$-vs-^\d+$ format.
+    router.push(`/compare/${a1!.id}-vs-${a2!.id}`)
   }
 
   return (

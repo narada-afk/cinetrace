@@ -665,6 +665,21 @@ function FilmsTogether({ films, name1, name2 }: { films: SharedFilm[]; name1: st
 export async function generateMetadata({ params }: PageProps) {
   const names = parseSlug(params.slug)
   if (!names) return { title: 'Compare · CineTrace' }
+
+  // When both parts are numeric IDs, fetch real names for SEO-friendly titles.
+  if (/^\d+$/.test(names[0]) && /^\d+$/.test(names[1])) {
+    const [a1, a2] = await Promise.all([
+      getActor(names[0]).catch(() => null),
+      getActor(names[1]).catch(() => null),
+    ])
+    if (a1 && a2) {
+      return {
+        title: `${a1.name} vs ${a2.name} · CineTrace`,
+        description: `Cinematic head-to-head comparison of ${a1.name} and ${a2.name} — films, collaborators, directors, timeline, and shared story.`,
+      }
+    }
+  }
+
   const [n1, n2] = names.map(toTitleCase)
   return {
     title: `${n1} vs ${n2} · CineTrace`,
