@@ -93,12 +93,13 @@ function findSharedCollaborators(
     .slice(0, limit)
 }
 
-/** Count films per release year (1975–2026 window). */
+/** Count films per release year (1975–present window). */
 function buildTimeline(movies: ActorMovie[]): Map<number, number> {
+  const currentYear = new Date().getFullYear()
   const map = new Map<number, number>()
   for (const m of movies) {
     const y = m.release_year
-    if (y >= 1975 && y <= 2026) map.set(y, (map.get(y) ?? 0) + 1)
+    if (y >= 1975 && y <= currentYear) map.set(y, (map.get(y) ?? 0) + 1)
   }
   return map
 }

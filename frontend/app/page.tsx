@@ -12,7 +12,7 @@ import InsightsCarousel from '@/components/InsightsCarousel'
 import { type InsightCardData } from '@/components/InsightCard'
 import ConnectionFinder from '@/components/stats/ConnectionFinder'
 import CompareEntry from '@/components/CompareEntry'
-import { getInsights, getActors, getActorCollaborators, getActorLeadCollaborators, getActorDirectors, getActor, type Insight } from '@/lib/api'
+import { getInsights, getActors, getActorCollaborators, getActorLeadCollaborators, getActorDirectors, getActor, toActorSlug, type Insight } from '@/lib/api'
 import type { TrendingChip } from '@/components/HeroSearch'
 import type { NetworkCenter, NetworkNode } from '@/components/GraphPreview'
 
@@ -204,18 +204,14 @@ async function fetchPageData(industry: string) {
     const insightCards: InsightCardData[] = insights.map((insight, i) => {
       const meta = INSIGHT_META[insight.type] ?? { emoji: '🎭', label: 'Cinema Fact' }
 
-      function toSlug(name: string) {
-        return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-      }
-
       let href = '#'
       if (
         (insight.type === 'collaboration' || insight.type === 'collab_shock') &&
         insight.actors.length === 2
       ) {
-        href = `/compare/${toSlug(insight.actors[0])}-vs-${toSlug(insight.actors[1])}`
+        href = `/compare/${toActorSlug(insight.actors[0])}-vs-${toActorSlug(insight.actors[1])}`
       } else if (insight.actors.length > 0) {
-        href = `/actors/${toSlug(insight.actors[0])}`
+        href = `/actors/${toActorSlug(insight.actors[0])}`
       }
 
       // WOW subtext takes priority; fall back to legacy director label

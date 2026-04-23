@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import ActorAvatar from '@/components/ActorAvatar'
 import { trackSearch } from '@/lib/analytics'
+import { toActorSlug } from '@/lib/api'
 
 export interface TrendingChip {
   id: number
@@ -14,10 +15,6 @@ export interface TrendingChip {
 interface SearchResult {
   id: number
   name: string
-}
-
-function toSlug(name: string) {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 }
 
 const HEADLINES: ReactNode[] = [
@@ -108,7 +105,7 @@ export default function HeroSearch({ trendingActors = [] }: { trendingActors?: T
     trackSearch(name)
     setFocused(false)
     setQuery('')
-    router.push(`/actors/${toSlug(name)}`)
+    router.push(`/actors/${toActorSlug(name)}`)
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -123,7 +120,7 @@ export default function HeroSearch({ trendingActors = [] }: { trendingActors?: T
       const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
       const res    = await fetch(`${apiUrl}/actors/search?q=${encodeURIComponent(q)}`)
       const data: SearchResult[] = await res.json()
-      if (data.length > 0) router.push(`/actors/${toSlug(data[0].name)}`)
+      if (data.length > 0) router.push(`/actors/${toActorSlug(data[0].name)}`)
       else { setNotFound(true); setLoading(false) }
     } catch { setLoading(false) }
   }
@@ -279,7 +276,7 @@ export default function HeroSearch({ trendingActors = [] }: { trendingActors?: T
           {trendingActors.map((actor) => (
             <Link
               key={actor.id}
-              href={`/actors/${toSlug(actor.name)}`}
+              href={`/actors/${toActorSlug(actor.name)}`}
               className="inline-flex items-center gap-2 pl-1.5 pr-4 py-1.5 rounded-full bg-white/[0.05] border border-white/[0.09] text-white/50 transition-all duration-200 hover:text-white/90 hover:bg-white/[0.10] hover:border-white/[0.25] hover:-translate-y-0.5 hover:scale-105"
               onMouseEnter={e => { (e.currentTarget as HTMLAnchorElement).style.boxShadow = '0 4px 20px rgba(120,150,255,0.18)' }}
               onMouseLeave={e => { (e.currentTarget as HTMLAnchorElement).style.boxShadow = 'none' }}

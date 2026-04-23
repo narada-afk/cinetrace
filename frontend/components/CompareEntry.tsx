@@ -9,11 +9,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { searchActors, type Actor } from '@/lib/api'
-
-function toSlug(name: string) {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-}
+import { searchActors, toActorSlug, type Actor } from '@/lib/api'
 
 const POPULAR = [
   { label: 'Vijay vs Ajith',          a: 'vijay',       b: 'ajith',       tag: 'Tamil' },
@@ -129,7 +125,7 @@ export default function CompareEntry() {
 
   function handleCompare() {
     if (!canCompare) return
-    router.push(`/compare/${toSlug(a1!.name)}-vs-${toSlug(a2!.name)}`)
+    router.push(`/compare/${toActorSlug(a1!.name)}-vs-${toActorSlug(a2!.name)}`)
   }
 
   return (
