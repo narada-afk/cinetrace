@@ -12,7 +12,7 @@ import InsightsCarousel from '@/components/InsightsCarousel'
 import { type InsightCardData } from '@/components/InsightCard'
 import ConnectionFinder from '@/components/stats/ConnectionFinder'
 import CompareEntry from '@/components/CompareEntry'
-import { getInsights, getActors, getActorCollaborators, getActor, type Insight } from '@/lib/api'
+import { getInsights, getActors, getActorCollaborators, getActorLeadCollaborators, getActorDirectors, getActor, type Insight } from '@/lib/api'
 import type { TrendingChip } from '@/components/HeroSearch'
 import type { NetworkCenter, NetworkNode } from '@/components/GraphPreview'
 
@@ -281,9 +281,11 @@ async function fetchNetworkData(
   const centerName = first?.name ?? FALLBACK_CENTER.name
 
   try {
-    // Fetch collaborators + actor list in parallel for ID resolution and gender lookup
-    const [collaborators, actors] = await Promise.all([
+    // Fetch collaborators, lead collaborators, directors + actor list in parallel
+    const [collaborators, leadCollabs, directors, actors] = await Promise.all([
       getActorCollaborators(centerId),
+      getActorLeadCollaborators(centerId).catch(() => []),
+      getActorDirectors(centerId).catch(() => []),
       getActors(true),
     ])
 
@@ -296,16 +298,37 @@ async function fetchNetworkData(
     }
 
     // Build a name → id lookup (case-insensitive) so collaborators get navigable IDs
-    const nameToId = new Map(actors.map(a => [a.name.toLowerCase().trim(), a.id]))
+    const nameToId  = new Map(actors.map(a => [a.name.toLowerCase().trim(), a.id]))
+    const leadNames = new Set(leadCollabs.map(l => l.actor.toLowerCase().trim()))
+    const dirNames  = new Set(directors.slice(0, 8).map(d => d.director.toLowerCase().trim()))
 
-    const nodes: NetworkNode[] = collaborators
-      .slice(0, 8)                          // top 8 by collaboration count (API returns sorted)
-      .map(c => ({
-        id:    nameToId.get(c.actor.toLowerCase().trim()) ?? null,
-        name:  c.actor,
-        films: c.films,
-        kind:  'supporting' as const,
-      }))
+    // Remove directors from collab list so they don't double-count
+    const eligibleCollabs = collaborators.filter(c => !dirNames.has(c.actor.toLowerCase().trim()))
+
+    // Find minimum film threshold so we show ~50 nodes (matches GraphPreview client logic)
+    const TARGET = 50
+    let threshold = 1
+    for (let t = 1; t <= (eligibleCollabs[0]?.films ?? 1); t++) {
+      if (eligibleCollabs.filter(c => c.films >= t).length <= TARGET) { threshold = t; break }
+    }
+
+    // Director nodes first, then collaborators above threshold
+    const nodes: NetworkNode[] = [
+      ...directors.slice(0, 8).map(d => ({
+        id:    nameToId.get(d.director.toLowerCase().trim()) ?? null,
+        name:  d.director,
+        films: d.films,
+        kind:  'director' as const,
+      })),
+      ...eligibleCollabs
+        .filter(c => c.films >= threshold)
+        .map(c => ({
+          id:    nameToId.get(c.actor.toLowerCase().trim()) ?? null,
+          name:  c.actor,
+          films: c.films,
+          kind:  leadNames.has(c.actor.toLowerCase().trim()) ? 'lead' as const : 'supporting' as const,
+        })),
+    ]
 
     if (nodes.length === 0) return null
     return { center, nodes }
