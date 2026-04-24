@@ -19,7 +19,7 @@ import InsightCard, { type InsightCardData } from '@/components/InsightCard'
 const CARD_W   = 380
 const GAP      = 16   // gap-4
 const SPEED    = 0.05 // px/ms → ~50 px/s
-const JUMP     = 3    // cards per button click
+const JUMP     = 2    // cards per button click
 
 export default function InsightsCarousel({ cards }: { cards: InsightCardData[] }) {
   const scrollRef          = useRef<HTMLDivElement>(null)
