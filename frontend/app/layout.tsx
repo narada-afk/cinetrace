@@ -141,23 +141,6 @@ export default function RootLayout({
 
             {/* ── TMDB logo + source list ─────────────────────────── */}
             <div className="flex items-center justify-center gap-2">
-              {/* TMDB colour-mark — matches their official blue */}
-              <svg width="32" height="14" viewBox="0 0 500 220" aria-hidden="true">
-                <defs>
-                  <linearGradient id="tmdbGrad" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0%"   stopColor="#90cea1" />
-                    <stop offset="47%"  stopColor="#01b4e4" />
-                    <stop offset="100%" stopColor="#0d253f" />
-                  </linearGradient>
-                </defs>
-                <rect width="500" height="220" rx="30" fill="url(#tmdbGrad)" />
-                <text x="50%" y="155" textAnchor="middle"
-                  fontFamily="-apple-system,system-ui,sans-serif" fontWeight="800"
-                  fontSize="160" fill="white" letterSpacing="-4">
-                  TMDB
-                </text>
-              </svg>
-
               <p className="text-[11px] text-white/30">
                 Data sources:{' '}
                 <a
