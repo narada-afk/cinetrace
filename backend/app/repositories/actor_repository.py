@@ -311,11 +311,23 @@ class ActorRepository:
         self, db: Session, actor1_id: int, actor2_id: int
     ) -> list:
         """
-        Movies both actors appeared in, newest first.
-        Joins actor_movies and cast for both actors to cover all pipeline paths,
-        then enriches with character/role info from each pipeline.
+        Movies both actors appeared in a lead/significant role, newest first.
+        Applies the same cameo guard as get_movies(): for is_primary_actor=TRUE
+        actors, actor_movies entries are restricted to role_type='primary' so
+        that guest appearances (e.g. Mohanlal in Jailer) don't show as shared
+        films. Non-primary actors are unaffected.
         """
         return db.execute(text("""
+            WITH actor_credits AS (
+                -- Wikidata (cast table) — always included, curated
+                SELECT actor_id, movie_id FROM "cast"
+                UNION
+                -- TMDB pipeline — exclude cameos for primary seed actors
+                SELECT am.actor_id, am.movie_id
+                FROM   actor_movies am
+                JOIN   actors a ON a.id = am.actor_id
+                WHERE  a.is_primary_actor = FALSE OR am.role_type = 'primary'
+            )
             SELECT
                 m.title,
                 m.release_year,
@@ -327,20 +339,14 @@ class ActorRepository:
                 am1.role_type       AS actor1_role,
                 am2.character_name  AS actor2_character,
                 am2.role_type       AS actor2_role
-            FROM (
-                SELECT movie_id FROM actor_movies WHERE actor_id = :a1
-                UNION
-                SELECT movie_id FROM "cast"      WHERE actor_id = :a1
-            ) ids
-            JOIN movies m ON m.id = ids.movie_id
+            FROM   actor_credits ac1
+            JOIN   actor_credits ac2 ON  ac2.movie_id = ac1.movie_id
+                                     AND ac2.actor_id  = :a2
+            JOIN   movies m  ON m.id = ac1.movie_id
             LEFT JOIN actor_movies am1 ON am1.movie_id = m.id AND am1.actor_id = :a1
             LEFT JOIN actor_movies am2 ON am2.movie_id = m.id AND am2.actor_id = :a2
-            WHERE ids.movie_id IN (
-                SELECT movie_id FROM actor_movies WHERE actor_id = :a2
-                UNION
-                SELECT movie_id FROM "cast"      WHERE actor_id = :a2
-            )
-            ORDER BY m.release_year DESC
+            WHERE  ac1.actor_id = :a1
+            ORDER  BY m.release_year DESC
         """), {"a1": actor1_id, "a2": actor2_id}).fetchall()
 
     # ── Health counts ──────────────────────────────────────────────────────────

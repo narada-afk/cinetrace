@@ -254,6 +254,7 @@ def _cross_industry_reach(db: Session, limit: int = 50) -> list:
         WHERE  m.industry IS NOT NULL
           AND  m.industry <> ''
           AND  a.is_primary_actor = TRUE
+          AND  am.role_type = 'primary'
         GROUP  BY a.id, a.name
         HAVING COUNT(DISTINCT LOWER(m.industry)) >= 2
         ORDER  BY ind_count DESC, film_count DESC
@@ -291,17 +292,29 @@ def _career_peak_window(db: Session, limit: int = 50) -> list:
     The year range is preserved in subtext for context.
     """
     rows = db.execute(text("""
-        WITH yearly AS (
+        WITH all_credits AS (
+            -- Wikidata (cast) — always lead roles, curated
+            SELECT c.actor_id, c.movie_id
+            FROM   "cast" c
+            JOIN   actors a ON a.id = c.actor_id
+            WHERE  a.is_primary_actor = TRUE
+            UNION
+            -- TMDB — only role_type='primary' for seed actors to exclude cameos
+            SELECT am.actor_id, am.movie_id
+            FROM   actor_movies am
+            JOIN   actors a ON a.id = am.actor_id
+            WHERE  a.is_primary_actor = TRUE
+              AND  am.role_type = 'primary'
+        ),
+        yearly AS (
             SELECT
-                am.actor_id,
+                ac.actor_id,
                 m.release_year,
                 COUNT(*)  AS films_in_year
-            FROM   actor_movies am
-            JOIN   movies  m ON m.id = am.movie_id
-            JOIN   actors  a ON a.id = am.actor_id
+            FROM   all_credits ac
+            JOIN   movies m ON m.id = ac.movie_id
             WHERE  m.release_year IS NOT NULL
-              AND  a.is_primary_actor = TRUE
-            GROUP  BY am.actor_id, m.release_year
+            GROUP  BY ac.actor_id, m.release_year
         ),
         windows AS (
             SELECT
