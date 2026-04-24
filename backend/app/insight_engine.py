@@ -382,7 +382,7 @@ def _network_power(db: Session, limit: int = 50) -> list:
             "category":   "network",
             "headline":   row.name,
             "value":      row.costar_count,
-            "unit":       "connections",
+            "unit":       "co-stars",
             "actors":     [row.name],
             "actor_ids":  [row.id],
             "is_primary": True,
@@ -645,7 +645,7 @@ def _relatability_score(insight: dict) -> float:
     if isinstance(value, int):
         score += 8
 
-    RELATABLE_UNITS = {"films", "films together", "connections", "films in 5 years", "industries", "Cr box office"}
+    RELATABLE_UNITS = {"films", "films together", "co-stars", "connections", "films in 5 years", "industries", "Cr box office"}
     ABSTRACT_UNITS  = {"peak years", "pct", "ratio", "%"}
 
     if unit in RELATABLE_UNITS:
@@ -661,7 +661,7 @@ def _wow_score(insight: dict) -> float:
     0–50 points.  Rewards extreme magnitudes and genuinely surprising patterns.
 
     Magnitude tiers (the raw numeric value):
-      500+  → 30    jaw-dropping (Brahmanandam 522 films, Kamal 557 connections)
+      500+  → 30    jaw-dropping (Brahmanandam 522 films, Kamal 557 co-stars)
       200+  → 22
       100+  → 16
        50+  → 10
@@ -754,7 +754,7 @@ def _headline_readiness(insight: dict) -> float:
     the two functions are consistent — this function exists as a hard structural
     check separate from the graduated relatability score.
     """
-    SIMPLE_UNITS = {"films", "films together", "connections", "films in 5 years", "industries", "Cr box office"}
+    SIMPLE_UNITS = {"films", "films together", "co-stars", "connections", "films in 5 years", "industries", "Cr box office"}
     value = insight.get("value")
     unit  = insight.get("unit", "")
     if isinstance(value, (int, float)) and unit in SIMPLE_UNITS:
