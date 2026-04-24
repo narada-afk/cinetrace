@@ -81,8 +81,8 @@ export default async function ActorPage({ params, searchParams }: PageProps) {
   const avatarDir = path.join(process.cwd(), 'public', 'avatars')
   const sortedHeroineCollaborators = [...heroineCollaborators].sort((a, b) => {
     if (b.films !== a.films) return b.films - a.films
-    const hasA = existsSync(path.join(avatarDir, `${a.actor.toLowerCase().replace(/\s+/g, '')}.png`)) ? 1 : 0
-    const hasB = existsSync(path.join(avatarDir, `${b.actor.toLowerCase().replace(/\s+/g, '')}.png`)) ? 1 : 0
+    const hasA = existsSync(path.join(avatarDir, `${a.actor.toLowerCase().replace(/[^a-z0-9]/g, '')}.png`)) ? 1 : 0
+    const hasB = existsSync(path.join(avatarDir, `${b.actor.toLowerCase().replace(/[^a-z0-9]/g, '')}.png`)) ? 1 : 0
     return hasB - hasA
   })
 
