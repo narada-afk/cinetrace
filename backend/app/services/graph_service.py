@@ -247,7 +247,12 @@ class GraphService:
         max_depth: int = 6,
     ) -> dict:
         """
-        BFS shortest collaboration path between two actors.
+        Bidirectional BFS — shortest collaboration path between two actors.
+        Searches from both ends simultaneously; stops when the two frontiers
+        meet. For a graph with branching factor b≈50 and typical depth d≈2-3,
+        this visits O(b^(d/2)) ≈ 700 nodes instead of O(b^d) ≈ 125 000 nodes
+        for unidirectional BFS — roughly 100-200× fewer nodes on the first call.
+
         Purely in-memory — no DB calls during traversal.
         Result is cached per unique actor pair.
 
@@ -286,54 +291,85 @@ class GraphService:
             self._cache.set(cache_key, result, ttl=settings.GRAPH_RESULT_TTL)
             return result
 
-        # ── BFS ───────────────────────────────────────────────────────────────
-        visited = {actor1_id}
-        prev: dict[int, tuple[int, int, str, str | None, int | None]] = {}  # node → (from, movie_id, title, poster_url, tmdb_id)
-        queue   = deque([actor1_id])
-        found   = False
+        # ── Bidirectional BFS ─────────────────────────────────────────────────
+        # fwd_prev[n] = (parent_id, movie_id, title, poster_url, tmdb_id)
+        # fwd_prev[actor1_id] = None  (source sentinel)
+        fwd_prev: dict[int, tuple | None] = {actor1_id: None}
+        bwd_prev: dict[int, tuple | None] = {actor2_id: None}
 
-        while queue and not found:
-            current = queue.popleft()
-            if len(visited) > 500_000:          # safety cap
+        fwd_frontier: set[int] = {actor1_id}
+        bwd_frontier: set[int] = {actor2_id}
+
+        meeting_node: int | None = None
+
+        for _ in range(max_depth):
+            if not fwd_frontier or not bwd_frontier:
                 break
-            current_depth = 0
-            # count depth by tracing back (cheap for ≤6 hops)
-            node = current
-            while node in prev:
-                node = prev[node][0]
-                current_depth += 1
-            if current_depth >= max_depth:
-                continue
 
-            for neighbor, (mid, title, poster_url, tmdb_id) in self._full_graph.get(current, {}).items():
-                if neighbor not in visited:
-                    visited.add(neighbor)
-                    prev[neighbor] = (current, mid, title, poster_url, tmdb_id)
-                    if neighbor == actor2_id:
-                        found = True
-                        break
-                    queue.append(neighbor)
+            # Expand whichever frontier is smaller (minimises total work)
+            if len(fwd_frontier) <= len(bwd_frontier):
+                next_fwd: set[int] = set()
+                for node in fwd_frontier:
+                    for neighbor, edge in self._full_graph.get(node, {}).items():
+                        if neighbor not in fwd_prev:
+                            fwd_prev[neighbor] = (node, *edge)
+                            next_fwd.add(neighbor)
+                fwd_frontier = next_fwd
+                overlap = fwd_frontier & set(bwd_prev)
+                if overlap:
+                    meeting_node = min(overlap)   # deterministic tie-break
+                    break
+            else:
+                next_bwd: set[int] = set()
+                for node in bwd_frontier:
+                    for neighbor, edge in self._full_graph.get(node, {}).items():
+                        if neighbor not in bwd_prev:
+                            bwd_prev[neighbor] = (node, *edge)
+                            next_bwd.add(neighbor)
+                bwd_frontier = next_bwd
+                overlap = set(fwd_prev) & bwd_frontier
+                if overlap:
+                    meeting_node = min(overlap)
+                    break
 
-        if not found:
+        if meeting_node is None:
             result = {"found": False, "depth": -1, "path": [], "connections": []}
             self._cache.set(cache_key, result, ttl=settings.GRAPH_RESULT_TTL)
             return result
 
         # ── Reconstruct path ──────────────────────────────────────────────────
-        path_ids:    list[int]  = []
+        # Forward half: actor1_id → ... → meeting_node
+        fwd_ids: list[int] = []
+        node: int | None = meeting_node
+        while node is not None:
+            fwd_ids.append(node)
+            entry = fwd_prev.get(node)
+            node = entry[0] if entry is not None else None
+        fwd_ids.reverse()   # now [actor1_id, ..., meeting_node]
+
+        # Backward half: one step past meeting_node → ... → actor2_id
+        bwd_ids: list[int] = []
+        node = meeting_node
+        entry = bwd_prev.get(node)
+        while entry is not None:
+            node = entry[0]
+            bwd_ids.append(node)
+            entry = bwd_prev.get(node)
+
+        path_ids = fwd_ids + bwd_ids   # [actor1, ..., meeting, ..., actor2]
+
+        # Build connections from consecutive path nodes using the stored graph
         connections: list[dict] = []
-        node = actor2_id
-        while node in prev:
-            from_node, movie_id, movie_title, poster_url, tmdb_id = prev[node]
-            path_ids.insert(0, node)
-            connections.insert(0, {
-                "movie_id":    movie_id,
-                "movie_title": movie_title,
-                "poster_url":  poster_url,
-                "tmdb_id":     tmdb_id,
-            })
-            node = from_node
-        path_ids.insert(0, actor1_id)
+        for i in range(len(path_ids) - 1):
+            a, b = path_ids[i], path_ids[i + 1]
+            edge = self._full_graph.get(a, {}).get(b)
+            if edge:
+                connections.append({
+                    "movie_id":    edge[0],
+                    "movie_title": edge[1],
+                    "poster_url":  edge[2],
+                    "tmdb_id":     edge[3],
+                })
 
         result = {
             "found":       True,
