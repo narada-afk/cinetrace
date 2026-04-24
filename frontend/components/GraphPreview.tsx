@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
+import ActorAvatar from '@/components/ActorAvatar'
 import {
   searchActors,
   getActorCollaborators,
@@ -204,12 +205,7 @@ function ActorPicker({
                 onClick={() => handleSelect(a)}
                 className="w-full flex items-center gap-2.5 px-4 py-2.5 hover:bg-white/[0.08] transition-colors text-left border-b border-white/[0.05] last:border-0"
               >
-                <div
-                  className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0"
-                  style={{ background: '#ef444433', color: '#ef4444' }}
-                >
-                  {initials(a.name)}
-                </div>
+                <ActorAvatar name={a.name} size={28} />
                 <div className="min-w-0">
                   <p className="text-white text-sm font-medium truncate">{a.name}</p>
                   {a.industry && <p className="text-white/35 text-xs">{a.industry}</p>}
@@ -258,12 +254,7 @@ function ActorPicker({
               onClick={() => handleSelect(a)}
               className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-white/[0.08] transition-colors text-left border-b border-white/[0.05] last:border-0"
             >
-              <div
-                className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0"
-                style={{ background: '#ef444433', color: '#ef4444' }}
-              >
-                {initials(a.name)}
-              </div>
+              <ActorAvatar name={a.name} size={24} />
               <div className="min-w-0">
                 <p className="text-white text-xs font-medium truncate">{a.name}</p>
                 {a.industry && <p className="text-white/35 text-[10px]">{a.industry}</p>}
