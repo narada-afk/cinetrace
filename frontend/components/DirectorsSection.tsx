@@ -91,9 +91,6 @@ export default function DirectorsSection({ directors, movies }: DirectorsSection
                   <span className="text-xs font-semibold text-white/40 uppercase tracking-widest">
                     {selected}
                   </span>
-                  <span className="text-xs text-white/25">
-                    {directorMovies.length} {directorMovies.length === 1 ? 'film' : 'films'}
-                  </span>
                 </div>
               )}
 
