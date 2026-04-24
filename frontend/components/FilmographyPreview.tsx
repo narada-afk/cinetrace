@@ -78,7 +78,7 @@ export default function FilmographyPreview({ movies, totalCount }: FilmographyPr
         <h2 className="text-lg font-bold text-white/80">🎬 Filmography</h2>
         {totalCount > 0 && (
           <a href="#full-filmography" className="text-xs text-white/35 hover:text-white/60 transition-colors">
-            View all {totalCount} films ↓
+            View all films ↓
           </a>
         )}
       </div>

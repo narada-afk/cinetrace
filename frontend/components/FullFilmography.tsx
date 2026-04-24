@@ -18,7 +18,7 @@ export default function FullFilmography({ movies }: { movies: ActorMovie[] }) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-bold text-white/80">📽 All Films</h2>
-        <span className="text-white/30 text-xs">{movies.length} films</span>
+        <span />
       </div>
 
       {/* Grid */}
