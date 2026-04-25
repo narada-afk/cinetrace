@@ -92,128 +92,6 @@ function findSharedCollaborators(
     .slice(0, limit)
 }
 
-/** Count films per release year (1975–present window). */
-function buildTimeline(movies: ActorMovie[]): Map<number, number> {
-  const currentYear = new Date().getFullYear()
-  const map = new Map<number, number>()
-  for (const m of movies) {
-    const y = m.release_year
-    if (y >= 1975 && y <= currentYear) map.set(y, (map.get(y) ?? 0) + 1)
-  }
-  return map
-}
-
-// ── Structured compare insights ───────────────────────────────────────────────
-
-interface CompareInsight {
-  emoji: string
-  hook: string
-  stat: string
-  context: string
-}
-
-/** Generate up to 4 structured compare insights from actor data. */
-function generateStructuredInsights(d1: ActorData, d2: ActorData): CompareInsight[] {
-  const insights: CompareInsight[] = []
-  const p1 = d1.profile
-  const p2 = d2.profile
-  const rat1 = calcAvgRating(d1.movies)
-  const rat2 = calcAvgRating(d2.movies)
-  const yrs1 = calcYearsActive(p1)
-  const yrs2 = calcYearsActive(p2)
-
-  const peakEntry = (movies: ActorMovie[]) => {
-    const byYear = buildTimeline(movies)
-    if (!byYear.size) return null
-    return [...byYear.entries()].reduce((a, b) => (b[1] > a[1] ? b : a))
-  }
-  const pk1 = peakEntry(d1.movies)
-  const pk2 = peakEntry(d2.movies)
-
-  const topBO1 = Math.max(0, ...d1.movies.map((m) => m.box_office ?? 0))
-  const topBO2 = Math.max(0, ...d2.movies.map((m) => m.box_office ?? 0))
-  const topBOMovie1 = d1.movies.find((m) => (m.box_office ?? 0) === topBO1 && topBO1 > 0)
-  const topBOMovie2 = d2.movies.find((m) => (m.box_office ?? 0) === topBO2 && topBO2 > 0)
-  const fmtBO = (v: number) =>
-    v >= 1000 ? `₹${(v / 1000).toFixed(1)}K Cr` : `₹${Math.round(v)} Cr`
-
-  // 1. Film count dominance (gap ≥ 20)
-  const filmGap = Math.abs(p1.film_count - p2.film_count)
-  if (filmGap >= 20) {
-    const more = p1.film_count > p2.film_count ? p1 : p2
-    insights.push({
-      emoji: '📽️',
-      hook: `Sheer volume? ${more.name}.`,
-      stat: `${Math.max(p1.film_count, p2.film_count)} vs ${Math.min(p1.film_count, p2.film_count)} films`,
-      context: `A ${filmGap}-film gap — roughly ${Math.round(filmGap / (Math.max(yrs1, yrs2) || 1))} more per active year.`,
-    })
-  }
-
-  // 2. Rating contrast (gap ≥ 0.3)
-  if (rat1 > 0 && rat2 > 0 && Math.abs(rat1 - rat2) >= 0.3) {
-    const [higher, lower] =
-      rat1 >= rat2
-        ? [{ actor: p1, rat: rat1, count: p1.film_count }, { actor: p2, rat: rat2, count: p2.film_count }]
-        : [{ actor: p2, rat: rat2, count: p2.film_count }, { actor: p1, rat: rat1, count: p1.film_count }]
-    const isSurprise = higher.count < lower.count
-    insights.push({
-      emoji: isSurprise ? '⚡' : '⭐',
-      hook: isSurprise
-        ? `Fewer films. Higher bar. ${higher.actor.name} wins.`
-        : `Across the board… ${higher.actor.name} leads.`,
-      stat: `${higher.rat.toFixed(1)} vs ${lower.rat.toFixed(1)} avg rating`,
-      context: isSurprise
-        ? `${higher.actor.name} has done fewer films, yet audiences rate them higher on average.`
-        : `${Math.abs(rat1 - rat2).toFixed(1)} rating points separates these two — a meaningful gap in audience perception.`,
-    })
-  }
-
-  // 3. Peak year
-  if (pk1 && pk2) {
-    const [busier, quieter] =
-      pk1[1] >= pk2[1]
-        ? [{ actor: p1, pk: pk1 }, { actor: p2, pk: pk2 }]
-        : [{ actor: p2, pk: pk2 }, { actor: p1, pk: pk1 }]
-    insights.push({
-      emoji: '🔥',
-      hook: `${busier.actor.name}'s most explosive year`,
-      stat: `${busier.pk[1]} films in ${busier.pk[0]}`,
-      context: `${quieter.actor.name} peaked in ${quieter.pk[0]} with ${quieter.pk[1]} film${quieter.pk[1] !== 1 ? 's' : ''} that year.`,
-    })
-  }
-
-  // 4. Director diversity (gap ≥ 5)
-  const dirGap = Math.abs(d1.directors.length - d2.directors.length)
-  if (dirGap >= 5) {
-    const [more, less] = d1.directors.length > d2.directors.length ? [d1, d2] : [d2, d1]
-    insights.push({
-      emoji: '🎬',
-      hook: `More directors. More range. ${more.profile.name}.`,
-      stat: `${Math.max(d1.directors.length, d2.directors.length)} unique directors`,
-      context: `That's ${dirGap} more directors than ${less.profile.name} — a sign of broader creative range.`,
-    })
-  }
-
-  // 5. Box office blockbuster (≥ 500 Cr)
-  if (topBO1 >= 500 || topBO2 >= 500) {
-    const [bigBO, bigMovie, bigActor] =
-      topBO1 >= topBO2
-        ? [topBO1, topBOMovie1, p1]
-        : [topBO2, topBOMovie2, p2]
-    insights.push({
-      emoji: '💰',
-      hook: `Box office? ${bigActor.name} owns it.`,
-      stat: fmtBO(bigBO),
-      context: bigMovie
-        ? `"${bigMovie.title}" — ${bigActor.name}'s highest-grossing film ever.`
-        : `One of the biggest box office numbers in South Indian cinema.`,
-    })
-  }
-
-  return insights.slice(0, 4)
-}
-
-
 /** Generate a short rivalry narrative paragraph. */
 function generateRivalryStory(d1: ActorData, d2: ActorData): string {
   const { profile: p1, directors: dirs1, collaborators: c1 } = d1
@@ -430,46 +308,6 @@ function SharedCollaboratorsSection({
   )
 }
 
-// ── TASK 4: Compare Insight Cards ────────────────────────────────────────────
-
-const CARD_ACCENTS = [
-  { bg: 'rgba(245,158,11,0.07)',  border: 'rgba(245,158,11,0.18)',  color: '#f59e0b' },
-  { bg: 'rgba(139,92,246,0.07)', border: 'rgba(139,92,246,0.18)', color: '#8b5cf6' },
-  { bg: 'rgba(6,182,212,0.07)',  border: 'rgba(6,182,212,0.18)',  color: '#06b6d4' },
-  { bg: 'rgba(16,185,129,0.07)', border: 'rgba(16,185,129,0.18)', color: '#10b981' },
-]
-
-function CompareInsightCards({ insights }: { insights: CompareInsight[] }) {
-  if (!insights.length) return null
-
-  return (
-    <div className="relative">
-      {/* Horizontal scroll reel */}
-      <div className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory scrollbar-hide">
-        {insights.map((ins, i) => {
-          const accent = CARD_ACCENTS[i % CARD_ACCENTS.length]
-          return (
-            <div
-              key={i}
-              className="min-w-[272px] max-w-[300px] flex-shrink-0 snap-start rounded-2xl p-5 flex flex-col gap-3 hover:scale-[1.02] transition-transform cursor-default"
-              style={{ background: accent.bg, border: `1px solid ${accent.border}` }}
-            >
-              <span className="text-2xl">{ins.emoji}</span>
-              <p className="text-sm font-semibold text-white/80 leading-snug">{ins.hook}</p>
-              <p className="text-2xl font-bold leading-none" style={{ color: accent.color }}>
-                {ins.stat}
-              </p>
-              <p className="text-xs text-white/45 leading-relaxed">{ins.context}</p>
-            </div>
-          )
-        })}
-      </div>
-
-      {/* Right-edge fade — hints at more cards */}
-      <div className="pointer-events-none absolute right-0 top-0 h-full w-14 bg-gradient-to-l from-[#0a0a0f] to-transparent" />
-    </div>
-  )
-}
 
 // ── TASK 6: Improved Collaborators ────────────────────────────────────────────
 
@@ -720,7 +558,6 @@ export default async function ComparePage({ params }: PageProps) {
     data2.profile.name,
   )
 
-  const insights = generateStructuredInsights(data1, data2)
   const p1 = data1.profile
   const p2 = data2.profile
 
@@ -781,14 +618,6 @@ export default async function ComparePage({ params }: PageProps) {
             <ShareSheet {...shareProps} />
           </div>
         </section>
-
-        {/* ── TASK 4: Compare Insight Cards ────────────────────── */}
-        {insights.length > 0 && (
-          <section>
-            <SectionLabel>💡 By the numbers</SectionLabel>
-            <CompareInsightCards insights={insights} />
-          </section>
-        )}
 
         {/* ── Films Together ───────────────────────────────────── */}
         <section>
