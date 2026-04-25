@@ -209,20 +209,16 @@ async function fetchPageData(industry: string) {
     if (!rawInsights.length) return { insightCards: FALLBACK_INSIGHT_CARDS }
 
     // ── Avatar-first prioritisation ───────────────────────────────────────
-    // Split into 3 tiers by how many displayed actors have a local avatar PNG.
-    // Tier A (score 2) → all displayed actors have avatars  — shown first
-    // Tier B (score 1) → at least one actor has an avatar    — shown second
-    // Tier C (score 0) → no avatars                          — shown last
-    // Each tier is independently diversified so industry variety is preserved
-    // within every tier, not just globally.
+    // Score-2 (all displayed actors have avatars) → Score-1 (≥1 avatar).
+    // Score-0 cards are dropped entirely so every card in the carousel
+    // always has at least one recognisable face.
+    // Each tier is independently diversified to preserve industry variety.
     const tierA = rawInsights.filter(i => insightAvatarScore(i) === 2)
     const tierB = rawInsights.filter(i => insightAvatarScore(i) === 1)
-    const tierC = rawInsights.filter(i => insightAvatarScore(i) === 0)
 
     const insights = [
       ...diversifyInsights(tierA),
       ...diversifyInsights(tierB),
-      ...diversifyInsights(tierC),
     ]
 
     // No cap — show everything the engine returns, interleaved by type

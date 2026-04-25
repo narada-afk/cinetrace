@@ -246,7 +246,9 @@ export default function InsightCard({
               />
             )}
 
-            {/* Two actors — overlapping circular initials (no photos — avoids TMDB sourced images) */}
+            {/* Two actors — overlapping circular portraits.
+                Shows local avatar PNG when available; falls back to initials.
+                Never loads TMDB images — avatarSlug is only set for local PNGs. */}
             {multiActor && (
               <div className="flex items-end pb-4 pr-4">
                 {uniqueActors.slice(0, 2).map((actor, i) => (
@@ -264,7 +266,29 @@ export default function InsightCard({
                       transition: 'transform 280ms ease',
                     }}
                   >
-                    {actor.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+                    {actor.avatarSlug ? (
+                      <Image
+                        src={`/avatars/${actor.avatarSlug}.png`}
+                        alt={actor.name}
+                        width={100}
+                        height={100}
+                        className="w-full h-full object-cover object-top"
+                        onError={e => {
+                          const el = e.currentTarget as HTMLImageElement
+                          el.style.display = 'none'
+                          // Show initials sibling on error
+                          const sib = el.nextElementSibling as HTMLElement | null
+                          if (sib) sib.style.display = 'flex'
+                        }}
+                      />
+                    ) : null}
+                    {/* Initials fallback — hidden when avatar loads, shown on error */}
+                    <span
+                      className="absolute inset-0 flex items-center justify-center text-lg font-bold text-white/80"
+                      style={{ display: actor.avatarSlug ? 'none' : 'flex' }}
+                    >
+                      {actor.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+                    </span>
                   </div>
                 ))}
               </div>
