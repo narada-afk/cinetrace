@@ -24,24 +24,32 @@ interface NavTabsProps {
 
 export default function NavTabs({ activeTab = 'all' }: NavTabsProps) {
   return (
-    <nav className="flex justify-center mt-4">
-      <div className="inline-flex items-center gap-1 px-2 py-2 rounded-full glass">
-        {TABS.map((tab) => (
-          <Link
-            key={tab.value}
-            href={tab.href}
-            className={`
-              px-4 py-1.5 rounded-full text-sm font-medium transition-all
-              ${
-                activeTab === tab.value
-                  ? 'bg-white/15 text-white'
-                  : 'text-white/50 hover:text-white/80 hover:bg-white/[0.06]'
-              }
-            `}
-          >
-            {tab.label}
-          </Link>
-        ))}
+    // overflow-x-auto makes the pill horizontally scrollable on phones
+    // where all 5 tabs don't fit in one row.
+    <nav className="mt-4 overflow-x-auto scrollbar-hide">
+      {/* min-w-fit prevents the centering wrapper from collapsing narrower
+          than its content, so justify-center works on large screens while
+          overflow scrolling still works on small ones. */}
+      <div className="flex justify-center min-w-fit px-4 pb-1">
+        <div className="inline-flex items-center gap-1 px-2 py-2 rounded-full glass">
+          {TABS.map((tab) => (
+            <Link
+              key={tab.value}
+              href={tab.href}
+              className={`
+                px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm
+                font-medium transition-all whitespace-nowrap
+                ${
+                  activeTab === tab.value
+                    ? 'bg-white/15 text-white'
+                    : 'text-white/50 hover:text-white/80 hover:bg-white/[0.06]'
+                }
+              `}
+            >
+              {tab.label}
+            </Link>
+          ))}
+        </div>
       </div>
     </nav>
   )

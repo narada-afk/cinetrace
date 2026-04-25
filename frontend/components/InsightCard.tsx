@@ -192,7 +192,7 @@ export default function InsightCard({
           {/* Row 2 — Stat: dominant numeral with glow + accent unit */}
           <div>
             <div
-              className="text-[3rem] font-black leading-none tracking-tight"
+              className="text-[2.4rem] sm:text-[3rem] font-black leading-none tracking-tight"
               style={{
                 color:      '#ffffff',
                 textShadow: statGlow,

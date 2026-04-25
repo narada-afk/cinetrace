@@ -34,7 +34,7 @@ export default function Header() {
             alt="CineTrace"
             width={160}
             height={40}
-            className="object-contain opacity-90 group-hover:opacity-100 transition-opacity duration-200"
+            className="object-contain opacity-90 group-hover:opacity-100 transition-opacity duration-200 w-[120px] sm:w-[160px] h-auto"
             priority
           />
         </Link>

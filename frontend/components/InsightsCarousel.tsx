@@ -21,12 +21,19 @@ const GAP      = 16   // gap-4
 const SPEED    = 0.05 // px/ms → ~50 px/s
 const JUMP     = 2    // cards per button click
 
+// Responsive card width:
+//   mobile  — fills viewport minus page padding + a 24 px peek of the next card
+//   desktop — fixed 380 px
+// clamp(min, preferred, max) ensures it never shrinks below 260 px or grows past 380 px
+const CARD_WIDTH_CSS = 'clamp(260px, calc(100vw - 88px), 380px)'
+
 export default function InsightsCarousel({ cards }: { cards: InsightCardData[] }) {
   const scrollRef          = useRef<HTMLDivElement>(null)
   const hoverPausedRef     = useRef(false)
   const viewPausedRef      = useRef(false)
   const isIntersectingRef  = useRef(true)
   const manualScrollingRef = useRef(false)   // prevents loop-reset during smooth scroll
+  const touchActiveRef     = useRef(false)   // prevents loop-reset while finger is on screen
 
   const items = cards.length > 0 ? [...cards, ...cards, ...cards] : cards
 
@@ -46,8 +53,9 @@ export default function InsightsCarousel({ cards }: { cards: InsightCardData[] }
 
       if (!hoverPausedRef.current && !viewPausedRef.current && el) {
         el.scrollLeft += SPEED * dt
-        // Only reset the loop seam when the user hasn't triggered a smooth scroll
-        if (!manualScrollingRef.current && el.scrollLeft >= setWidth) {
+        // Only reset the loop seam when neither a smooth-scroll nor a touch
+        // gesture is in progress (avoids fighting the browser's native scroll)
+        if (!manualScrollingRef.current && !touchActiveRef.current && el.scrollLeft >= setWidth) {
           el.scrollLeft -= setWidth
         }
       }
@@ -169,16 +177,43 @@ export default function InsightsCarousel({ cards }: { cards: InsightCardData[] }
           <div
             ref={scrollRef}
             className="insights-scroll overflow-x-auto"
-            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+            style={{
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none',
+              // Snap to card boundaries after each swipe on mobile.
+              // Does not affect desktop — RAF keeps the scroll moving continuously
+              // so the browser never sees a "resting" state to snap from.
+              scrollSnapType: 'x mandatory',
+            }}
             aria-live="off"
             onMouseEnter={() => { hoverPausedRef.current = true  }}
             onMouseLeave={() => { hoverPausedRef.current = false }}
             onFocus={()     => { hoverPausedRef.current = true  }}
             onBlur={()      => { hoverPausedRef.current = false }}
+            // ── Touch handlers ─────────────────────────────────────────────
+            // Pause the RAF loop while the user is swiping so the JS auto-scroll
+            // doesn't fight the browser's native touch-scroll gesture.
+            onTouchStart={() => {
+              hoverPausedRef.current = true
+              touchActiveRef.current = true
+            }}
+            onTouchEnd={() => {
+              // Give momentum scrolling ~1.5 s to settle before RAF resumes
+              setTimeout(() => {
+                hoverPausedRef.current = false
+                touchActiveRef.current = false
+              }, 1500)
+            }}
+            onTouchCancel={() => {
+              setTimeout(() => {
+                hoverPausedRef.current = false
+                touchActiveRef.current = false
+              }, 300)
+            }}
           >
             <div className="flex gap-4 pb-1" style={{ width: 'max-content' }}>
               {items.map((card, i) => (
-                <div key={i} style={{ width: CARD_W, flexShrink: 0 }}>
+                <div key={i} style={{ width: CARD_WIDTH_CSS, flexShrink: 0, scrollSnapAlign: 'start' }}>
                   <InsightCard {...card} />
                 </div>
               ))}
