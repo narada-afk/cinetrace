@@ -585,10 +585,21 @@ export default function GraphPreview({
   // Mobile: 'graph' shows the constellation, 'list' shows a scrollable roster
   const [mobileTab, setMobileTab]                     = useState<'graph' | 'list'>('graph')
   // Fullscreen overlay pinch-to-zoom + single-finger pan
-  const [expScale, setExpScale]                       = useState(1)
-  const [expOffset, setExpOffset]                     = useState({ x: 0, y: 0 })
+  // ─ We use refs for the live transform values and mutate the DOM directly so
+  //   every touchmove frame skips React's reconciler entirely (no re-render jank).
+  //   `isZoomed` is the only state — it flips at most twice per gesture and is
+  //   only needed to show/hide the "Reset zoom" button.
+  const [isZoomed, setIsZoomed]                       = useState(false)
+  const expScaleRef       = useRef(1)
+  const expOffsetRef      = useRef({ x: 0, y: 0 })
+  const expContainerRef   = useRef<HTMLDivElement>(null)
+  // Gesture tracking — prevents post-pan/pinch tap from firing node navigation
+  const gestureMovedRef   = useRef(false)
   const pinchInitDistRef  = useRef<number | null>(null)
   const pinchInitScaleRef = useRef(1)
+  const pinchInitOffsetRef = useRef({ x: 0, y: 0 })
+  // Cached container centre so getBoundingClientRect isn't called per frame
+  const containerCentreRef = useRef({ cx: 0, cy: 0 })
   const panStartRef       = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null)
   const { toast, showToast } = useToast()
 
@@ -629,8 +640,10 @@ export default function GraphPreview({
     setHasChosen(true)
     setFetchingNetwork(true)
     // Reset fullscreen zoom/pan whenever the centre actor changes
-    setExpScale(1)
-    setExpOffset({ x: 0, y: 0 })
+    expScaleRef.current  = 1
+    expOffsetRef.current = { x: 0, y: 0 }
+    setIsZoomed(false)
+    if (expContainerRef.current) expContainerRef.current.style.transform = ''
     try {
       const [collaborators, leadCollabs, directors] = await Promise.all([
         getActorCollaborators(actor.id),
@@ -724,10 +737,29 @@ export default function GraphPreview({
   const supportCount  = nodes.filter(n => n.kind === 'supporting').length
   const hasGraph      = hasChosen && !!center && nodes.length > 0
 
+  // ── Direct-DOM transform helpers (no React re-render per frame) ─────────────
+
+  /** Apply scale + offset directly to the DOM node; only flips `isZoomed` state. */
+  function applyExpTransform(scale: number, x: number, y: number) {
+    expScaleRef.current  = scale
+    expOffsetRef.current = { x, y }
+    if (expContainerRef.current) {
+      expContainerRef.current.style.transform = `translate(${x}px, ${y}px) scale(${scale})`
+    }
+    const nowZoomed = scale !== 1 || x !== 0 || y !== 0
+    // Only trigger a re-render when the boolean flips (≤ 2 renders per gesture)
+    setIsZoomed(prev => prev !== nowZoomed ? nowZoomed : prev)
+  }
+
+  function resetExpTransform() { applyExpTransform(1, 0, 0) }
+
   function handleNodeClick(node: NetworkNode) {
+    // Suppress navigation if the finger just finished a pan/zoom gesture
+    if (gestureMovedRef.current) { gestureMovedRef.current = false; return }
     if (node.id !== null) router.push(`/actors/${toActorSlug(node.name)}`)
   }
   function handleCenterClick() {
+    if (gestureMovedRef.current) { gestureMovedRef.current = false; return }
     if (center) router.push(`/actors/${toActorSlug(center.name)}`)
   }
 
@@ -740,14 +772,20 @@ export default function GraphPreview({
   }
 
   function handleExpTouchStart(e: React.TouchEvent) {
+    // Cache container centre once per gesture so we don't layout-thrash per frame
+    const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
+    containerCentreRef.current = { cx: rect.left + rect.width / 2, cy: rect.top + rect.height / 2 }
+    gestureMovedRef.current = false
+
     if (e.touches.length === 2) {
-      pinchInitDistRef.current  = getTouchDist(e.touches)
-      pinchInitScaleRef.current = expScale
+      pinchInitDistRef.current   = getTouchDist(e.touches)
+      pinchInitScaleRef.current  = expScaleRef.current
+      pinchInitOffsetRef.current = { ...expOffsetRef.current }
       panStartRef.current = null
     } else if (e.touches.length === 1) {
       panStartRef.current = {
         x: e.touches[0].clientX, y: e.touches[0].clientY,
-        ox: expOffset.x, oy: expOffset.y,
+        ox: expOffsetRef.current.x, oy: expOffsetRef.current.y,
       }
       pinchInitDistRef.current = null
     }
@@ -756,19 +794,43 @@ export default function GraphPreview({
   function handleExpTouchMove(e: React.TouchEvent) {
     if (e.touches.length === 2 && pinchInitDistRef.current !== null) {
       e.preventDefault()
-      const ratio = getTouchDist(e.touches) / pinchInitDistRef.current
-      setExpScale(Math.max(0.6, Math.min(5, pinchInitScaleRef.current * ratio)))
+      const ratio    = getTouchDist(e.touches) / pinchInitDistRef.current
+      // Cap at 3× (was 5×); clamp minimum to 0.8 so the graph never inverts
+      const newScale = Math.max(0.8, Math.min(3, pinchInitScaleRef.current * ratio))
+
+      // Zoom toward the pinch midpoint so the gesture feels anchored
+      const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2
+      const my = (e.touches[0].clientY + e.touches[1].clientY) / 2
+      const { cx, cy } = containerCentreRef.current
+      const s0 = pinchInitScaleRef.current
+      // Derived from the requirement that the content point under the midpoint
+      // stays at the same viewport position as scale changes s0 → newScale:
+      //   tx_new = (mx - cx) * (1 - newScale/s0) + tx0 * (newScale/s0)
+      const r  = newScale / s0
+      const tx = (mx - cx) * (1 - r) + pinchInitOffsetRef.current.x * r
+      const ty = (my - cy) * (1 - r) + pinchInitOffsetRef.current.y * r
+
+      applyExpTransform(newScale, tx, ty)
+      gestureMovedRef.current = true
+
     } else if (e.touches.length === 1 && panStartRef.current) {
       e.preventDefault()
       const dx = e.touches[0].clientX - panStartRef.current.x
       const dy = e.touches[0].clientY - panStartRef.current.y
-      setExpOffset({ x: panStartRef.current.ox + dx, y: panStartRef.current.oy + dy })
+      // Only flag as a "gesture" once the finger has moved meaningfully
+      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) gestureMovedRef.current = true
+      applyExpTransform(expScaleRef.current, panStartRef.current.ox + dx, panStartRef.current.oy + dy)
     }
   }
 
   function handleExpTouchEnd(e: React.TouchEvent) {
     if (e.touches.length < 2) pinchInitDistRef.current = null
     if (e.touches.length === 0) panStartRef.current = null
+    // Keep gestureMovedRef true briefly so the synthetic onClick that fires
+    // immediately after touchend is still suppressed
+    if (gestureMovedRef.current) {
+      setTimeout(() => { gestureMovedRef.current = false }, 300)
+    }
   }
 
   const legendRow = (
@@ -1068,9 +1130,9 @@ export default function GraphPreview({
                 />
               </div>
               {/* Reset zoom — only shown when zoomed/panned */}
-              {(expScale !== 1 || expOffset.x !== 0 || expOffset.y !== 0) && (
+              {isZoomed && (
                 <button
-                  onClick={() => { setExpScale(1); setExpOffset({ x: 0, y: 0 }) }}
+                  onClick={resetExpTransform}
                   className="text-xs px-3 py-1.5 rounded-full font-medium transition-all flex-shrink-0"
                   style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.55)' }}
                 >
@@ -1078,7 +1140,7 @@ export default function GraphPreview({
                 </button>
               )}
               <button
-                onClick={() => { setIsExpanded(false); setExpScale(1); setExpOffset({ x: 0, y: 0 }) }}
+                onClick={() => { setIsExpanded(false); resetExpTransform() }}
                 className="flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-full text-sm font-semibold transition-all flex-shrink-0"
                 style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.60)' }}
                 onMouseEnter={e => { const b = e.currentTarget as HTMLButtonElement; b.style.background = 'rgba(255,255,255,0.13)'; b.style.color = '#fff' }}
@@ -1099,12 +1161,18 @@ export default function GraphPreview({
             onTouchStart={handleExpTouchStart}
             onTouchMove={handleExpTouchMove}
             onTouchEnd={handleExpTouchEnd}
+            // Block click/tap events that fire immediately after a pan or pinch gesture.
+            // gestureMovedRef is cleared 300 ms after touchend so normal taps still work.
+            onClickCapture={e => {
+              if (gestureMovedRef.current) { e.stopPropagation(); gestureMovedRef.current = false }
+            }}
           >
+            {/* ref lets us mutate transform directly without re-rendering */}
             <div
+              ref={expContainerRef}
               style={{
                 width: '100%',
                 height: '100%',
-                transform: `translate(${expOffset.x}px, ${expOffset.y}px) scale(${expScale})`,
                 transformOrigin: 'center center',
                 willChange: 'transform',
               }}
