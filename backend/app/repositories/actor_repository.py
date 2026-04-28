@@ -13,7 +13,7 @@ Ready for a future service layer:
 """
 
 from typing import Optional
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import func, text, case, union, select, or_
 
 from app import models
@@ -202,6 +202,13 @@ class ActorRepository:
 
         return (
             db.query(models.Movie)
+            # Eagerly load the normalised director relationship so the router
+            # can use movie.director_names without triggering N+1 queries.
+            # selectinload emits one extra SELECT for all movies in the set.
+            .options(
+                selectinload(models.Movie.movie_director_entries)
+                .selectinload(models.MovieDirector.director)
+            )
             .filter(models.Movie.id.in_(all_ids))
             .order_by(models.Movie.release_year.desc())
             .all()

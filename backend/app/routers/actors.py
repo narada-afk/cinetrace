@@ -163,7 +163,29 @@ def get_actor_movies(actor_id: int, db: Session = Depends(get_db)):
     if not actor_repo.get_by_id(db, actor_id):
         raise HTTPException(status_code=404, detail="Actor not found")
 
-    return actor_repo.get_movies(db, actor_id)
+    movies = actor_repo.get_movies(db, actor_id)
+
+    # Resolve director from the normalised movie_directors join table first.
+    # Falls back to the legacy movies.director TEXT column for any rows not yet
+    # backfilled into the join table (e.g. very old Wikidata-only entries).
+    return [
+        schemas.ActorMovieOut(
+            title=m.title,
+            release_year=m.release_year,
+            director=m.director_names[0] if m.director_names else m.director,
+            runtime=m.runtime,
+            production_company=m.production_company,
+            language=m.language,
+            tmdb_id=m.tmdb_id,
+            poster_url=m.poster_url,
+            backdrop_url=m.backdrop_url,
+            vote_average=m.vote_average,
+            popularity=m.popularity,
+            industry=m.industry,
+            box_office=m.box_office,
+        )
+        for m in movies
+    ]
 
 
 # ── Collaborators ─────────────────────────────────────────────────────────────
