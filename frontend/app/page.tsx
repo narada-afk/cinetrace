@@ -168,11 +168,19 @@ function diversifyInsights(insights: Insight[]): Insight[] {
 
 // ── Colour deduplication ──────────────────────────────────────────────────────
 //
-// Reorders the merged insight list so no two consecutive cards share the same
-// insight type (= same card colour). Algorithm: greedy scan — for each slot,
-// pick the first remaining card whose type differs from the previous one.
-// Falls back to same-type when no alternative exists (e.g. only one type left).
-// O(n²) but n ≤ ~60 so it's negligible.
+// Reorders the merged insight list so every page of 3 cards shows 3 distinct
+// colours. The carousel shows CARDS_PER_PAGE = 3 cards on desktop, so we check
+// a window of the last 2 placed cards when choosing the next one.
+//
+// With window = 2, any 3 consecutive cards satisfy:
+//   card[i] ≠ card[i+1]  and  card[i] ≠ card[i+2]
+// which guarantees all three slots on every desktop page are different colours.
+// The same constraint also covers tablet (2-up) and mobile (1-up).
+//
+// Falls back to same-type only when no alternative exists (e.g. all remaining
+// cards are the same type). O(n²) — negligible at n ≤ 24.
+
+const DEDUPE_WINDOW = 2   // look back this many cards when picking the next one
 
 function dedupeConsecutiveTypes(insights: Insight[]): Insight[] {
   if (insights.length <= 1) return insights
@@ -181,10 +189,14 @@ function dedupeConsecutiveTypes(insights: Insight[]): Insight[] {
   const result: Insight[] = []
 
   while (remaining.length > 0) {
-    const lastType = result[result.length - 1]?.type
-    const nextIdx  = remaining.findIndex(ins => ins.type !== lastType)
-    // If everything left is the same type, just drain in order
-    const takeIdx  = nextIdx === -1 ? 0 : nextIdx
+    // Types of the last DEDUPE_WINDOW cards already placed
+    const recentTypes = new Set(
+      result.slice(-DEDUPE_WINDOW).map(ins => ins.type)
+    )
+    // Pick the first remaining card whose type is not in the recent window
+    const nextIdx = remaining.findIndex(ins => !recentTypes.has(ins.type))
+    // Fallback: all remaining share a recent type — just take the next one
+    const takeIdx = nextIdx === -1 ? 0 : nextIdx
     result.push(...remaining.splice(takeIdx, 1))
   }
 
