@@ -56,7 +56,7 @@ export default function ActorAvatar({
         src={src}
         alt={name}
         fill
-        unoptimized
+        sizes={`${size}px`}
         className="object-cover scale-110"
         onError={(e) => {
           const el = e.currentTarget as HTMLImageElement

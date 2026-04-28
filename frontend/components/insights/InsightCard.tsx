@@ -179,6 +179,7 @@ export default function InsightCard({
                 src={imageUrl!}
                 alt={actorName ?? 'Actor portrait'}
                 fill
+                sizes="(max-width: 640px) 130px, 155px"
                 className="object-cover object-top"
                 style={{
                   transform:  hovered ? 'scale(1.04)' : 'scale(1.0)',
@@ -215,6 +216,7 @@ export default function InsightCard({
                   src={a.src}
                   alt={a.name || 'Actor portrait'}
                   fill
+                  sizes="92px"
                   className="object-cover object-top"
                   onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
                 />

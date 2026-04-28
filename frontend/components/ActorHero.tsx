@@ -50,7 +50,7 @@ export default function ActorHero({
               src={`/avatars/${slug}.png`}
               alt={actor.name}
               fill
-              unoptimized
+              priority
               sizes="160px"
               className="object-cover object-top transition-transform duration-300 group-hover:scale-[1.02]"
               style={{
