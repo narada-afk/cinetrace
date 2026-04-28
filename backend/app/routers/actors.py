@@ -334,17 +334,26 @@ def get_actor_blockbusters(actor_id: int, db: Session = Depends(get_db)):
     if not actor_repo.get_by_id(db, actor_id):
         raise HTTPException(status_code=404, detail="Actor not found")
     rows = db.execute(text("""
+        WITH actor_credits AS (
+            -- Wikidata pipeline (cast table) — always included, curated
+            SELECT movie_id FROM "cast" WHERE actor_id = :actor_id
+            UNION
+            -- TMDB pipeline — exclude cameos for primary seed actors
+            SELECT am.movie_id
+            FROM   actor_movies am
+            JOIN   actors a ON a.id = am.actor_id
+            WHERE  am.actor_id = :actor_id
+              AND  (a.is_primary_actor = FALSE OR am.role_type = 'primary')
+        )
         SELECT m.title, m.release_year, m.poster_url,
                m.box_office   AS box_office_crore,
                m.budget_crore AS budget_crore
-        FROM movies m
-        JOIN actor_movies am ON am.movie_id = m.id
-        WHERE am.actor_id = :actor_id
-          AND am.role_type  = 'primary'
-          AND m.box_office IS NOT NULL
-          AND m.box_office > 0
-        ORDER BY m.box_office DESC
-        LIMIT 10
+        FROM   movies m
+        JOIN   actor_credits ac ON ac.movie_id = m.id
+        WHERE  m.box_office IS NOT NULL
+          AND  m.box_office > 0
+        ORDER  BY m.box_office DESC
+        LIMIT  10
     """), {"actor_id": actor_id}).fetchall()
     return [
         schemas.BlockbusterOut(

@@ -185,14 +185,21 @@ class ActorRepository:
             models.Cast.actor_id == actor_id
         )
 
-        # Exclude narrator / voice / cameo / himself roles from TMDB pipeline
+        # Exclude narrator / voice / cameo / himself roles from TMDB pipeline.
+        # NULL character_name means the role name wasn't in the TMDB data —
+        # treat as a valid acting credit (NOT NULL → we simply can't tell, so
+        # include it).  Only exclude rows where the name is explicitly present
+        # AND matches a non-acting pattern.
         non_acting = [f"%{p}%" for p in self._NON_ACTING_PATTERNS]
         tmdb_ids = select(models.ActorMovie.movie_id).where(
             models.ActorMovie.actor_id == actor_id,
-            ~or_(*[
-                func.lower(models.ActorMovie.character_name).like(p)
-                for p in non_acting
-            ])
+            or_(
+                models.ActorMovie.character_name.is_(None),   # NULL → unknown role, include
+                ~or_(*[
+                    func.lower(models.ActorMovie.character_name).like(p)
+                    for p in non_acting
+                ])
+            )
         )
         # For seed primary actors, drop supporting-tagged entries (cameos in other films)
         if is_primary:
