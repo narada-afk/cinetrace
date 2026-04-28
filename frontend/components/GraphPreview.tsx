@@ -858,7 +858,7 @@ export default function GraphPreview({
             )}
           </div>
           {/* Desktop: share + picker inline with title */}
-          <div className="hidden sm:flex items-center gap-2 flex-shrink-0 pt-1">
+          <div className="hidden lg:flex items-center gap-2 flex-shrink-0 pt-1">
             {hasChosen && center && (
               <button onClick={handleShare}
                 className="text-xs font-semibold px-3 py-1.5 rounded-full bg-white/[0.07] border border-white/[0.12] text-white/50 hover:text-white/80 hover:border-white/25 transition-all"
@@ -878,7 +878,7 @@ export default function GraphPreview({
           {/* Mobile: share button only in this row */}
           {hasChosen && center && (
             <button onClick={handleShare}
-              className="sm:hidden flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full bg-white/[0.07] border border-white/[0.12] text-white/50 transition-all mt-0.5"
+              className="lg:hidden flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full bg-white/[0.07] border border-white/[0.12] text-white/50 transition-all mt-0.5"
               aria-label="Share network">
               🔗
             </button>
@@ -886,7 +886,7 @@ export default function GraphPreview({
         </div>
         {/* Row 2 (mobile only): full-width actor picker */}
         {hasChosen && (
-          <div className="flex sm:hidden mt-2.5">
+          <div className="flex lg:hidden mt-2.5">
             <div className="flex-1">
               <ActorPicker
                 onSelect={handleActorSelect}
@@ -901,7 +901,7 @@ export default function GraphPreview({
 
       {/* ── Mobile tab toggle: Constellation / All Collaborators ── */}
       {hasGraph && (
-        <div className="flex sm:hidden items-center gap-2 px-6 pb-3">
+        <div className="flex lg:hidden items-center gap-2 px-6 pb-3">
           <button
             onClick={() => setMobileTab('graph')}
             className="text-xs px-4 py-1.5 rounded-full transition-all font-medium"
@@ -977,7 +977,7 @@ export default function GraphPreview({
           ) : (
             <>
               {/* ─ Desktop constellation — full 1100×400, hidden on mobile ─ */}
-              <div className="hidden sm:block">
+              <div className="hidden lg:block">
                 <ConstellationSVG
                   W={SVG_W} H={SVG_H} cx={CX} cy={CY}
                   center={center} nodes={nodes} positions={positions}
@@ -991,7 +991,7 @@ export default function GraphPreview({
 
               {/* ─ Mobile constellation — 500×500, top 20 nodes, larger dots ─ */}
               {/* Shown on mobile only, and only when the Constellation tab is active */}
-              <div className={mobileTab === 'graph' ? 'block sm:hidden' : 'hidden'}
+              <div className={mobileTab === 'graph' ? 'block lg:hidden' : 'hidden'}
                 style={{ aspectRatio: '1 / 1' }}>
                 <ConstellationSVG
                   W={MOB_W} H={MOB_H} cx={MOB_CX} cy={MOB_CY}
@@ -1009,7 +1009,7 @@ export default function GraphPreview({
 
               {/* ─ Mobile list view — shown only when the All Collaborators tab is active ─ */}
               {mobileTab === 'list' && (
-                <div className="block sm:hidden px-4 pb-2" style={{ maxHeight: 380, overflowY: 'auto' }}>
+                <div className="block lg:hidden px-4 pb-2" style={{ maxHeight: 380, overflowY: 'auto' }}>
                   {localAllNodes.map((node, i) => (
                     <button
                       key={i}
@@ -1047,7 +1047,7 @@ export default function GraphPreview({
           {hasGraph && graphContainerHovered && !isExpanded && (
             <button
               onClick={() => setIsExpanded(true)}
-              className="hidden sm:flex absolute bottom-4 right-4 z-20 items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
+              className="hidden lg:flex absolute bottom-4 right-4 z-20 items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
               style={{
                 background: 'rgba(255,255,255,0.09)',
                 border: '1px solid rgba(255,255,255,0.20)',
@@ -1066,7 +1066,7 @@ export default function GraphPreview({
 
           {/* ─ Mobile expand button — always visible, descriptive label ─ */}
           {hasGraph && !isExpanded && (
-            <div className="flex sm:hidden justify-center pt-1 pb-2 px-4">
+            <div className="flex lg:hidden justify-center pt-1 pb-2 px-4">
               <button
                 onClick={() => setIsExpanded(true)}
                 className="flex items-center justify-center gap-2 w-full px-5 py-2.5 rounded-full text-sm font-semibold transition-all"
@@ -1121,7 +1121,7 @@ export default function GraphPreview({
               </p>
             </div>
             <div className="flex items-center gap-2 sm:gap-3">
-              <div className="hidden sm:block">
+              <div className="hidden lg:block">
                 <ActorPicker
                   onSelect={(actor) => { handleActorSelect(actor) }}
                   loading={fetchingNetwork}
@@ -1193,10 +1193,10 @@ export default function GraphPreview({
           </div>
 
           {/* Footer hint — mobile shows pinch/pan hint, desktop shows ESC hint */}
-          <p className="sm:hidden text-center text-white/15 text-[10px] pb-3 tracking-widest flex-shrink-0">
+          <p className="lg:hidden text-center text-white/15 text-[10px] pb-3 tracking-widest flex-shrink-0">
             Pinch to zoom · drag to pan
           </p>
-          <p className="hidden sm:block text-center text-white/15 text-[10px] pb-3 tracking-widest flex-shrink-0">
+          <p className="hidden lg:block text-center text-white/15 text-[10px] pb-3 tracking-widest flex-shrink-0">
             Press ESC to close
           </p>
         </div>
