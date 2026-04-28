@@ -17,14 +17,9 @@ function slugify(name: string) {
   return name.toLowerCase().replace(/[^a-z0-9]/g, '')
 }
 
-function formatCrore(val: number) {
+function crore(val: number) {
   if (val >= 1000) return `₹${(val / 1000).toFixed(1)}K Cr`
   return `₹${Math.round(val)} Cr`
-}
-
-function ordinal(n: number) {
-  const s = ['th','st','nd','rd'], v = n % 100
-  return n + (s[(v - 20) % 10] ?? s[v] ?? s[0])
 }
 
 export default function ActorInsightsCarousel({
@@ -40,484 +35,363 @@ export default function ActorInsightsCarousel({
   const cards: InsightCardData[] = []
   const currentYear = new Date().getFullYear()
   const isFemale    = actorGender === 'F'
+  const pronoun     = isFemale ? 'her' : 'his'
 
-  // Pre-computed lookups
-  const femaleNames = new Set(allFemaleActors.map(a => a.name.toLowerCase()))
-  const datedMovies = movies.filter(m => m.release_year > 0 && m.release_year <= currentYear)
-  const ratedMovies = datedMovies.filter(m => m.vote_average && m.vote_average > 0)
+  const femaleNames  = new Set(allFemaleActors.map(a => a.name.toLowerCase()))
+  const datedMovies  = movies.filter(m => m.release_year > 0 && m.release_year <= currentYear)
+  const ratedMovies  = datedMovies.filter(m => m.vote_average && m.vote_average > 0)
 
-  // ── PRIORITY 1 — Lead pair / actress-actor ────────────────────────────────
+  function card(c: InsightCardData) { cards.push(c) }
+  function actorAvatar() { return [{ name: actor.name, avatarSlug: slugify(actor.name) }] }
+  function duo(other: string) {
+    return [
+      { name: actor.name, avatarSlug: slugify(actor.name) },
+      { name: other,      avatarSlug: slugify(other) },
+    ]
+  }
+
+  // ── 1. Lead co-star pairing ────────────────────────────────────────────────
+  // One card per pair — no separate "Legendary Duo" duplicate.
 
   const leadPairs = isFemale
     ? leadCollaborators.filter(c => !femaleNames.has(c.actor.toLowerCase()))
     : leadCollaborators.filter(c =>  femaleNames.has(c.actor.toLowerCase()))
 
   const topPair = leadPairs[0]
-
-  // 1a. Top lead pair
   if (topPair) {
-    cards.push({
-      emoji:    '🎭',
-      label:    'Lead Pair',
-      headline: `Most films with ${topPair.actor}`,
+    card({
+      emoji: '🎭', insightType: 'collab_shock', gradient: 'red',
+      label:    topPair.films >= 8 ? 'Iconic Pair' : 'Top Co-Star',
+      headline: `${actor.name} and ${topPair.actor} have done ${topPair.films} films together`,
       stat:     topPair.films,
-      subtext:  `${topPair.films} films together`,
-      actors:   [
-        { name: actor.name,     avatarSlug: slugify(actor.name) },
-        { name: topPair.actor,  avatarSlug: slugify(topPair.actor) },
-      ],
-      gradient: 'red',
-      href:     `/actors/${actor.id}`,
+      subtext:  `films together`,
+      actors:   duo(topPair.actor),
+      href:     `/compare/${slugify(actor.name)}-vs-${slugify(topPair.actor)}`,
     })
   }
 
-  // 1b. Legendary duo — if top pair has ≥ 8 films
-  if (topPair && topPair.films >= 8) {
-    cards.push({
-      emoji:    '⭐',
-      label:    'Legendary Duo',
-      headline: `${actor.name} & ${topPair.actor} — one of cinema's most iconic pairs`,
-      stat:     `${topPair.films}×`,
-      subtext:  `silver screen partners`,
-      actors:   [
-        { name: actor.name,     avatarSlug: slugify(actor.name) },
-        { name: topPair.actor,  avatarSlug: slugify(topPair.actor) },
-      ],
-      gradient: 'orange',
-      href:     `/actors/${actor.id}`,
-    })
-  }
-
-  // 1c. Second iconic pair (≥ 5 films)
+  // Second lead pair (≥ 6 films — raised from 5)
   const secondPair = leadPairs[1]
-  if (secondPair && secondPair.films >= 5) {
-    cards.push({
-      emoji:    '💫',
-      label:    'Iconic Pair',
-      headline: `Another beloved pairing — with ${secondPair.actor}`,
+  if (secondPair && secondPair.films >= 6) {
+    card({
+      emoji: '💫', insightType: 'collab_shock', gradient: 'red',
+      label:    'Popular Pair',
+      headline: `Also a fan favourite pair — with ${secondPair.actor}`,
       stat:     secondPair.films,
-      subtext:  `${secondPair.films} films together`,
-      actors:   [
-        { name: actor.name,       avatarSlug: slugify(actor.name) },
-        { name: secondPair.actor, avatarSlug: slugify(secondPair.actor) },
-      ],
-      gradient: 'purple',
-      href:     `/actors/${actor.id}`,
+      subtext:  `films together`,
+      actors:   duo(secondPair.actor),
+      href:     `/compare/${slugify(actor.name)}-vs-${slugify(secondPair.actor)}`,
     })
   }
 
-  // 1d. Lead pair diversity — how many unique lead co-stars
+  // How many unique lead co-stars
   if (leadPairs.length >= 5) {
-    cards.push({
-      emoji:    '🌟',
+    card({
+      emoji: '🌟', insightType: 'network_power', gradient: 'blue',
       label:    isFemale ? 'Leading Men' : 'Leading Ladies',
-      headline: `Starred opposite ${leadPairs.length} different ${isFemale ? 'leading men' : 'leading ladies'}`,
+      headline: `Has starred opposite ${leadPairs.length} different ${isFemale ? 'leading men' : 'heroines'}`,
       stat:     leadPairs.length,
-      subtext:  `unique lead ${isFemale ? 'co-stars' : 'heroines'}`,
-      actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
-      gradient: 'red',
+      subtext:  `unique lead co-stars`,
+      actors:   actorAvatar(),
       href:     `/actors/${actor.id}`,
     })
   }
 
-  // ── PRIORITY 2 — Director stats ───────────────────────────────────────────
+  // ── 2. Director bond ───────────────────────────────────────────────────────
+  // One card for top director — no separate "Auteur Partnership" duplicate.
 
   const topDir    = directors[0]
   const secondDir = directors[1]
 
-  // 2a. Top director
   if (topDir && topDir.films >= 2) {
-    cards.push({
-      emoji:    '🎬',
-      label:    'Director Bond',
-      headline: `Most films directed by ${topDir.director}`,
+    card({
+      emoji: '🎬', insightType: 'director_loyalty', gradient: 'amber',
+      label:    topDir.films >= 8 ? 'Favourite Director' : 'Top Director',
+      headline: `${topDir.films} films directed by ${topDir.director}`,
       stat:     topDir.films,
-      subtext:  `films with ${topDir.director}`,
-      actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
-      gradient: 'blue',
+      subtext:  `films together`,
+      actors:   actorAvatar(),
       href:     `/actors/${actor.id}`,
     })
   }
 
-  // 2b. Auteur partnership — if top director has a huge count
-  if (topDir && topDir.films >= 8) {
-    cards.push({
-      emoji:    '🏛️',
-      label:    'Auteur Partnership',
-      headline: `${topDir.director} — a defining creative partnership`,
-      stat:     `${topDir.films}×`,
-      subtext:  `times directed`,
-      actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
-      gradient: 'blue',
-      href:     `/actors/${actor.id}`,
-    })
-  }
-
-  // 2c. Second director (≥ 4 films)
-  if (secondDir && secondDir.films >= 4) {
-    cards.push({
-      emoji:    '🎥',
+  // Second director (≥ 5 films — raised from 4)
+  if (secondDir && secondDir.films >= 5) {
+    card({
+      emoji: '🎥', insightType: 'director_loyalty', gradient: 'amber',
       label:    'Another Bond',
-      headline: `Also a frequent collaborator — ${secondDir.director}`,
+      headline: `${secondDir.films} films with ${secondDir.director} as well`,
       stat:     secondDir.films,
-      subtext:  `films with ${secondDir.director}`,
-      actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
-      gradient: 'blue',
+      subtext:  `films together`,
+      actors:   actorAvatar(),
       href:     `/actors/${actor.id}`,
     })
   }
 
-  // 2d. Director range — total unique directors
+  // Total unique directors
   if (directors.length >= 10) {
-    cards.push({
-      emoji:    '🗂️',
-      label:    'Director Range',
-      headline: `Worked with ${directors.length} different directors`,
+    card({
+      emoji: '🗂️', insightType: 'network_power', gradient: 'blue',
+      label:    'Worked With',
+      headline: `Has worked with ${directors.length} different directors`,
       stat:     directors.length,
-      subtext:  `unique directors`,
-      actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
-      gradient: 'blue',
+      subtext:  `directors`,
+      actors:   actorAvatar(),
       href:     `/actors/${actor.id}`,
     })
   }
 
-  // ── PRIORITY 3 — Individual stats ─────────────────────────────────────────
+  // Director loyalty % (raised minimum to 20%)
+  if (topDir && datedMovies.length >= 5) {
+    const pct = Math.round((topDir.films / datedMovies.length) * 100)
+    if (pct >= 20) {
+      card({
+        emoji: '🤝', insightType: 'director_loyalty', gradient: 'amber',
+        label:    'Director Loyalty',
+        headline: `${pct}% of ${pronoun} films were directed by ${topDir.director}`,
+        stat:     `${pct}%`,
+        subtext:  `of all films`,
+        actors:   actorAvatar(),
+        href:     `/actors/${actor.id}`,
+      })
+    }
+  }
 
-  // 3a. Biggest blockbuster
+  // ── 3. Box office ─────────────────────────────────────────────────────────
+
   const topHit = blockbusters[0]
   if (topHit) {
-    cards.push({
-      emoji:    '💰',
+    card({
+      emoji: '💰', insightType: 'career_peak', gradient: 'green',
       label:    'Biggest Hit',
-      headline: `${topHit.title} · ${topHit.release_year}`,
-      stat:     formatCrore(topHit.box_office_crore),
-      subtext:  `highest grossing film · Source: TMDB`,
-      actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
-      gradient: 'green',
+      headline: `${topHit.title} (${topHit.release_year}) is ${pronoun} biggest film`,
+      stat:     crore(topHit.box_office_crore),
+      subtext:  `box office collection`,
+      actors:   actorAvatar(),
       href:     `/actors/${actor.id}`,
     })
   }
 
-  // 3b. Cumulative box office (if ≥ 3 blockbusters)
   if (blockbusters.length >= 3) {
     const total = blockbusters.reduce((s, b) => s + b.box_office_crore, 0)
-    cards.push({
-      emoji:    '📊',
+    card({
+      emoji: '📊', insightType: 'career_peak', gradient: 'green',
       label:    'Box Office Total',
-      headline: `Top ${blockbusters.length} films combined`,
-      stat:     formatCrore(total),
-      subtext:  `combined collection · Source: TMDB`,
-      actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
-      gradient: 'green',
+      headline: `Top ${blockbusters.length} films have collected a combined ${crore(total)}`,
+      stat:     crore(total),
+      subtext:  `combined collection`,
+      actors:   actorAvatar(),
       href:     `/actors/${actor.id}`,
     })
   }
 
-  // 3c-ROI. Best ROI film (needs budget data)
+  // Best returns on investment
   const roiFilms = blockbusters.filter(b => b.budget_crore && b.budget_crore > 0)
   if (roiFilms.length > 0) {
     const best = roiFilms.reduce((a, b) =>
       (b.box_office_crore / b.budget_crore!) > (a.box_office_crore / a.budget_crore!) ? b : a
     )
     const roi = (best.box_office_crore / best.budget_crore!).toFixed(1)
-    cards.push({
-      emoji:    '🚀',
-      label:    'Best ROI',
-      headline: `${best.title} · ${best.release_year}`,
-      stat:     `${roi}x`,
-      subtext:  `return on ₹${Math.round(best.budget_crore!)} Cr budget · Source: TMDB / Wikipedia`,
-      actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
-      gradient: 'amber',
+    card({
+      emoji: '🚀', insightType: 'career_peak', gradient: 'green',
+      label:    'Best Returns',
+      headline: `${best.title} made ${roi}× its budget back`,
+      stat:     `${roi}×`,
+      subtext:  `return on ₹${Math.round(best.budget_crore!)} Cr budget`,
+      actors:   actorAvatar(),
       href:     `/actors/${actor.id}`,
     })
   }
 
-  // 3c. Best rated film
-  if (ratedMovies.length > 0) {
-    const best = [...ratedMovies].sort((a, b) => (b.vote_average ?? 0) - (a.vote_average ?? 0))[0]
-    if (best.vote_average && best.vote_average >= 7) {
-      cards.push({
-        emoji:    '⭐',
-        label:    'Critics\' Favourite',
-        headline: `${best.title} · ${best.release_year}`,
-        stat:     `${best.vote_average.toFixed(1)}/10`,
-        subtext:  `highest audience rating`,
-        actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
-        gradient: 'orange',
+  // Hit rate (raised minimum to 20%)
+  const boFilms  = datedMovies.filter(m => m.box_office != null && m.box_office! > 0)
+  const hitFilms = boFilms.filter(m => m.box_office! >= 100)
+  if (boFilms.length >= 5) {
+    const rate = Math.round((hitFilms.length / boFilms.length) * 100)
+    if (rate >= 20) {
+      card({
+        emoji: '🎯', insightType: 'career_peak', gradient: 'green',
+        label:    'Success Rate',
+        headline: `${hitFilms.length} out of ${boFilms.length} films crossed ₹100 Cr`,
+        stat:     `${rate}%`,
+        subtext:  `films that were blockbusters`,
+        actors:   actorAvatar(),
         href:     `/actors/${actor.id}`,
       })
     }
   }
 
-  // 3d. Peak decade — which decade had most releases
+  // Box office growth — later career vs early career
+  if (boFilms.length >= 6) {
+    const sorted   = [...boFilms].sort((a, b) => a.release_year - b.release_year)
+    const mid      = Math.floor(sorted.length / 2)
+    const earlyAvg = sorted.slice(0, mid).reduce((s, m) => s + m.box_office!, 0) / mid
+    const lateAvg  = sorted.slice(mid).reduce((s, m) => s + m.box_office!, 0) / (sorted.length - mid)
+    if (lateAvg > earlyAvg * 1.5) {
+      const growthX = (lateAvg / earlyAvg).toFixed(1)
+      card({
+        emoji: '📈', insightType: 'career_peak', gradient: 'green',
+        label:    'Getting Bigger',
+        headline: `Recent films earn ${growthX}× more than ${pronoun} early films`,
+        stat:     `${growthX}×`,
+        subtext:  `box office growth over career`,
+        actors:   actorAvatar(),
+        href:     `/actors/${actor.id}`,
+      })
+    }
+  }
+
+  // ── 4. Ratings & critical reception ──────────────────────────────────────
+
+  if (ratedMovies.length > 0) {
+    const best = [...ratedMovies].sort((a, b) => (b.vote_average ?? 0) - (a.vote_average ?? 0))[0]
+    if (best.vote_average && best.vote_average >= 7) {
+      card({
+        emoji: '⭐', insightType: 'hidden_dominance', gradient: 'orange',
+        label:    'Audience Favourite',
+        headline: `${best.title} (${best.release_year}) is ${pronoun} most loved film`,
+        stat:     `${best.vote_average.toFixed(1)}/10`,
+        subtext:  `fan rating`,
+        actors:   actorAvatar(),
+        href:     `/actors/${actor.id}`,
+      })
+    }
+  }
+
+  // Films rated 7.5+
+  const acclaimedFilms = ratedMovies.filter(m => (m.vote_average ?? 0) >= 7.5)
+  if (acclaimedFilms.length >= 3) {
+    card({
+      emoji: '🎭', insightType: 'hidden_dominance', gradient: 'purple',
+      label:    'Fan Favourite',
+      headline: `${acclaimedFilms.length} films rated 7.5 or above by fans`,
+      stat:     acclaimedFilms.length,
+      subtext:  `highly rated films`,
+      actors:   actorAvatar(),
+      href:     `/actors/${actor.id}`,
+    })
+  }
+
+  // Hit AND loved by fans
+  const unicornFilms = datedMovies.filter(m =>
+    (m.vote_average ?? 0) >= 7.0 && m.box_office != null && m.box_office! >= 100
+  )
+  if (unicornFilms.length >= 1) {
+    card({
+      emoji: '🦄', insightType: 'hidden_dominance', gradient: 'purple',
+      label:    'Hit and Loved',
+      headline: unicornFilms.length === 1
+        ? `${unicornFilms[0].title} was both a blockbuster and a fan favourite`
+        : `${unicornFilms.length} films that were blockbusters and fan favourites`,
+      stat:     unicornFilms.length,
+      subtext:  `blockbuster + fan favourite`,
+      actors:   actorAvatar(),
+      href:     `/actors/${actor.id}`,
+    })
+  }
+
+  // ── 5. Career stats ───────────────────────────────────────────────────────
+
+  if (actor.film_count >= 10) {
+    card({
+      emoji: '🏆', insightType: 'cross_industry', gradient: 'blue',
+      label:    'Films and Counting',
+      headline: `${actor.film_count} films in the database — and still going`,
+      stat:     actor.film_count,
+      subtext:  `films in the database`,
+      actors:   actorAvatar(),
+      href:     `/actors/${actor.id}`,
+    })
+  }
+
+  if (actor.first_film_year && actor.last_film_year) {
+    const lastYear = Math.min(actor.last_film_year, currentYear)
+    const span     = lastYear - actor.first_film_year
+    if (span > 0) {
+      card({
+        emoji: '⏳', insightType: 'cross_industry', gradient: 'orange',
+        label:    'Career Span',
+        headline: `${span} years in ${actor.industry} cinema — from ${actor.first_film_year} to ${lastYear}`,
+        stat:     `${span} yrs`,
+        subtext:  `years in cinema`,
+        actors:   actorAvatar(),
+        href:     `/actors/${actor.id}`,
+      })
+    }
+  }
+
+  // Peak decade
   if (datedMovies.length >= 5) {
     const byDecade: Record<number, number> = {}
     for (const m of datedMovies) {
       const dec = Math.floor(m.release_year / 10) * 10
       byDecade[dec] = (byDecade[dec] ?? 0) + 1
     }
-    const peakDec  = Number(Object.keys(byDecade).sort((a, b) => byDecade[Number(b)] - byDecade[Number(a)])[0])
+    const peakDec   = Number(Object.keys(byDecade).sort((a, b) => byDecade[Number(b)] - byDecade[Number(a)])[0])
     const peakCount = byDecade[peakDec]
     if (peakCount >= 3) {
-      cards.push({
-        emoji:    '📅',
-        label:    'Peak Decade',
-        headline: `Most active in the ${peakDec}s`,
+      card({
+        emoji: '📅', insightType: 'career_peak', gradient: 'purple',
+        label:    'Golden Decade',
+        headline: `${peakCount} films in the ${peakDec}s — ${pronoun} most active decade`,
         stat:     `${peakDec}s`,
         subtext:  `${peakCount} films that decade`,
-        actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
-        gradient: 'purple',
+        actors:   actorAvatar(),
         href:     `/actors/${actor.id}`,
       })
     }
   }
 
-  // 3e. Most prolific year
+  // Busiest single year (raised threshold to ≥ 4 films)
   if (datedMovies.length >= 5) {
     const byYear: Record<number, number> = {}
     for (const m of datedMovies) byYear[m.release_year] = (byYear[m.release_year] ?? 0) + 1
     const peakYear  = Number(Object.keys(byYear).sort((a, b) => byYear[Number(b)] - byYear[Number(a)])[0])
     const peakYearN = byYear[peakYear]
-    if (peakYearN >= 3) {
-      cards.push({
-        emoji:    '🔥',
-        label:    'Prolific Year',
-        headline: `${peakYearN} films released in a single year`,
-        stat:     peakYear,
-        subtext:  `${peakYearN} films in one year`,
-        actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
-        gradient: 'orange',
+    if (peakYearN >= 4) {
+      card({
+        emoji: '🔥', insightType: 'career_peak', gradient: 'orange',
+        label:    'Busiest Year',
+        headline: `Released ${peakYearN} films in ${peakYear} alone`,
+        stat:     peakYearN,
+        subtext:  `films in one year`,
+        actors:   actorAvatar(),
         href:     `/actors/${actor.id}`,
       })
     }
   }
 
-  // 3f. Total screen time (avg_runtime × film_count)
-  if (actor.avg_runtime && actor.avg_runtime > 0 && actor.film_count >= 5) {
-    const totalMins = Math.round(actor.avg_runtime * actor.film_count)
-    const totalHrs  = Math.round(totalMins / 60)
-    cards.push({
-      emoji:    '⏱',
-      label:    'Screen Time',
-      headline: `Across ${actor.film_count} films on screen`,
-      stat:     `${totalHrs}hrs`,
-      subtext:  `total on-screen time`,
-      actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
-      gradient: 'purple',
-      href:     `/actors/${actor.id}`,
-    })
-  }
-
-  // 3g. Language diversity
-  const languages = new Set(datedMovies.map(m => m.language).filter(Boolean))
-  if (languages.size >= 3) {
-    cards.push({
-      emoji:    '🌐',
-      label:    'Multi-lingual',
-      headline: `Films across ${languages.size} languages`,
-      stat:     languages.size,
-      subtext:  `languages worked in`,
-      actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
-      gradient: 'blue',
-      href:     `/actors/${actor.id}`,
-    })
-  }
-
-  // 3h. Recent activity — films in last 5 years
+  // Still active — raised to ≥ 4 films in last 5 years
   const recentFilms = datedMovies.filter(m => m.release_year >= currentYear - 5)
-  if (recentFilms.length >= 2) {
-    cards.push({
-      emoji:    '⚡',
-      label:    'Recent Activity',
+  if (recentFilms.length >= 4) {
+    card({
+      emoji: '⚡', insightType: 'cross_industry', gradient: 'green',
+      label:    'Still Going Strong',
       headline: `${recentFilms.length} films in the last 5 years`,
       stat:     recentFilms.length,
       subtext:  `films since ${currentYear - 5}`,
-      actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
-      gradient: 'green',
+      actors:   actorAvatar(),
       href:     `/actors/${actor.id}`,
     })
   }
 
-  // 3i. Career span
-  if (actor.first_film_year && actor.last_film_year) {
-    const lastYear = Math.min(actor.last_film_year, currentYear)
-    const span     = lastYear - actor.first_film_year
-    if (span > 0) {
-      cards.push({
-        emoji:    '⏳',
-        label:    'Career Span',
-        headline: `${actor.first_film_year} – ${lastYear} · ${actor.industry} cinema`,
-        stat:     `${span}yr`,
-        subtext:  `Active for ${span} years`,
-        actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
-        gradient: 'orange',
-        href:     `/actors/${actor.id}`,
-      })
-    }
-  }
-
-  // 3j. Total films milestone
-  if (actor.film_count >= 10) {
-    cards.push({
-      emoji:    '🏆',
-      label:    'Filmography',
-      headline: `One of the most prolific actors in ${actor.industry} cinema`,
-      stat:     actor.film_count,
-      subtext:  `films in the database`,
-      actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
-      gradient: 'green',
-      href:     `/actors/${actor.id}`,
-    })
-  }
-
-  // 3k. Avg runtime
-  if (actor.avg_runtime && actor.avg_runtime > 0) {
-    const hrs   = Math.floor(actor.avg_runtime / 60)
-    const mins  = Math.round(actor.avg_runtime % 60)
-    const label = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`
-    cards.push({
-      emoji:    '🎞',
-      label:    'Avg Runtime',
-      headline: `Average runtime per film`,
-      stat:     label,
-      subtext:  `across ${actor.film_count} films`,
-      actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
-      gradient: 'purple',
-      href:     `/actors/${actor.id}`,
-    })
-  }
-
-  // ── NEW PATTERNS from cross-actor analysis ────────────────────────────────
-
-  // N1. Hit rate (% of films that were blockbusters ≥₹100Cr)
-  const boFilms = datedMovies.filter(m => m.box_office != null && m.box_office! > 0)
-  const hitFilms = boFilms.filter(m => m.box_office! >= 100)
-  if (boFilms.length >= 5) {
-    const hitRate = Math.round((hitFilms.length / boFilms.length) * 100)
-    if (hitRate >= 15) {
-      cards.push({
-        emoji:    '🎯',
-        label:    'Hit Rate',
-        headline: `${hitFilms.length} of ${boFilms.length} films crossed ₹100 Cr`,
-        stat:     `${hitRate}%`,
-        subtext:  `commercial success rate · Source: TMDB`,
-        actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
-        gradient: 'green',
-        href:     `/actors/${actor.id}`,
-      })
-    }
-  }
-
-  // N2. Critical darling — films rated ≥7.5
-  const acclaimedFilms = ratedMovies.filter(m => (m.vote_average ?? 0) >= 7.5)
-  if (acclaimedFilms.length >= 3) {
-    cards.push({
-      emoji:    '🎭',
-      label:    'Critical Darling',
-      headline: `${acclaimedFilms.length} films rated 7.5+ by audiences`,
-      stat:     acclaimedFilms.length,
-      subtext:  `critically acclaimed performances · Source: TMDB`,
-      actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
-      gradient: 'purple',
-      href:     `/actors/${actor.id}`,
-    })
-  }
-
-  // N3. Unicorn films — both critically acclaimed (≥7.0) AND blockbuster (≥₹100 Cr)
-  const unicornFilms = datedMovies.filter(m =>
-    (m.vote_average ?? 0) >= 7.0 && m.box_office != null && m.box_office! >= 100
-  )
-  if (unicornFilms.length >= 1) {
-    cards.push({
-      emoji:    '🦄',
-      label:    'Unicorn Films',
-      headline: `${unicornFilms.length === 1 ? unicornFilms[0].title : `${unicornFilms.length} films`} — critic & commercial hit`,
-      stat:     unicornFilms.length,
-      subtext:  `films that won both critics and box office · Source: TMDB`,
-      actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
-      gradient: 'amber',
-      href:     `/actors/${actor.id}`,
-    })
-  }
-
-  // N4. Director loyalty — % of films with top director
-  if (directors.length > 0 && datedMovies.length >= 5) {
-    const top = directors[0]
-    const loyaltyPct = Math.round((top.films / datedMovies.length) * 100)
-    if (loyaltyPct >= 10) {
-      cards.push({
-        emoji:    '🎬',
-        label:    'Director Loyalty',
-        headline: `${loyaltyPct}% of films directed by ${top.director}`,
-        stat:     `${loyaltyPct}%`,
-        subtext:  `${top.films} films together`,
-        actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
-        gradient: 'blue',
-        href:     `/actors/${actor.id}`,
-      })
-    }
-  }
-
-  // N5. Box office growth — compare first-half avg vs second-half avg BO
-  if (boFilms.length >= 6) {
-    const sorted = [...boFilms].sort((a, b) => a.release_year - b.release_year)
-    const mid = Math.floor(sorted.length / 2)
-    const earlyAvg = sorted.slice(0, mid).reduce((s, m) => s + m.box_office!, 0) / mid
-    const lateAvg  = sorted.slice(mid).reduce((s, m) => s + m.box_office!, 0) / (sorted.length - mid)
-    const growthX  = (lateAvg / earlyAvg).toFixed(1)
-    if (lateAvg > earlyAvg * 1.5) {
-      cards.push({
-        emoji:    '📈',
-        label:    'Box Office Growth',
-        headline: `Later films earn ${growthX}× more than early career`,
-        stat:     `${growthX}×`,
-        subtext:  `avg BO: ₹${Math.round(earlyAvg)}Cr early → ₹${Math.round(lateAvg)}Cr recent · Source: TMDB`,
-        actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
-        gradient: 'green',
-        href:     `/actors/${actor.id}`,
-      })
-    }
-  }
-
-  // N6. Rating arc — early vs recent career ratings
-  if (ratedMovies.length >= 8) {
-    const sorted = [...ratedMovies].sort((a, b) => a.release_year - b.release_year)
-    const mid = Math.floor(sorted.length / 2)
-    const earlyAvg = sorted.slice(0, mid).reduce((s, m) => s + (m.vote_average ?? 0), 0) / mid
-    const lateAvg  = sorted.slice(mid).reduce((s, m) => s + (m.vote_average ?? 0), 0) / (sorted.length - mid)
-    const diff = lateAvg - earlyAvg
-    if (Math.abs(diff) >= 0.3) {
-      cards.push({
-        emoji:    diff > 0 ? '⬆️' : '📉',
-        label:    'Rating Arc',
-        headline: diff > 0 ? `Improving — recent films rated higher` : `Early films rated higher`,
-        stat:     `${earlyAvg.toFixed(1)} → ${lateAvg.toFixed(1)}`,
-        subtext:  `audience rating: early vs recent career · Source: TMDB`,
-        actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
-        gradient: diff > 0 ? 'green' : 'orange',
-        href:     `/actors/${actor.id}`,
-      })
-    }
-  }
-
-  // N7. Cross-industry — worked in multiple film languages/industries
+  // Pan-India (replaces the duplicate Multi-lingual card)
   const industries = new Set(datedMovies.map(m => m.language).filter(Boolean))
   if (industries.size >= 3) {
     const homeCount = datedMovies.filter(m => m.language === actor.industry).length
     const crossover = datedMovies.length - homeCount
-    cards.push({
-      emoji:    '🌍',
-      label:    'Pan-Indian',
-      headline: `Worked across ${industries.size} film industries`,
+    card({
+      emoji: '🌍', insightType: 'cross_industry', gradient: 'blue',
+      label:    'Pan-India Star',
+      headline: `${crossover} films outside ${actor.industry} — a true Pan-India star`,
       stat:     industries.size,
-      subtext:  `${crossover} crossover films outside ${actor.industry}`,
-      actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
-      gradient: 'blue',
+      subtext:  `film industries`,
+      actors:   actorAvatar(),
       href:     `/actors/${actor.id}`,
     })
   }
 
-  // N8. Comeback — largest mid-career gap
+  // Comeback — raised to ≥ 5 year gap
   if (datedMovies.length >= 5) {
     const years = [...new Set(datedMovies.map(m => m.release_year))].sort((a, b) => a - b)
     let maxGap = 0, comebackYear = 0
@@ -525,108 +399,66 @@ export default function ActorInsightsCarousel({
       const gap = years[i] - years[i - 1]
       if (gap > maxGap) { maxGap = gap; comebackYear = years[i] }
     }
-    if (maxGap >= 4) {
-      cards.push({
-        emoji:    '🔄',
-        label:    'Comeback',
-        headline: `Returned in ${comebackYear} after ${maxGap}-year break`,
-        stat:     `${maxGap}yr`,
-        subtext:  `longest mid-career gap`,
-        actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
-        gradient: 'purple',
+    if (maxGap >= 5) {
+      card({
+        emoji: '🔄', insightType: 'hidden_dominance', gradient: 'purple',
+        label:    'The Comeback',
+        headline: `Came back in ${comebackYear} after a ${maxGap}-year break`,
+        stat:     `${maxGap} yrs`,
+        subtext:  `break from films`,
+        actors:   actorAvatar(),
         href:     `/actors/${actor.id}`,
       })
     }
   }
 
-  // N9. High impact — avg BO per film (selective filmography)
-  if (boFilms.length >= 3 && boFilms.length <= 20) {
-    const avgBO = boFilms.reduce((s, m) => s + m.box_office!, 0) / boFilms.length
-    if (avgBO >= 150) {
-      cards.push({
-        emoji:    '⚡',
-        label:    'High Impact',
-        headline: `Avg ${formatCrore(avgBO)} per film — selective filmography`,
-        stat:     formatCrore(avgBO),
-        subtext:  `average box office per film · Source: TMDB`,
-        actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
-        gradient: 'amber',
-        href:     `/actors/${actor.id}`,
-      })
-    }
-  }
+  // ── 6. Co-star universe ───────────────────────────────────────────────────
 
-  // ── PRIORITY 4 — Supporting / same-gender co-stars ───────────────────────
-
+  // Top same-gender co-star (raised to ≥ 6 films)
   const sameGenderPairs = isFemale
     ? leadCollaborators.filter(c =>  femaleNames.has(c.actor.toLowerCase()))
     : leadCollaborators.filter(c => !femaleNames.has(c.actor.toLowerCase()))
 
-  // 4a. Top same-gender lead co-star (e.g. Mahesh + Prakash Raj)
   const topSameGender = sameGenderPairs[0]
-  if (topSameGender && topSameGender.films >= 5) {
-    cards.push({
-      emoji:    '🤝',
-      label:    'Top Co-Star',
-      headline: `Frequently shares screen with ${topSameGender.actor}`,
+  if (topSameGender && topSameGender.films >= 6) {
+    card({
+      emoji: '🤝', insightType: 'collab_shock', gradient: 'purple',
+      label:    'Co-Star Bond',
+      headline: `Shares screen with ${topSameGender.actor} more than anyone else — ${topSameGender.films} times`,
       stat:     topSameGender.films,
       subtext:  `films together`,
-      actors:   [
-        { name: actor.name,           avatarSlug: slugify(actor.name) },
-        { name: topSameGender.actor,  avatarSlug: slugify(topSameGender.actor) },
-      ],
-      gradient: 'purple',
-      href:     `/actors/${actor.id}`,
+      actors:   duo(topSameGender.actor),
+      href:     `/compare/${slugify(actor.name)}-vs-${slugify(topSameGender.actor)}`,
     })
   }
 
-  // 4b. Total unique co-stars (all collaborators)
-  if (collaborators.length >= 20) {
-    cards.push({
-      emoji:    '👥',
-      label:    'Co-Star Universe',
-      headline: `${collaborators.length} different actors shared the screen`,
-      stat:     collaborators.length,
-      subtext:  `unique co-stars`,
-      actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
-      gradient: 'orange',
-      href:     `/actors/${actor.id}`,
-    })
-  }
-
-  // 4c. Most frequent overall collaborator (any role, not already shown)
+  // Most frequent overall collaborator not already shown
   const topOverall = collaborators.find(c =>
     c.actor !== topPair?.actor &&
     c.actor !== topSameGender?.actor &&
     c.films >= 8
   )
   if (topOverall) {
-    cards.push({
-      emoji:    '🎞',
-      label:    'Key Collaborator',
-      headline: `Key on-screen partner — ${topOverall.actor}`,
+    card({
+      emoji: '🎞', insightType: 'collab_shock', gradient: 'orange',
+      label:    'Key Co-Star',
+      headline: `${topOverall.actor} is another person you keep seeing with ${actor.name.split(' ')[0]}`,
       stat:     topOverall.films,
       subtext:  `films together`,
-      actors:   [
-        { name: actor.name,       avatarSlug: slugify(actor.name) },
-        { name: topOverall.actor, avatarSlug: slugify(topOverall.actor) },
-      ],
-      gradient: 'orange',
-      href:     `/actors/${actor.id}`,
+      actors:   duo(topOverall.actor),
+      href:     `/compare/${slugify(actor.name)}-vs-${slugify(topOverall.actor)}`,
     })
   }
 
-  // 4d. Supporting depth — how many supporting collaborators have 5+ films
-  const deepSupport = collaborators.filter(c => c.films >= 5).length
-  if (deepSupport >= 5) {
-    cards.push({
-      emoji:    '🎭',
-      label:    'Ensemble Depth',
-      headline: `${deepSupport} actors in 5+ films together`,
-      stat:     deepSupport,
-      subtext:  `actors with 5+ films together`,
-      actors:   [{ name: actor.name, avatarSlug: slugify(actor.name) }],
-      gradient: 'purple',
+  // Total unique co-stars
+  if (collaborators.length >= 20) {
+    card({
+      emoji: '👥', insightType: 'network_power', gradient: 'orange',
+      label:    'Knows Everyone',
+      headline: `Has shared screen with ${collaborators.length} different actors`,
+      stat:     collaborators.length,
+      subtext:  `unique co-stars`,
+      actors:   actorAvatar(),
       href:     `/actors/${actor.id}`,
     })
   }
@@ -635,7 +467,9 @@ export default function ActorInsightsCarousel({
 
   return (
     <div className="flex flex-col gap-4">
-      <h2 className="text-lg font-bold text-white/80">✨ Insights</h2>
+      <h2 className="text-xs font-semibold uppercase tracking-widest text-white/40">
+        ✨ By the numbers
+      </h2>
       <InsightsCarousel cards={cards} />
     </div>
   )
