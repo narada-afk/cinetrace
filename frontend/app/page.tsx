@@ -241,12 +241,13 @@ async function fetchPageData(industry: string) {
     const tierA = rawInsights.filter(i => insightAvatarScore(i) === 2)
     const tierB = rawInsights.filter(i => insightAvatarScore(i) === 1)
 
+    // Cap at 24 cards → max 8 pages of 3, keeping the dot indicator clean.
+    // Best 24 are already at the front thanks to avatar-first scoring + diversify.
     const insights = dedupeConsecutiveTypes([
       ...diversifyInsights(tierA),
       ...diversifyInsights(tierB),
-    ])
+    ]).slice(0, 24)
 
-    // No cap — show everything the engine returns, interleaved by type
     const insightCards: InsightCardData[] = insights.map((insight, i) => {
       const meta = INSIGHT_META[insight.type] ?? { emoji: '🎭', label: 'Cinema Fact' }
 

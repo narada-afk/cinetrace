@@ -192,7 +192,7 @@ export default function InsightCard({
 
         {/* ── Duo portraits — overlapping circles, bottom-right ────────────── */}
         {hasDuo && (
-          <div className="absolute bottom-0 right-0 z-[2] pointer-events-none flex items-end pb-4 pr-4">
+          <div className="absolute bottom-0 right-0 z-[2] pointer-events-none flex items-end pb-3 pr-3">
             {[
               { src: imageUrl!,          name: actorName ?? '', z: 2 },
               { src: secondaryImageUrl!, name: '',              z: 1 },
@@ -201,12 +201,12 @@ export default function InsightCard({
                 key={i}
                 className="relative rounded-full overflow-hidden flex-shrink-0"
                 style={{
-                  width:      72,
-                  height:     72,
-                  marginLeft: i === 0 ? 0 : -18,
+                  width:      92,
+                  height:     92,
+                  marginLeft: i === 0 ? 0 : -24,
                   zIndex:     a.z,
-                  border:     '2px solid rgba(0,0,0,0.45)',
-                  boxShadow:  '0 4px 14px rgba(0,0,0,0.55)',
+                  border:     '2.5px solid rgba(0,0,0,0.45)',
+                  boxShadow:  '0 4px 18px rgba(0,0,0,0.60)',
                   transform:  hovered ? 'scale(1.06)' : 'scale(1)',
                   transition: `transform ${320 + i * 40}ms ease`,
                 }}
