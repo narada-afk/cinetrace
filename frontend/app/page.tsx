@@ -166,6 +166,31 @@ function diversifyInsights(insights: Insight[]): Insight[] {
   return [...picked, ...rest]
 }
 
+// ── Colour deduplication ──────────────────────────────────────────────────────
+//
+// Reorders the merged insight list so no two consecutive cards share the same
+// insight type (= same card colour). Algorithm: greedy scan — for each slot,
+// pick the first remaining card whose type differs from the previous one.
+// Falls back to same-type when no alternative exists (e.g. only one type left).
+// O(n²) but n ≤ ~60 so it's negligible.
+
+function dedupeConsecutiveTypes(insights: Insight[]): Insight[] {
+  if (insights.length <= 1) return insights
+
+  const remaining = [...insights]
+  const result: Insight[] = []
+
+  while (remaining.length > 0) {
+    const lastType = result[result.length - 1]?.type
+    const nextIdx  = remaining.findIndex(ins => ins.type !== lastType)
+    // If everything left is the same type, just drain in order
+    const takeIdx  = nextIdx === -1 ? 0 : nextIdx
+    result.push(...remaining.splice(takeIdx, 1))
+  }
+
+  return result
+}
+
 // ── Avatar helpers ────────────────────────────────────────────────────────────
 
 const AVATARS_DIR = path.join(process.cwd(), 'public', 'avatars')
@@ -216,10 +241,10 @@ async function fetchPageData(industry: string) {
     const tierA = rawInsights.filter(i => insightAvatarScore(i) === 2)
     const tierB = rawInsights.filter(i => insightAvatarScore(i) === 1)
 
-    const insights = [
+    const insights = dedupeConsecutiveTypes([
       ...diversifyInsights(tierA),
       ...diversifyInsights(tierB),
-    ]
+    ])
 
     // No cap — show everything the engine returns, interleaved by type
     const insightCards: InsightCardData[] = insights.map((insight, i) => {
