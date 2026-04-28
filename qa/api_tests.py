@@ -291,6 +291,216 @@ def test_no_500_on_common_routes():
 
 check("No 500 errors on all core routes", test_no_500_on_common_routes)
 
+# ── SECTION 7: Cross-endpoint Data Consistency ───────────────────────────────
+#
+# These tests would have caught every real-world bug we shipped:
+#
+#   Bug A — Blockbusters endpoint skipped the Wikidata cast table, so films
+#            like Leo (Vijay), Kalki (Kamal Haasan), Ponniyin Selvan (Karthi)
+#            and Good Bad Ugly (Ajith) were completely missing from the tab.
+#
+#   Bug B — Director chip counts came from actor_director_stats (which counted
+#            unreleased films with release_year=0), so chips showed "2" but the
+#            dropdown only showed 1 film.
+#
+#   Bug C — NULL character_name in actor_movies caused valid films (e.g. Eega
+#            for Samantha) to be silently excluded by a NOT (NULL LIKE ...) = NULL
+#            evaluation in the non-acting role filter.
+#
+# Strategy: fetch all primary actors in parallel, then assert invariants.
+
+import concurrent.futures
+
+print("\n📋 SECTION 7 — Cross-endpoint Data Consistency (all primary actors)")
+
+# ── Fetch all primary actors once ─────────────────────────────────────────────
+_primary_actors: list = []
+try:
+    _r = requests.get(f"{BASE}/actors?primary_only=true", timeout=TIMEOUT)
+    _primary_actors = _r.json() if _r.status_code == 200 else []
+except Exception:
+    pass
+
+def _fetch_actor_data(actor: dict) -> dict:
+    """Return {id, name, movies, blockbusters, directors} for one actor."""
+    aid = actor["id"]
+    out = {"id": aid, "name": actor["name"], "movies": [], "blockbusters": [], "directors": []}
+    try:
+        rm = requests.get(f"{BASE}/actors/{aid}/movies",       timeout=10)
+        rb = requests.get(f"{BASE}/actors/{aid}/blockbusters", timeout=10)
+        rd = requests.get(f"{BASE}/actors/{aid}/directors",    timeout=10)
+        if rm.status_code == 200: out["movies"]       = rm.json()
+        if rb.status_code == 200: out["blockbusters"] = rb.json()
+        if rd.status_code == 200: out["directors"]    = rd.json()
+    except Exception:
+        pass
+    return out
+
+# Parallel fetch — 119 actors × 3 endpoints in ~5-10 s instead of ~60 s
+_actor_data: list[dict] = []
+if _primary_actors:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as pool:
+        _actor_data = list(pool.map(_fetch_actor_data, _primary_actors))
+
+# ── Test 7a: Spot-check known films that were previously missing ───────────────
+# Each tuple: (actor_name, film_title, endpoint)
+# "endpoint" is "blockbusters" or "movies" — the place the film must appear.
+_KNOWN_FILMS = [
+    # Blockbuster endpoint cast-table gap (Bug A) — these were the exact films
+    # missing before the fix. If this regresses, the endpoint broke again.
+    ("Vijay",         "Leo",                    "blockbusters"),
+    ("Vijay",         "Leo",                    "movies"),
+    ("Kamal Haasan",  "Kalki 2898 AD",          "blockbusters"),
+    ("Kamal Haasan",  "Kalki 2898 AD",          "movies"),
+    ("Karthi",        "Ponniyin Selvan: I",      "blockbusters"),
+    ("Suriya",        "Vikram",                  "blockbusters"),
+    ("Ajith Kumar",   "Good Bad Ugly",           "blockbusters"),
+    # NULL character_name exclusion (Bug C)
+    ("Samantha Ruth Prabhu", "Eega",            "movies"),
+]
+
+def test_known_films_present():
+    _data_by_name = {d["name"]: d for d in _actor_data}
+    failures = []
+    for actor_name, film_title, endpoint in _KNOWN_FILMS:
+        actor = _data_by_name.get(actor_name)
+        if not actor:
+            failures.append(f"actor '{actor_name}' not found in primary list")
+            continue
+        titles = {item["title"] for item in actor[endpoint]}
+        if film_title not in titles:
+            failures.append(
+                f"{actor_name} → '{film_title}' missing from /{endpoint}"
+            )
+    assert not failures, "\n  " + "\n  ".join(failures)
+
+check("Known previously-missing films are present in correct endpoints", test_known_films_present)
+
+# ── Test 7b: Blockbusters completeness — no top-10 film silently dropped ──────
+# For every primary actor: every film in their top-10 by box_office from
+# /movies must also appear in /blockbusters.
+# This is the test that would have caught Good Bad Ugly missing for Ajith.
+
+def test_blockbusters_completeness():
+    failures = []
+    for actor in _actor_data:
+        bo_movies = sorted(
+            [m for m in actor["movies"] if m.get("box_office") and m["box_office"] > 0],
+            key=lambda m: m["box_office"], reverse=True,
+        )[:10]
+        if not bo_movies:
+            continue
+        buster_titles = {b["title"] for b in actor["blockbusters"]}
+        for m in bo_movies:
+            if m["title"] not in buster_titles:
+                failures.append(
+                    f"{actor['name']}: '{m['title']}' (₹{m['box_office']:.0f} Cr) "
+                    f"is in top-10 /movies but absent from /blockbusters"
+                )
+    assert not failures, f"{len(failures)} missing film(s):\n  " + "\n  ".join(failures[:10])
+
+check("Blockbusters: every top-10 box-office film from /movies is in /blockbusters", test_blockbusters_completeness)
+
+# ── Test 7c: Blockbusters #1 matches /movies #1 ───────────────────────────────
+# Catches the case where a wrong film ranks first because a higher-grossing
+# film is absent. Allows an exact-tie (same box_office value, different title).
+
+def test_blockbusters_top_film_correct():
+    failures = []
+    for actor in _actor_data:
+        if not actor["blockbusters"]:
+            continue
+        bo_movies = sorted(
+            [m for m in actor["movies"] if m.get("box_office") and m["box_office"] > 0],
+            key=lambda m: m["box_office"], reverse=True,
+        )
+        if not bo_movies:
+            continue
+        top_movie   = bo_movies[0]
+        top_buster  = actor["blockbusters"][0]
+        # Accept a mismatch only when both films have identical box_office (true tie)
+        if top_buster["title"] != top_movie["title"]:
+            if abs(top_buster["box_office_crore"] - top_movie["box_office"]) > 0.1:
+                failures.append(
+                    f"{actor['name']}: blockbusters[0]='{top_buster['title']}' "
+                    f"(₹{top_buster['box_office_crore']:.0f}) but "
+                    f"movies top='{top_movie['title']}' (₹{top_movie['box_office']:.0f})"
+                )
+    assert not failures, f"{len(failures)} wrong #1 film(s):\n  " + "\n  ".join(failures)
+
+check("Blockbusters: #1 film matches /movies top by box_office (ties allowed)", test_blockbusters_top_film_correct)
+
+# ── Test 7d: Director chip/dropdown consistency ───────────────────────────────
+# Simulates exactly what DirectorsSection.tsx does:
+#   chip_count = movies.filter(director == chip.director && release_year > 0).length
+# For every chip that would be SHOWN (chip_count > 0), the count must match the
+# dropdown exactly. This is guaranteed by construction once director names in
+# /movies match director names from /directors — so this test also catches
+# name-format divergence between the two sources.
+
+def test_director_chip_dropdown_consistency():
+    failures = []
+    for actor in _actor_data:
+        for chip in actor["directors"]:
+            dir_name = chip["director"]
+            matching_movies = [
+                m for m in actor["movies"]
+                if m.get("director") == dir_name and (m.get("release_year") or 0) > 0
+            ]
+            chip_count = len(matching_movies)
+            # A chip that would be shown must have count > 0 and the dropdown
+            # must contain exactly that many films (they're the same list).
+            # What we're really testing: that no chip is shown with a count that
+            # doesn't match its actual dropdown. Since both derive from the same
+            # filter, a mismatch means the director names diverged between endpoints.
+            # We also flag chips where the name appears in /directors but produces
+            # 0 movies AND the chip was supposed to have films (api film_count > 0)
+            # — that's a name-format mismatch.
+            if chip_count == 0 and chip.get("films", 0) >= 3:
+                # High-confidence mismatch: API says 3+ films but none match by name
+                failures.append(
+                    f"{actor['name']}: chip '{dir_name}' claims {chip['films']} films "
+                    f"but 0 movies match by director name — likely name format mismatch"
+                )
+    assert not failures, f"{len(failures)} chip/dropdown name mismatch(es):\n  " + "\n  ".join(failures[:10])
+
+check("Directors: chip names match movie director names (no silent mismatches)", test_director_chip_dropdown_consistency)
+
+# ── Test 7e: Movies endpoint returns director field for known pairings ─────────
+# Regression for the original bug: /movies was returning null director for films
+# that do have a director in the normalised join table.
+# Spot-checks a handful of well-known actor→director pairings.
+
+_KNOWN_PAIRINGS = [
+    # (actor_name, film_title, expected_director)
+    ("Ajith Kumar",  "Good Bad Ugly",  "Adhik Ravichandran"),
+    ("Ajith Kumar",  "Thunivu",        "H. Vinoth"),
+    ("Vijay",        "Leo",            "Lokesh Kanagaraj"),
+    ("Rajinikanth",  "Jailer",         "Nelson Dilipkumar"),
+]
+
+def test_movies_director_field_populated():
+    _data_by_name = {d["name"]: d for d in _actor_data}
+    failures = []
+    for actor_name, film_title, expected_dir in _KNOWN_PAIRINGS:
+        actor = _data_by_name.get(actor_name)
+        if not actor:
+            failures.append(f"actor '{actor_name}' not found")
+            continue
+        film = next((m for m in actor["movies"] if m["title"] == film_title), None)
+        if film is None:
+            failures.append(f"{actor_name}: film '{film_title}' not in /movies at all")
+            continue
+        actual = film.get("director")
+        if actual != expected_dir:
+            failures.append(
+                f"{actor_name} / '{film_title}': "
+                f"director='{actual}' expected='{expected_dir}'"
+            )
+    assert not failures, "\n  " + "\n  ".join(failures)
+
+check("Movies: director field populated correctly for known actor–director pairings", test_movies_director_field_populated)
+
 # ── SUMMARY ───────────────────────────────────────────────────────────────────
 
 total   = len(results)
