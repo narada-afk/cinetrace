@@ -253,12 +253,13 @@ async function fetchPageData(industry: string) {
     const tierA = rawInsights.filter(i => insightAvatarScore(i) === 2)
     const tierB = rawInsights.filter(i => insightAvatarScore(i) === 1)
 
-    // Cap at 24 cards → max 8 pages of 3, keeping the dot indicator clean.
-    // Best 24 are already at the front thanks to avatar-first scoring + diversify.
+    // Cap at 90 cards — the backend has 270+ insights but we want a manageable
+    // carousel (≤30 pages of 3 on desktop).  Best cards lead thanks to
+    // avatar-first scoring + industry diversification done above.
     const insights = dedupeConsecutiveTypes([
       ...diversifyInsights(tierA),
       ...diversifyInsights(tierB),
-    ]).slice(0, 24)
+    ]).slice(0, 90)
 
     const insightCards: InsightCardData[] = insights.map((insight, i) => {
       const meta = INSIGHT_META[insight.type] ?? { emoji: '🎭', label: 'Cinema Fact' }
