@@ -12,25 +12,29 @@ interface DirectorsSectionProps {
 
 export default function DirectorsSection({ directors, movies }: DirectorsSectionProps) {
   const [selected, setSelected] = useState<string | null>(null)
-  const cache = useRef<Record<string, ActorMovie[]>>({})
 
-  const topDirs = directors.slice(0, 20)
+  // Pre-build the film list for every director once, keyed by director name.
+  // Using the same filter the dropdown renders ensures the chip count always
+  // matches the number of cards that actually open — no more "says 2, shows 1".
+  const directorMovies = useRef<Record<string, ActorMovie[]>>({})
+  const topDirs = directors
+    .map(d => {
+      const films = movies
+        .filter(m => m.director === d.director && m.release_year > 0)
+        .sort((a, b) => (b.release_year ?? 0) - (a.release_year ?? 0))
+      directorMovies.current[d.director] = films
+      // Use the real displayable count, not the API count
+      return { ...d, films: films.length }
+    })
+    // Only show directors that have at least 1 displayable film
+    .filter(d => d.films > 0)
+    .slice(0, 20)
 
   function handleChip(director: string) {
-    if (selected === director) {
-      setSelected(null)
-      return
-    }
-    // Build cache on first click
-    if (!cache.current[director]) {
-      cache.current[director] = movies
-        .filter(m => m.director === director && m.release_year > 0)
-        .sort((a, b) => (b.release_year ?? 0) - (a.release_year ?? 0))
-    }
-    setSelected(director)
+    setSelected(prev => prev === director ? null : director)
   }
 
-  const directorMovies = selected ? (cache.current[selected] ?? []) : []
+  const selectedMovies = selected ? (directorMovies.current[selected] ?? []) : []
   const isOpen = selected !== null
 
   return (
@@ -96,12 +100,12 @@ export default function DirectorsSection({ directors, movies }: DirectorsSection
 
               {/* Movie scroll */}
               <div className="px-4 py-4">
-                {directorMovies.length === 0 ? (
+                {selectedMovies.length === 0 ? (
                   <p className="text-white/25 text-sm py-2 px-1">No films found</p>
                 ) : (
                   <ScrollRow>
                     <div className="flex gap-3 pb-1 px-1" style={{ width: 'max-content' }}>
-                      {directorMovies.map(movie => (
+                      {selectedMovies.map(movie => (
                         <MovieCard key={`${movie.title}-${movie.release_year}`} movie={movie} />
                       ))}
                     </div>
