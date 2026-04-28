@@ -261,29 +261,15 @@ export default function InsightCard({
               </p>
             )}
 
-            {/* Context blurb — 2-line clamp */}
-            {label && (
-              <p
-                className="text-[11px] sm:text-xs font-medium mt-2 leading-snug"
-                style={{
-                  color: 'rgba(255,255,255,0.72)',
-                  display:           '-webkit-box',
-                  WebkitLineClamp:   2,
-                  WebkitBoxOrient:   'vertical',
-                  overflow:          'hidden',
-                }}
-              >
-                {label}
-              </p>
-            )}
+            {/* No blurb — footer phrase below carries the context */}
           </div>
 
           {/* Footer row — cinematic phrase + CINETRACE brand */}
-          <div className="mt-auto pt-1 flex items-end justify-between gap-2">
+          <div className="mt-auto pt-2 flex items-end justify-between gap-2">
             {footer ? (
               <p
-                className="text-sm md:text-base font-medium leading-tight"
-                style={{ color: 'rgba(255,255,255,0.90)' }}
+                className="text-sm font-semibold leading-tight"
+                style={{ color: 'rgba(255,255,255,0.92)' }}
               >
                 {footer}
               </p>
