@@ -36,6 +36,10 @@ export default function InsightsCarousel({ cards }: { cards: InsightCardData[] }
   const isIntersectingRef  = useRef(true)
   const manualScrollingRef = useRef(false)   // prevents loop-reset during smooth scroll
   const touchActiveRef     = useRef(false)   // prevents loop-reset while finger is on screen
+  // Touch-direction detection — only pause RAF for horizontal swipes, not vertical page scrolls
+  const touchStartXRef     = useRef(0)
+  const touchStartYRef     = useRef(0)
+  const touchDirectionRef  = useRef<'h' | 'v' | null>(null)
 
   const items = cards.length > 0 ? [...cards, ...cards, ...cards] : cards
 
@@ -187,7 +191,9 @@ export default function InsightsCarousel({ cards }: { cards: InsightCardData[] }
               // Snap to card boundaries after each swipe on mobile.
               // Does not affect desktop — RAF keeps the scroll moving continuously
               // so the browser never sees a "resting" state to snap from.
-              scrollSnapType: 'x mandatory',
+              // 'proximity' is less aggressive than 'mandatory' — it won't
+              // fight the RAF's small incremental scrollLeft changes on iPad Safari
+              scrollSnapType: 'x proximity',
             }}
             aria-live="off"
             onMouseEnter={() => { hoverPausedRef.current = true  }}
@@ -195,23 +201,38 @@ export default function InsightsCarousel({ cards }: { cards: InsightCardData[] }
             onFocus={()     => { hoverPausedRef.current = true  }}
             onBlur={()      => { hoverPausedRef.current = false }}
             // ── Touch handlers ─────────────────────────────────────────────
-            // Pause the RAF loop while the user is swiping so the JS auto-scroll
-            // doesn't fight the browser's native touch-scroll gesture.
-            onTouchStart={() => {
-              hoverPausedRef.current = true
-              touchActiveRef.current = true
+            // Only pause the RAF for HORIZONTAL swipes (carousel interaction).
+            // Vertical page scrolls must NOT pause it — on iPad the finger often
+            // starts inside the carousel area while the user is scrolling the page.
+            onTouchStart={e => {
+              touchStartXRef.current    = e.touches[0].clientX
+              touchStartYRef.current    = e.touches[0].clientY
+              touchDirectionRef.current = null
+              touchActiveRef.current    = true
+            }}
+            onTouchMove={e => {
+              if (touchDirectionRef.current !== null) return
+              const dx = Math.abs(e.touches[0].clientX - touchStartXRef.current)
+              const dy = Math.abs(e.touches[0].clientY - touchStartYRef.current)
+              if (dx < 4 && dy < 4) return  // haven't moved enough yet
+              touchDirectionRef.current = dx >= dy ? 'h' : 'v'
+              if (touchDirectionRef.current === 'h') {
+                // Horizontal swipe — pause RAF so it doesn't fight the gesture
+                hoverPausedRef.current = true
+              }
             }}
             onTouchEnd={() => {
-              // Give momentum scrolling ~0.8 s to settle before RAF resumes
               setTimeout(() => {
                 hoverPausedRef.current = false
                 touchActiveRef.current = false
+                touchDirectionRef.current = null
               }, 800)
             }}
             onTouchCancel={() => {
               setTimeout(() => {
                 hoverPausedRef.current = false
                 touchActiveRef.current = false
+                touchDirectionRef.current = null
               }, 300)
             }}
           >
