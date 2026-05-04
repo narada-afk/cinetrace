@@ -73,10 +73,14 @@ class ActorRepository:
         """
         q_lower = q.lower().strip()
 
-        # Match quality: exact (0) → starts-with (1) → contains (2)
+        # Match quality: exact (0) → starts-with / word-boundary (1) → contains (2)
+        # Word-boundary rank: query appearing after a space (e.g. "CM Vijay" for "vijay")
+        # scores the same as starts-with, so prefixed names (CM, Dr, etc.) still surface
+        # at rank 1 and are then separated by tier_rank rather than buried at rank 2.
         rank = case(
             (func.lower(models.Actor.name) == q_lower, 0),
             (func.lower(models.Actor.name).like(f"{q_lower}%"), 1),
+            (func.lower(models.Actor.name).like(f"% {q_lower}%"), 1),
             else_=2,
         )
 
