@@ -59,6 +59,18 @@ cur.execute("""
 rows_cast = cur.rowcount
 print(f"Fix 3 (Prabhas/Jack&Daniel): deleted {rows_am} actor_movies rows, {rows_cast} cast rows")
 
+# ── Fix 4: Rename Vijay → CM Vijay ───────────────────────────────────────────
+# Actor id=2 (Tamil, is_primary_actor=True) — reflects his current public name.
+# UPDATE is idempotent: re-running after the rename is a no-op (0 rows affected).
+cur.execute("""
+    UPDATE actors
+    SET name = 'CM Vijay'
+    WHERE name = 'Vijay'
+      AND industry = 'Tamil'
+      AND is_primary_actor = TRUE
+""")
+print(f"Fix 4 (Vijay → CM Vijay): updated {cur.rowcount} row(s)")
+
 conn.commit()
 conn.close()
 print("All data fixes complete.")
