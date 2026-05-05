@@ -9,7 +9,6 @@
   },
   "dependencies": {
     "@sentry/nextjs": "^9",
-    "html2canvas": "^1.4.1",
     "next": "14.2.3",
     "posthog-js": "^1.221.0",
     "react": "^18",

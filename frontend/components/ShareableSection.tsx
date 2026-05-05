@@ -6,12 +6,36 @@
  * Replaces the inline <SectionLabel> + <section> pair.
  * A small "Share" button sits right-aligned in the label row.
  * On click it:
- *   1. Uses html2canvas (dynamic import) to screenshot the section content.
- *   2. On mobile: tries navigator.share with the PNG file (native sheet).
- *   3. Falls back to a modal with thumbnail preview + Download / Twitter / WhatsApp / Copy Link.
+ *   1. Lazy-loads html2canvas from unpkg CDN (no npm install needed).
+ *   2. Screenshots the section content div.
+ *   3. On mobile: tries navigator.share with the PNG file (native sheet).
+ *   4. Falls back to a modal with thumbnail preview + Download / Twitter / WhatsApp / Copy Link.
  */
 
 import { useRef, useState } from 'react'
+
+// ── CDN loader for html2canvas ─────────────────────────────────────────────────
+// Avoids adding html2canvas to package.json (which would break npm ci without
+// regenerating the lock file). The script is injected once and cached by the browser.
+
+type Html2CanvasFn = (el: HTMLElement, opts?: Record<string, unknown>) => Promise<HTMLCanvasElement>
+
+declare global {
+  interface Window { html2canvas?: Html2CanvasFn }
+}
+
+function loadHtml2Canvas(): Promise<Html2CanvasFn> {
+  if (typeof window === 'undefined') return Promise.reject('SSR')
+  if (window.html2canvas) return Promise.resolve(window.html2canvas)
+
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script')
+    script.src = 'https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js'
+    script.onload  = () => window.html2canvas ? resolve(window.html2canvas) : reject('not found')
+    script.onerror = () => reject('failed to load html2canvas')
+    document.head.appendChild(script)
+  })
+}
 
 export default function ShareableSection({
   children,
@@ -41,8 +65,8 @@ export default function ShareableSection({
     if (!contentRef.current || capturing) return
     setCapturing(true)
     try {
-      // Dynamic import keeps html2canvas out of the initial bundle
-      const html2canvas = (await import('html2canvas')).default
+      // Lazy-load html2canvas from CDN (injected once, cached by browser)
+      const html2canvas = await loadHtml2Canvas()
       const canvas = await html2canvas(contentRef.current, {
         backgroundColor: '#0a0a0f',
         useCORS: true,      // needed for TMDB poster images
