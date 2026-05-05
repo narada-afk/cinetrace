@@ -5,7 +5,8 @@ COMPOSE="docker compose -f /opt/cinetrace/docker-compose.prod.yml"
 
 echo "==> Pulling latest code..."
 cd /opt/cinetrace
-git pull
+git fetch origin
+git reset --hard origin/$(git rev-parse --abbrev-ref HEAD)
 
 echo "==> Rebuilding and restarting bot..."
 $COMPOSE up -d --build bot

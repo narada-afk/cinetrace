@@ -1,20 +1,24 @@
 import asyncio
 import tweepy
+import asyncpraw
 from datetime import datetime, timedelta, timezone
 
 import db
 import stats_client
 import intelligence
 import crafter
+import reddit_crafter
 import validator
 import screenshot as screenshotter
 import telegram_handler
 import stream_listener
 import trends_poller
-from actors import BY_HANDLE
+import reddit_monitor
+from actors import BY_HANDLE, ACTORS
 from config import (
     TWITTER_API_KEY, TWITTER_API_SECRET,
     TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_TOKEN_SECRET, TWITTER_BEARER_TOKEN,
+    REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, REDDIT_USERNAME, REDDIT_PASSWORD,
     MIN_HOURS_BETWEEN_POSTS, MAX_REPLIES_PER_ACTOR_PER_DAY,
 )
 
@@ -265,6 +269,155 @@ async def on_trend(trend_name: str, actor: dict, volume: int):
         trend_context= trend_name,
     )
 
+# ── Reddit pipeline ───────────────────────────────────────────────────────────
+
+_reddit_client: asyncpraw.Reddit | None = None
+
+def _get_reddit() -> asyncpraw.Reddit | None:
+    global _reddit_client
+    if not all([REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, REDDIT_USERNAME, REDDIT_PASSWORD]):
+        return None
+    if not _reddit_client:
+        _reddit_client = asyncpraw.Reddit(
+            client_id     = REDDIT_CLIENT_ID,
+            client_secret = REDDIT_CLIENT_SECRET,
+            username      = REDDIT_USERNAME,
+            password      = REDDIT_PASSWORD,
+            user_agent    = f"CineTrace Stats Bot v1.0 by /u/{REDDIT_USERNAME}",
+        )
+    return _reddit_client
+
+async def on_reddit_post(submission, actor: dict):
+    post_id  = f"reddit_{submission.id}"
+    handle   = actor["handle"]
+    db_name  = actor["db_name"]
+
+    if db.already_replied(post_id):
+        return
+
+    ok, reason = _rate_ok(handle)
+    if not ok:
+        print(f"[reddit] skipped @{handle}: {reason}")
+        return
+
+    analysis = await intelligence.analyse_tweet(
+        actor["name"], handle,
+        f"{submission.title} {submission.selftext or ''}",
+        trend_context=f"reddit post in r/{submission.subreddit}",
+    )
+    if not analysis.get("should_engage"):
+        print(f"[reddit] no engage: {analysis.get('reason')}")
+        return
+
+    stat_angle = analysis.get("stat_angle", "box_office_avg")
+    profile    = await stats_client.get_full_profile(db_name)
+    if not profile:
+        return
+
+    result = await reddit_crafter.craft_reddit_comment(
+        actor, profile,
+        post_title = submission.title,
+        post_body  = submission.selftext or "",
+        subreddit  = str(submission.subreddit),
+        stat_angle = stat_angle,
+    )
+
+    comment_text = result.get("comment_text")
+    confidence   = result.get("confidence", 0)
+    if not comment_text:
+        return
+
+    post_url = f"https://reddit.com{submission.permalink}"
+    row_id   = db.insert_pending(
+        post_id, handle, db_name, comment_text, confidence,
+        trigger_type="reddit_post", platform="reddit", source_url=post_url,
+    )
+
+    msg_id = await telegram_handler.send_reddit_for_review(
+        row_id       = row_id,
+        actor_name   = actor["name"],
+        handle       = handle,
+        comment_text = comment_text,
+        confidence   = confidence,
+        subreddit    = str(submission.subreddit),
+        post_title   = submission.title,
+        post_url     = post_url,
+    )
+    if msg_id:
+        db.set_telegram_message_id(row_id, msg_id)
+        print(f"[reddit] sent to Telegram for review (row {row_id})")
+    else:
+        db.mark_dropped(row_id, "telegram send failed")
+
+async def post_reddit_approved(row: dict):
+    reddit = _get_reddit()
+    if not reddit:
+        print("[reddit] no credentials — cannot post")
+        return
+    try:
+        source_url = row.get("source_url", "")
+        submission = await reddit.submission(url=source_url)
+        comment    = await submission.reply(row["draft_reply"])
+        db.mark_posted(row["id"], comment.id)
+        print(f"[reddit] posted comment {comment.id}")
+    except Exception as e:
+        print(f"[reddit] post failed: {e}")
+
+async def format_for_reddit(row_id: int):
+    import psycopg2.extras
+    from db import get_conn
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM bot_tweet_log WHERE id = %s", (row_id,))
+            row = cur.fetchone()
+    if not row:
+        print(f"[reddit] row {row_id} not found for Reddit formatting")
+        return
+
+    db_name = row["actor_db_name"]
+    actor   = next((a for a in ACTORS if a["db_name"] == db_name), None)
+    if not actor:
+        print(f"[reddit] actor not found for db_name={db_name}")
+        return
+
+    profile = await stats_client.get_full_profile(db_name)
+    if not profile:
+        return
+
+    result = await reddit_crafter.craft_reddit_comment(
+        actor, profile,
+        post_title = row["draft_reply"][:100],  # use Twitter draft as context
+        post_body  = "",
+        subreddit  = "tollywood",  # default — user will paste in the right thread
+        stat_angle = "box_office_avg",
+    )
+
+    comment_text = result.get("comment_text")
+    confidence   = result.get("confidence", 0)
+    if not comment_text:
+        print(f"[reddit] Reddit formatting failed for row {row_id}")
+        return
+
+    # Store as a new pending Reddit row
+    new_row_id = db.insert_pending(
+        f"reddit_fmt_{row_id}", actor["handle"], db_name,
+        comment_text, confidence,
+        trigger_type="reddit_format", platform="reddit",
+    )
+
+    msg_id = await telegram_handler.send_reddit_for_review(
+        row_id       = new_row_id,
+        actor_name   = actor["name"],
+        handle       = actor["handle"],
+        comment_text = comment_text,
+        confidence   = confidence,
+        subreddit    = "relevant subreddit",
+        post_title   = "Copy-paste into relevant Reddit thread",
+        post_url     = "",
+    )
+    if msg_id:
+        db.set_telegram_message_id(new_row_id, msg_id)
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 async def main():
@@ -274,6 +427,8 @@ async def main():
     print("[main] DB ready")
 
     telegram_handler.set_post_callback(post_approved)
+    telegram_handler.set_reddit_post_callback(post_reddit_approved)
+    telegram_handler.set_reddit_format_callback(format_for_reddit)
     tg_app = telegram_handler.build_app()
     await tg_app.initialize()
     await tg_app.start()
@@ -285,6 +440,9 @@ async def main():
 
     asyncio.create_task(trends_poller.poll_trends(on_trend))
     print("[main] Trends poller started")
+
+    asyncio.create_task(reddit_monitor.monitor_subreddits(on_reddit_post))
+    print("[main] Reddit monitor started")
 
     print("[main] All systems running ✓")
     await asyncio.Event().wait()  # run forever
