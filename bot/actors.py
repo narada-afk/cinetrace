@@ -13,10 +13,11 @@ ACTORS: list[dict] = [
     {"name": "Ravi Teja",          "db_name": "Ravi Teja",            "handle": "RaviTeja_offl",   "industry": "Telugu"},
     # Tamil
     {"name": "Kamal Haasan",       "db_name": "Kamal Haasan",         "handle": "ikamalhaasan",    "industry": "Tamil"},
+    {"name": "Vijay",              "db_name": "CM Vijay",             "handle": "actorvijay",      "industry": "Tamil"},
     {"name": "Dhanush",            "db_name": "Dhanush",              "handle": "dhanushkraja",    "industry": "Tamil"},
     {"name": "Suriya",             "db_name": "Suriya",               "handle": "Suriya_offl",     "industry": "Tamil"},
     {"name": "Sivakarthikeyan",    "db_name": "Sivakarthikeyan",      "handle": "Siva_Kartikeyan", "industry": "Tamil"},
-    {"name": "Silambarasan",       "db_name": "Silambarasan",         "handle": "str",             "industry": "Tamil"},
+    {"name": "Silambarasan",       "db_name": "Silambarasan",         "handle": "SilambarasanTR_", "industry": "Tamil"},
     {"name": "Vikram",             "db_name": "Vikram",               "handle": "chiyaan",         "industry": "Tamil"},
     {"name": "Vijay Sethupathi",   "db_name": "Vijay Sethupathi",     "handle": "VijaySethuOffl",  "industry": "Tamil"},
     {"name": "R. Madhavan",        "db_name": "R. Madhavan",          "handle": "ActorMadhavan",   "industry": "Tamil"},
@@ -39,6 +40,9 @@ ACTORS: list[dict] = [
 # When these accounts tweet mentioning an actor, we find that actor's recent tweet
 # and reply to IT (never to the signal account directly).
 SIGNAL_ACCOUNTS: list[dict] = [
+    # Producers
+    {"name": "V Creations (Thanu)","handle": "theVcreations",    "role": "director"},
+    {"name": "SK Productions",     "handle": "SKProdOffl",       "role": "director"},
     # Directors
     {"name": "SS Rajamouli",       "handle": "ssrajamouli",      "role": "director"},
     {"name": "Shankar",            "handle": "shankarshanmugh",  "role": "director"},
