@@ -26,6 +26,11 @@ class ActorStreamListener(tweepy.StreamingClient):
     def on_disconnect(self):
         print("[stream] disconnected")
 
+    def on_request_error(self, status_code):
+        print(f"[stream] HTTP {status_code} — backing off 60s")
+        import time; time.sleep(60)
+        return True  # keep retrying
+
 def resolve_user_ids() -> dict[str, dict]:
     client = tweepy.Client(bearer_token=TWITTER_BEARER_TOKEN)
     resolved = {}
