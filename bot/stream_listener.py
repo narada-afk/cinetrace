@@ -1,75 +1,79 @@
 import asyncio
+import threading
 import tweepy
 from actors import BY_HANDLE, ALL_HANDLES
 from config import TWITTER_BEARER_TOKEN
 
-class ActorStreamListener(tweepy.AsyncStreamingClient):
+_loop: asyncio.AbstractEventLoop | None = None
+_USER_ID_MAP: dict[str, dict] = {}
+
+class ActorStreamListener(tweepy.StreamingClient):
     def __init__(self, process_fn, *args, **kwargs):
         super().__init__(TWITTER_BEARER_TOKEN, *args, **kwargs)
         self._process = process_fn
 
-    async def on_tweet(self, tweet):
-        author_id = str(tweet.author_id)
-        # look up actor by user id (resolved at startup)
-        actor = _USER_ID_MAP.get(author_id)
-        if not actor:
+    def on_tweet(self, tweet):
+        actor = _USER_ID_MAP.get(str(tweet.author_id))
+        if not actor or not _loop:
             return
-        asyncio.create_task(self._process(tweet, actor))
+        asyncio.run_coroutine_threadsafe(
+            self._process(tweet, actor), _loop
+        )
 
-    async def on_errors(self, errors):
+    def on_errors(self, errors):
         print(f"[stream] errors: {errors}")
 
-    async def on_disconnect(self):
-        print("[stream] disconnected — reconnecting in 10s...")
-        await asyncio.sleep(10)
+    def on_disconnect(self):
+        print("[stream] disconnected")
 
-_USER_ID_MAP: dict[str, dict] = {}
-
-async def resolve_user_ids(client: tweepy.AsyncClient) -> dict[str, dict]:
+def resolve_user_ids() -> dict[str, dict]:
+    client = tweepy.Client(bearer_token=TWITTER_BEARER_TOKEN)
     resolved = {}
     batch_size = 100
     handles = ALL_HANDLES[:]
     for i in range(0, len(handles), batch_size):
         batch = handles[i:i + batch_size]
-        usernames = ",".join(batch)
-        resp = await client.get_users(usernames=usernames, user_fields=["id"])
-        if resp.data:
-            for user in resp.data:
-                handle_lower = user.username.lower()
-                actor = BY_HANDLE.get(handle_lower)
-                if actor:
-                    resolved[str(user.id)] = actor
-                    print(f"[stream] resolved @{user.username} → id {user.id}")
+        try:
+            resp = client.get_users(usernames=batch, user_fields=["id"])
+            if resp.data:
+                for user in resp.data:
+                    actor = BY_HANDLE.get(user.username.lower())
+                    if actor:
+                        resolved[str(user.id)] = actor
+                        print(f"[stream] resolved @{user.username} → {user.id}")
+        except Exception as e:
+            print(f"[stream] resolve error: {e}")
     return resolved
 
-async def setup_stream_rules(stream: ActorStreamListener, user_ids: list[str]):
-    existing = await stream.get_rules()
+def setup_stream_rules(stream: ActorStreamListener, user_ids: list[str]):
+    existing = stream.get_rules()
     if existing.data:
         ids = [r.id for r in existing.data]
-        await stream.delete_rules(ids)
+        stream.delete_rules(ids)
         print(f"[stream] deleted {len(ids)} old rules")
 
-    # X filtered stream supports up to 25 rules on Basic
-    # We pack up to 25 user IDs per rule using OR
     chunk_size = 25
-    chunks = [user_ids[i:i+chunk_size] for i in range(0, len(user_ids), chunk_size)]
-    for chunk in chunks:
+    for i in range(0, len(user_ids), chunk_size):
+        chunk = user_ids[i:i + chunk_size]
         rule = " OR ".join(f"from:{uid}" for uid in chunk)
-        await stream.add_rules(tweepy.StreamRule(rule))
-    print(f"[stream] added {len(chunks)} stream rules for {len(user_ids)} actors")
+        stream.add_rules(tweepy.StreamRule(rule))
+    print(f"[stream] rules set for {len(user_ids)} actors")
 
-async def start_stream(process_fn) -> ActorStreamListener:
-    client = tweepy.AsyncClient(bearer_token=TWITTER_BEARER_TOKEN)
+async def start_stream(process_fn):
+    global _loop, _USER_ID_MAP
+    _loop = asyncio.get_running_loop()
 
-    global _USER_ID_MAP
-    _USER_ID_MAP = await resolve_user_ids(client)
+    _USER_ID_MAP = await _loop.run_in_executor(None, resolve_user_ids)
     user_ids = list(_USER_ID_MAP.keys())
 
     stream = ActorStreamListener(process_fn)
-    await setup_stream_rules(stream, user_ids)
+    setup_stream_rules(stream, user_ids)
 
-    asyncio.create_task(
-        stream.filter(tweet_fields=["author_id", "text", "created_at"])
+    thread = threading.Thread(
+        target=stream.filter,
+        kwargs={"tweet_fields": ["author_id", "text", "created_at"]},
+        daemon=True,
     )
-    print(f"[stream] listening to {len(user_ids)} actors")
+    thread.start()
+    print(f"[stream] listening to {len(user_ids)} actors in background thread")
     return stream
