@@ -11,6 +11,7 @@ ACTORS: list[dict] = [
     {"name": "Chiranjeevi",        "db_name": "Chiranjeevi",          "handle": "KChiruTweets",    "industry": "Telugu"},
     {"name": "Rana Daggubati",     "db_name": "Rana Daggubati",       "handle": "RanaDaggubati",   "industry": "Telugu"},
     {"name": "Ravi Teja",          "db_name": "Ravi Teja",            "handle": "RaviTeja_offl",   "industry": "Telugu"},
+    {"name": "Naga Chaitanya",     "db_name": "Naga Chaitanya",       "handle": "chay_akkineni",   "industry": "Telugu"},
     # Tamil
     {"name": "Kamal Haasan",       "db_name": "Kamal Haasan",         "handle": "ikamalhaasan",    "industry": "Tamil"},
     {"name": "Vijay",              "db_name": "CM Vijay",             "handle": "actorvijay",      "industry": "Tamil"},
