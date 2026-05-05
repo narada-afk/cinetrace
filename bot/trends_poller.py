@@ -30,7 +30,7 @@ async def poll_trends(process_trend_fn):
     while True:
         try:
             # v1.1 trends endpoint via tweepy.API
-            trends_response = client.trends_place(WOEID_INDIA)
+            trends_response = client.get_place_trends(WOEID_INDIA)
             if trends_response and trends_response[0]:
                 trends = trends_response[0].get("trends", [])
                 for trend in trends:
