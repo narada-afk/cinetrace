@@ -17,17 +17,17 @@ import ActorAvatar from '@/components/ActorAvatar'
 const FIXED_X = 'year'
 
 const Y_OPTIONS = [
-  // Career volume
-  { value: 'film_count',              label: 'Films per Year',           group: 'Career' },
-  { value: 'unique_directors',        label: 'Unique Directors',         group: 'Career' },
-  // Ratings & quality
-  { value: 'avg_rating',              label: 'Avg Rating (0–10)',         group: 'Quality' },
-  { value: 'hit_rate',                label: 'Hit Rate % (≥7.0)',        group: 'Quality' },
-  { value: 'avg_popularity',          label: 'Avg Popularity Score',     group: 'Quality' },
   // Box office
   { value: 'avg_box_office',          label: 'Avg Box Office (₹ Cr)',    group: 'Box Office' },
   { value: 'total_box_office',        label: 'Total Box Office (₹ Cr)',  group: 'Box Office' },
   { value: 'avg_budget',              label: 'Avg Budget (₹ Cr)',        group: 'Box Office' },
+  // Ratings & quality
+  { value: 'avg_rating',              label: 'Avg Rating (0–10)',         group: 'Quality' },
+  { value: 'hit_rate',                label: 'Hit Rate % (≥7.0)',        group: 'Quality' },
+  { value: 'avg_popularity',          label: 'Avg Popularity Score',     group: 'Quality' },
+  // Career volume
+  { value: 'film_count',              label: 'Films per Year',           group: 'Career' },
+  { value: 'unique_directors',        label: 'Unique Directors',         group: 'Career' },
   // Collaborations
   { value: 'unique_costars',          label: 'Unique Co-Stars',          group: 'Network' },
   { value: 'total_collaborations',    label: 'Total Collaborations',     group: 'Network' },

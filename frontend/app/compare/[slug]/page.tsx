@@ -8,7 +8,6 @@ import ActorAvatar from '@/components/ActorAvatar'
 import MissingData from '@/components/MissingData'
 import ShareButton from '@/components/ShareButton'
 import ShareSheet from '@/components/ShareSheet'
-import VerdictCard from '@/components/VerdictCard'
 import FilmGrid from '@/components/FilmGrid'
 import FilmsTogether from '@/components/FilmsTogether'
 import CompareChartBuilder from '@/components/CompareChartBuilder'
@@ -543,15 +542,10 @@ export default async function ComparePage({ params }: PageProps) {
           </div>
         </section>
 
-        {/* ── Verdict Card (Comparison Bars) ───────────────────── */}
-        <section>
-          <SectionLabel>🏆 Verdict</SectionLabel>
-          <VerdictCard data1={data1} data2={data2} />
-          {/* Share button below verdict so users can share after seeing the result */}
-          <div className="flex justify-center mt-5">
-            <ShareSheet {...shareProps} />
-          </div>
-        </section>
+        {/* ── Share ─────────────────────────────────────────────── */}
+        <div className="flex justify-center">
+          <ShareSheet {...shareProps} />
+        </div>
 
         {/* ── TASK 7: Top Films Showdown ───────────────────────── */}
         <section>
