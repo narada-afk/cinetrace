@@ -4,76 +4,109 @@ from config import ANTHROPIC_API_KEY, CINETRACE_BASE_URL
 
 _client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 
-SYSTEM_PROMPT = """You are the reply writer for CineTrace Stats Bot — a South Indian cinema analytics account.
+SYSTEM_PROMPT = """You are the reply writer for CineTrace — a South Indian cinema analytics account.
 
-Your job is to craft a single tweet reply using real data from the cinetrace.in database.
+Your job: craft ONE tweet reply using real cinetrace.in data that makes the reader stop scrolling.
 
-Rules:
-- The stat must feel like something a knowledgeable cinema fan just discovered and found fascinating
-- Subtle and informative — never fanboy, never sycophantic, never sarcastic
-- Cite the specific number — vague stats are useless
-- The cinetrace profile link goes on its own line at the end — no "check out" or "click here"
-- Maximum 260 characters including the link
-- Do NOT mention the bot or cinetrace by name in the text — let the link speak
-- Do NOT use hashtags
-- Do NOT use emoji unless the stat is genuinely extraordinary
+─── REPLY FORMULA: Fact → Pattern → Meaning ───
+1. FACT — drop a specific, verifiable number. Not "many films" — "37 films".
+2. PATTERN — what does that number reveal across their career? A streak, a trend, an anomaly.
+3. MEANING — one line that makes the reader feel the weight of it. The "so what."
 
-The stat must be verifiable from the data provided. Do not invent or extrapolate.
+─── VOICE ───
+Sharp. Human. Understated. A film-obsessed analyst talking to another film-obsessed person.
+No fanboy. No corporate. No AI-sounding filler ("Interestingly," "It's worth noting," "Remarkably").
+Subtle provocation beats plain information.
+
+─── FORMAT RULES ───
+- Maximum 260 characters total (including profile URL)
+- Profile URL goes on its own last line — no "check out", no "→ here"
+- No hashtags
+- No emoji unless the number is genuinely jaw-dropping (🔥 at most, once)
+- Don't name the bot or cinetrace in the text — the link does that
+
+─── STAT RULES ───
+- Must cite the exact number from data provided
+- Do NOT invent, round, or extrapolate
+- Only reply if the insight adds meaning beyond the obvious
+- Avoid repeating similar phrasing across retries — vary the formula entry point
+
+─── REFERENCE PATTERNS (adapt, don't copy) ───
+- Collab record: "{Actor} has worked with {Director} {N} times. {N-1} of those crossed ₹100Cr. The one that didn't is still their best film."
+- Consistency: "{N} films across {Y} years. Box office average: ₹{X}Cr. That's not a hot streak — that's a standard."
+- Cross-industry: "Telugu. Tamil. Malayalam. {N} industries, {M} films, one actor who never needed a home turf."
+- Longevity: "First film: {year}. Latest: {year2}. {N} releases between them and the average is still climbing."
+- Pattern break: "{Actor}'s best-reviewed film grossed the least. His highest earner got the weakest reviews. Make of that what you will."
+- Signal-triggered: "Right after {Director/Composer} credits them — worth knowing {Actor} has {N} films with {X} outcome together."
 
 Respond ONLY with valid JSON. No explanation outside the JSON."""
 
 CRAFT_TEMPLATE = """Actor: {actor_name} (@{handle}) — {industry} industry
-Tweet they posted: "{tweet_text}"
+Trigger tweet: "{tweet_text}"
 Stat angle requested: {stat_angle}
+Trigger context (signal account or trend, if any): {trigger_context}
 
-Their data from cinetrace:
+Their cinetrace data:
 - Total films: {total_films}
 - Career span: {career_span}
-- Top collaborator (actor): {top_collaborator}
-- Top director: {top_director}
+- Top collaborator (actor): {top_collaborator} ({top_collab_count} films together)
+- Top director: {top_director} ({top_dir_count} films together)
 - Industries worked in: {industries}
-- Notable films: {notable_films}
+- Top 3 films by box office: {notable_films}
+- Avg box office (where data exists): {avg_box_office}
 
 Profile URL: {profile_url}
 
-Craft a reply tweet. Respond with JSON:
+Craft a reply using the Fact → Pattern → Meaning formula.
+Respond with JSON:
 {{
-  "reply_text": "the full tweet text including the profile URL on its own last line",
-  "stat_used": "which specific stat you highlighted",
+  "reply_text": "the full tweet text with profile URL on its own last line",
+  "stat_used": "exact stat you used (quote the number)",
   "confidence": 0-100
 }}"""
 
-async def craft_reply(actor: dict, profile: dict, tweet_text: str, stat_angle: str) -> dict:
-    movies   = profile.get("movies", [])
-    collabs  = profile.get("collaborators", [])
-    dirs     = profile.get("directors", [])
-    stats    = profile.get("stats") or {}
+async def craft_reply(actor: dict, profile: dict, tweet_text: str, stat_angle: str,
+                      trigger_context: str = "") -> dict:
+    movies  = profile.get("movies", [])
+    collabs = profile.get("collaborators", [])
+    dirs    = profile.get("directors", [])
 
     years = [m.get("release_year") for m in movies if m.get("release_year")]
     career_span = f"{min(years)}–{max(years)}" if years else "unknown"
 
-    top_collab = collabs[0].get("name") if collabs else "unknown"
-    top_dir    = dirs[0].get("name") if dirs else "unknown"
+    top_collab       = collabs[0].get("name", "unknown") if collabs else "unknown"
+    top_collab_count = collabs[0].get("film_count", "?") if collabs else "?"
+    top_dir          = dirs[0].get("name", "unknown") if dirs else "unknown"
+    top_dir_count    = dirs[0].get("film_count", "?") if dirs else "?"
 
     industries = list({m.get("industry") for m in movies if m.get("industry")})
 
-    notable = [m["title"] for m in sorted(
-        movies, key=lambda x: x.get("box_office") or 0, reverse=True
-    )[:3]]
+    top_films = sorted(movies, key=lambda x: x.get("box_office") or 0, reverse=True)[:3]
+    notable   = [
+        f"{m['title']} (₹{m['box_office']}Cr)" if m.get("box_office") else m["title"]
+        for m in top_films
+    ]
+
+    bo_values = [m.get("box_office") for m in movies if m.get("box_office")]
+    avg_bo = f"₹{round(sum(bo_values)/len(bo_values))}Cr" if bo_values else "unknown"
 
     prompt = CRAFT_TEMPLATE.format(
-        actor_name   = actor["name"],
-        handle       = actor["handle"],
-        industry     = actor["industry"],
-        tweet_text   = tweet_text,
-        stat_angle   = stat_angle,
-        total_films  = len(movies),
-        career_span  = career_span,
-        top_collaborator = top_collab,
-        top_director     = top_dir,
-        industries   = ", ".join(industries) if industries else "unknown",
-        notable_films= ", ".join(notable) if notable else "unknown",
-        profile_url  = profile["profile_url"],
+        actor_name      = actor["name"],
+        handle          = actor["handle"],
+        industry        = actor["industry"],
+        tweet_text      = tweet_text,
+        stat_angle      = stat_angle,
+        trigger_context = trigger_context or "direct tweet",
+        total_films     = len(movies),
+        career_span     = career_span,
+        top_collaborator  = top_collab,
+        top_collab_count  = top_collab_count,
+        top_director      = top_dir,
+        top_dir_count     = top_dir_count,
+        industries      = ", ".join(industries) if industries else "unknown",
+        notable_films   = ", ".join(notable) if notable else "unknown",
+        avg_box_office  = avg_bo,
+        profile_url     = profile["profile_url"],
     )
 
     msg = await _client.messages.create(

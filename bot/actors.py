@@ -35,7 +35,35 @@ ACTORS: list[dict] = [
     {"name": "Rakshit Shetty",     "db_name": "Rakshit Shetty",       "handle": "rakshitshetty",   "industry": "Kannada"},
 ]
 
+# Tier 2 — signal accounts (directors, composers, trade analysts).
+# When these accounts tweet mentioning an actor, we find that actor's recent tweet
+# and reply to IT (never to the signal account directly).
+SIGNAL_ACCOUNTS: list[dict] = [
+    # Directors
+    {"name": "SS Rajamouli",       "handle": "ssrajamouli",      "role": "director"},
+    {"name": "Shankar",            "handle": "shankarshanmugh",  "role": "director"},
+    {"name": "Sukumar",            "handle": "SukumarWritings",  "role": "director"},
+    {"name": "Trivikram Srinivas", "handle": "trivikram_s",      "role": "director"},
+    {"name": "Lokesh Kanagaraj",   "handle": "Dir_Lokesh",       "role": "director"},
+    {"name": "Vignesh Shivan",     "handle": "VigneshShivN",     "role": "director"},
+    {"name": "Priyadarshan",       "handle": "priyadarshan_i",   "role": "director"},
+    # Composers
+    {"name": "AR Rahman",          "handle": "arrahman",         "role": "composer"},
+    {"name": "Anirudh Ravichander","handle": "anirudhofficial",  "role": "composer"},
+    {"name": "Thaman S",           "handle": "MusicThaman",      "role": "composer"},
+    {"name": "Devi Sri Prasad",    "handle": "ThisIsDSP",        "role": "composer"},
+    # Trade analysts
+    {"name": "Ramesh Bala",        "handle": "rameshlaus",       "role": "trade"},
+    {"name": "Manobala V",         "handle": "ManobalaV",        "role": "trade"},
+    {"name": "Sreedhar Pillai",    "handle": "sri50",            "role": "trade"},
+    {"name": "Kaushik LM",         "handle": "LMKMovieManiac",   "role": "trade"},
+    {"name": "Umair Sandhu",       "handle": "UmairSandhu",      "role": "trade"},
+]
+
 # Quick lookups
-BY_HANDLE: dict[str, dict] = {a["handle"].lower(): a for a in ACTORS}
-BY_DB_NAME: dict[str, dict] = {a["db_name"].lower(): a for a in ACTORS}
-ALL_HANDLES: list[str] = [a["handle"] for a in ACTORS]
+BY_HANDLE: dict[str, dict]        = {a["handle"].lower(): a for a in ACTORS}
+BY_DB_NAME: dict[str, dict]       = {a["db_name"].lower(): a for a in ACTORS}
+ALL_HANDLES: list[str]            = [a["handle"] for a in ACTORS]
+
+SIGNALS_BY_HANDLE: dict[str, dict] = {s["handle"].lower(): s for s in SIGNAL_ACCOUNTS}
+ALL_SIGNAL_HANDLES: list[str]      = [s["handle"] for s in SIGNAL_ACCOUNTS]

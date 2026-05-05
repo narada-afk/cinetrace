@@ -1,6 +1,6 @@
 import asyncio
 import tweepy
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import db
 import stats_client
@@ -18,6 +18,8 @@ from config import (
     MIN_HOURS_BETWEEN_POSTS, MAX_REPLIES_PER_ACTOR_PER_DAY,
 )
 
+SIGNAL_RECENCY_HOURS = 48  # only reply to actor tweets posted within this window
+
 _twitter = tweepy.Client(
     bearer_token=TWITTER_BEARER_TOKEN,
     consumer_key=TWITTER_API_KEY,
@@ -26,6 +28,28 @@ _twitter = tweepy.Client(
     access_token_secret=TWITTER_ACCESS_TOKEN_SECRET,
     wait_on_rate_limit=True,
 )
+
+# ── Amplification cluster guard ───────────────────────────────────────────────
+# Track (actor_handle, signal_tweet_keyword) → first seen time.
+# If 2+ signal accounts mention the same actor within 1 hour, treat as a cluster
+# and only fire once.
+_signal_cluster: dict[str, datetime] = {}  # key: "{actor_handle}:{normalised_topic}"
+
+def _cluster_key(actor_handle: str, signal_text: str) -> str:
+    import re
+    words = re.findall(r"\b\w{5,}\b", signal_text.lower())
+    topic = "_".join(sorted(set(words))[:3])  # top-3 long words as fingerprint
+    return f"{actor_handle}:{topic}"
+
+def _cluster_ok(actor_handle: str, signal_text: str) -> bool:
+    key = _cluster_key(actor_handle, signal_text)
+    now = datetime.now(timezone.utc)
+    last = _signal_cluster.get(key)
+    if last and now - last < timedelta(hours=1):
+        print(f"[cluster] suppressed duplicate signal for @{actor_handle}")
+        return False
+    _signal_cluster[key] = now
+    return True
 
 # ── Rate guard ────────────────────────────────────────────────────────────────
 
@@ -80,7 +104,9 @@ async def _pipeline(tweet_id: str, tweet_text: str, actor: dict,
     # 3. Craft reply — up to 2 retries
     crafted = None
     for attempt in range(3):
-        result = await crafter.craft_reply(actor, profile, tweet_text, stat_angle)
+        result = await crafter.craft_reply(
+            actor, profile, tweet_text, stat_angle, trigger_context
+        )
         reply_text = result.get("reply_text")
         confidence = result.get("confidence", 0)
 
@@ -156,6 +182,73 @@ async def on_actor_tweet(tweet, actor: dict):
         trigger_type = "tweet",
     )
 
+# ── Signal account handler (Tier 2) ──────────────────────────────────────────
+
+async def on_signal_tweet(tweet, signal: dict):
+    signal_text = tweet.text
+    signal_name = signal["name"]
+    signal_role = signal["role"]
+
+    # Detect which actor this signal is talking about
+    actor = intelligence.detect_actor_in_text(signal_text)
+    if not actor:
+        print(f"[signal] @{signal['handle']} tweet — no actor detected, skipping")
+        return
+
+    # Amplification cluster guard
+    if not _cluster_ok(actor["handle"], signal_text):
+        return
+
+    print(f"[signal] @{signal['handle']} ({signal_role}) → actor: {actor['name']}")
+
+    # Find actor's most recent tweet within the recency window
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=SIGNAL_RECENCY_HOURS)
+    loop = asyncio.get_running_loop()
+    try:
+        # Resolve actor user ID then fetch recent tweets
+        user_resp = await loop.run_in_executor(
+            None,
+            lambda: _twitter.get_users(usernames=[actor["handle"]], user_fields=["id"])
+        )
+        if not user_resp.data:
+            print(f"[signal] could not resolve @{actor['handle']}")
+            return
+        uid = user_resp.data[0].id
+
+        tweets_resp = await loop.run_in_executor(
+            None,
+            lambda: _twitter.get_users_tweets(
+                uid, max_results=5,
+                tweet_fields=["created_at", "text"],
+                exclude=["retweets", "replies"],
+            )
+        )
+        recent_tweet = None
+        if tweets_resp.data:
+            for t in tweets_resp.data:
+                created = t.created_at
+                if created and created.replace(tzinfo=timezone.utc) >= cutoff:
+                    recent_tweet = t
+                    break
+
+        if not recent_tweet:
+            print(f"[signal] no tweet from @{actor['handle']} in last {SIGNAL_RECENCY_HOURS}h")
+            return
+    except Exception as e:
+        print(f"[signal] fetch error: {e}")
+        return
+
+    stat_angle = intelligence.classify_signal_angle(signal_role, signal_text)
+    trigger_context = f"{signal_name} ({signal_role}) tweeted: \"{signal_text[:120]}\""
+
+    await _pipeline(
+        tweet_id        = str(recent_tweet.id),
+        tweet_text      = recent_tweet.text,
+        actor           = actor,
+        trigger_type    = "signal",
+        trend_context   = trigger_context,
+    )
+
 # ── Trend handler ─────────────────────────────────────────────────────────────
 
 async def on_trend(trend_name: str, actor: dict, volume: int):
@@ -183,8 +276,8 @@ async def main():
     await tg_app.updater.start_polling()
     print("[main] Telegram polling started")
 
-    await stream_listener.start_stream(on_actor_tweet)
-    print("[main] Twitter stream started")
+    await stream_listener.start_stream(on_actor_tweet, on_signal_tweet)
+    print("[main] Twitter stream started (Tier 1 actors + Tier 2 signals)")
 
     asyncio.create_task(trends_poller.poll_trends(on_trend))
     print("[main] Trends poller started")
