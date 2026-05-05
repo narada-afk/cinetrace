@@ -22,16 +22,37 @@ def set_post_callback(fn):
 
 async def send_for_review(row_id: int, actor_name: str, handle: str,
                            reply_text: str, confidence: float,
-                           trigger: str, screenshot: bytes | None) -> int | None:
+                           trigger: str, screenshot: bytes | None,
+                           original_tweet: str = "",
+                           engage_reason: str = "",
+                           stat_angle: str = "",
+                           trigger_context: str = "") -> int | None:
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
 
-    header = (
-        f"📋 *Draft Reply*\n"
-        f"Actor: *{actor_name}* (@{handle})\n"
-        f"Trigger: `{trigger}`\n"
-        f"Confidence: `{confidence:.0f}%`\n\n"
-        f"```\n{reply_text}\n```"
-    )
+    # Build context block
+    lines = [f"📋 *Draft Reply*"]
+    lines.append(f"Actor: *{actor_name}* (@{handle})")
+
+    if trigger == "signal" and trigger_context:
+        lines.append(f"Trigger: signal — `{trigger_context[:80]}`")
+    elif trigger == "trend":
+        lines.append(f"Trigger: `trending topic`")
+    else:
+        lines.append(f"Trigger: `direct tweet`")
+
+    if engage_reason:
+        lines.append(f"Why engage: _{engage_reason}_")
+    if stat_angle:
+        lines.append(f"Stat angle: `{stat_angle}`")
+    lines.append(f"Confidence: `{confidence:.0f}%`")
+
+    if original_tweet:
+        truncated = original_tweet[:200] + ("…" if len(original_tweet) > 200 else "")
+        lines.append(f"\n*Their tweet:*\n_{truncated}_")
+
+    lines.append(f"\n*Draft:*\n```\n{reply_text}\n```")
+
+    header = "\n".join(lines)
 
     keyboard = InlineKeyboardMarkup([
         [

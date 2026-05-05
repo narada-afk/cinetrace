@@ -143,13 +143,17 @@ async def _pipeline(tweet_id: str, tweet_text: str, actor: dict,
     )
 
     msg_id = await telegram_handler.send_for_review(
-        row_id      = row_id,
-        actor_name  = actor["name"],
-        handle      = handle,
-        reply_text  = crafted["text"],
-        confidence  = crafted["confidence"],
-        trigger     = trigger_type,
-        screenshot  = screenshot,
+        row_id          = row_id,
+        actor_name      = actor["name"],
+        handle          = handle,
+        reply_text      = crafted["text"],
+        confidence      = crafted["confidence"],
+        trigger         = trigger_type,
+        screenshot      = screenshot,
+        original_tweet  = tweet_text,
+        engage_reason   = analysis.get("reason", ""),
+        stat_angle      = stat_angle,
+        trigger_context = trend_context,
     )
 
     if msg_id:
