@@ -73,5 +73,27 @@ services:
       - backend
     restart: unless-stopped
 
+  bot:
+    build:
+      context: ./bot
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      TWITTER_API_KEY: ${TWITTER_API_KEY}
+      TWITTER_API_SECRET: ${TWITTER_API_SECRET}
+      TWITTER_BEARER_TOKEN: ${TWITTER_BEARER_TOKEN}
+      TWITTER_ACCESS_TOKEN: ${TWITTER_ACCESS_TOKEN}
+      TWITTER_ACCESS_TOKEN_SECRET: ${TWITTER_ACCESS_TOKEN_SECRET}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+      BOT_TWITTER_HANDLE: ${BOT_TWITTER_HANDLE}
+      CINETRACE_BASE_URL: ${CINETRACE_BASE_URL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    restart: unless-stopped
+
 volumes:
   postgres_data_prod:
