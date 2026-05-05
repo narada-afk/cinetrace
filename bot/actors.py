@@ -52,12 +52,26 @@ SIGNAL_ACCOUNTS: list[dict] = [
     {"name": "Anirudh Ravichander","handle": "anirudhofficial",  "role": "composer"},
     {"name": "Thaman S",           "handle": "MusicThaman",      "role": "composer"},
     {"name": "Devi Sri Prasad",    "handle": "ThisIsDSP",        "role": "composer"},
-    # Trade analysts
+    # Trade analysts — Tamil / pan-India
     {"name": "Ramesh Bala",        "handle": "rameshlaus",       "role": "trade"},
     {"name": "Manobala V",         "handle": "ManobalaV",        "role": "trade"},
     {"name": "Sreedhar Pillai",    "handle": "sri50",            "role": "trade"},
     {"name": "Kaushik LM",         "handle": "LMKMovieManiac",   "role": "trade"},
-    {"name": "Umair Sandhu",       "handle": "UmairSandhu",      "role": "trade"},
+    {"name": "Taran Adarsh",       "handle": "taran_adarsh",     "role": "trade"},
+    {"name": "Box Office South",   "handle": "BoxOfficeSouth2",  "role": "trade"},
+    # Trade analysts — Telugu
+    {"name": "Track Tollywood",    "handle": "TrackTwood",       "role": "trade"},
+    {"name": "TBO Updates",        "handle": "TBO_Updates",      "role": "trade"},
+    {"name": "Andhra Box Office",  "handle": "AndhraBoxOffice",  "role": "trade"},
+    {"name": "News Box Office",    "handle": "NEWS_BOXOFFICE",   "role": "trade"},
+    # Trade analysts — Malayalam
+    {"name": "Jerin Georgekutty",  "handle": "jerinGeorgekut2",  "role": "trade"},
+    {"name": "AB George",          "handle": "AbGeorge_",        "role": "trade"},
+    {"name": "Mollywood BO",       "handle": "MollywoodBo1",     "role": "trade"},
+    # Trade analysts — Kannada
+    {"name": "Kannada BO",         "handle": "KANNADA__BO",      "role": "trade"},
+    {"name": "Sandalwood Box O",   "handle": "SandalwoodBoxO1",  "role": "trade"},
+    {"name": "KA Talkies",         "handle": "KA_Talkies",       "role": "trade"},
 ]
 
 # Quick lookups
