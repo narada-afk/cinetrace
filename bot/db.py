@@ -9,7 +9,9 @@ CREATE TABLE IF NOT EXISTS bot_tweet_log (
     tweet_id            VARCHAR(50)  UNIQUE NOT NULL,
     actor_handle        VARCHAR(100) NOT NULL,
     actor_db_name       VARCHAR(200) NOT NULL,
-    trigger_type        VARCHAR(20)  NOT NULL DEFAULT 'tweet',  -- tweet | trend
+    trigger_type        VARCHAR(20)  NOT NULL DEFAULT 'tweet',
+    platform            VARCHAR(20)  NOT NULL DEFAULT 'twitter',
+    source_url          TEXT,
     draft_reply         TEXT,
     reply_tweet_id      VARCHAR(50),
     confidence_score    FLOAT,
@@ -25,6 +27,12 @@ CREATE INDEX IF NOT EXISTS idx_bot_tweet_log_actor_handle ON bot_tweet_log(actor
 CREATE INDEX IF NOT EXISTS idx_bot_tweet_log_created_at   ON bot_tweet_log(created_at);
 """
 
+# Incremental migrations for existing tables
+MIGRATIONS = [
+    "ALTER TABLE bot_tweet_log ADD COLUMN IF NOT EXISTS platform   VARCHAR(20) NOT NULL DEFAULT 'twitter'",
+    "ALTER TABLE bot_tweet_log ADD COLUMN IF NOT EXISTS source_url TEXT",
+]
+
 def get_conn():
     return psycopg2.connect(DATABASE_URL)
 
@@ -32,6 +40,8 @@ def run_migrations():
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(DDL)
+            for sql in MIGRATIONS:
+                cur.execute(sql)
         conn.commit()
     print("[db] migrations applied")
 
@@ -67,15 +77,18 @@ def last_post_time() -> datetime | None:
 
 def insert_pending(tweet_id: str, actor_handle: str, actor_db_name: str,
                    draft_reply: str, confidence: float,
-                   trigger_type: str = "tweet") -> int:
+                   trigger_type: str = "tweet", platform: str = "twitter",
+                   source_url: str = "") -> int:
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """INSERT INTO bot_tweet_log
-                   (tweet_id, actor_handle, actor_db_name, draft_reply, confidence_score, trigger_type)
-                   VALUES (%s, %s, %s, %s, %s, %s)
+                   (tweet_id, actor_handle, actor_db_name, draft_reply, confidence_score,
+                    trigger_type, platform, source_url)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                    RETURNING id""",
-                (tweet_id, actor_handle, actor_db_name, draft_reply, confidence, trigger_type)
+                (tweet_id, actor_handle, actor_db_name, draft_reply, confidence,
+                 trigger_type, platform, source_url or "")
             )
             row_id = cur.fetchone()[0]
         conn.commit()

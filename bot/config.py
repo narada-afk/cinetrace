@@ -17,6 +17,12 @@ DATABASE_URL        = os.environ["DATABASE_URL"]
 CINETRACE_BASE_URL  = os.getenv("CINETRACE_BASE_URL", "https://cinetrace.in")
 CINETRACE_API_URL   = "http://backend:8000"
 
+# Reddit (optional — monitor disabled if not set)
+REDDIT_CLIENT_ID     = os.getenv("REDDIT_CLIENT_ID", "")
+REDDIT_CLIENT_SECRET = os.getenv("REDDIT_CLIENT_SECRET", "")
+REDDIT_USERNAME      = os.getenv("REDDIT_USERNAME", "")
+REDDIT_PASSWORD      = os.getenv("REDDIT_PASSWORD", "")
+
 # Bot behaviour
 MAX_REPLIES_PER_ACTOR_PER_DAY = 3
 MIN_HOURS_BETWEEN_POSTS       = 2
