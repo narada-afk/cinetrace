@@ -8,6 +8,7 @@ import ActorAvatar from '@/components/ActorAvatar'
 import MissingData from '@/components/MissingData'
 import ShareButton from '@/components/ShareButton'
 import ShareSheet from '@/components/ShareSheet'
+import ShareableSection from '@/components/ShareableSection'
 import FilmGrid from '@/components/FilmGrid'
 import FilmsTogether from '@/components/FilmsTogether'
 import CompareChartBuilder from '@/components/CompareChartBuilder'
@@ -493,18 +494,16 @@ export default async function ComparePage({ params }: PageProps) {
         <HeroBanner data1={data1} data2={data2} />
 
         {/* ── Career Showdown ───────────────────────────────────── */}
-        <section>
-          <SectionLabel>🔥 Career Showdown</SectionLabel>
+        <ShareableSection label="🔥 Career Showdown" name1={p1.name} name2={p2.name}>
           <CompareChartBuilder
             actor1={{ id: data1.profile.id, name: p1.name, industry: p1.industry }}
             actor2={{ id: data2.profile.id, name: p2.name, industry: p2.industry }}
           />
-        </section>
+        </ShareableSection>
 
         {/* ── Films Together (dropdown) ─────────────────────────── */}
-        <section>
-          <SectionLabel>🎬 Films Together</SectionLabel>
-          <p className="text-xs text-white/35 mb-4 -mt-2 leading-relaxed">
+        <ShareableSection label="🎬 Films Together" name1={p1.name} name2={p2.name}>
+          <p className="text-xs text-white/35 mb-4 leading-relaxed">
             {sharedFilms.length === 0
               ? `${p1.name} and ${p2.name} haven't shared the screen in our database — two legends who travel in separate orbits.`
               : sharedFilms.length === 1
@@ -514,12 +513,11 @@ export default async function ComparePage({ params }: PageProps) {
               : `${sharedFilms.length} shared films. These two have been inseparable from South cinema.`}
           </p>
           <FilmsTogether films={sharedFilms} name1={p1.name} name2={p2.name} />
-        </section>
+        </ShareableSection>
 
         {/* ── Top Collaborators ─────────────────────────────────── */}
-        <section>
-          <SectionLabel>🔥 Top Collaborators</SectionLabel>
-          <p className="text-xs text-white/35 mb-5 -mt-2 leading-relaxed">
+        <ShareableSection label="🔥 Top Collaborators" name1={p1.name} name2={p2.name}>
+          <p className="text-xs text-white/35 mb-5 leading-relaxed">
             {data1.collaborators.length > data2.collaborators.length + 20
               ? `${p1.name} has built a wider on-screen network — ${data1.collaborators.length} co-stars vs ${p2.name}'s ${data2.collaborators.length}. See who each keeps coming back to.`
               : data2.collaborators.length > data1.collaborators.length + 20
@@ -540,7 +538,7 @@ export default async function ComparePage({ params }: PageProps) {
               accentColor="#06b6d4"
             />
           </div>
-        </section>
+        </ShareableSection>
 
         {/* ── Share ─────────────────────────────────────────────── */}
         <div className="flex justify-center">
