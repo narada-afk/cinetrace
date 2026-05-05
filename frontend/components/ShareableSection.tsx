@@ -42,11 +42,18 @@ export default function ShareableSection({
   label,
   name1,
   name2,
+  subtitle,
+  className,
 }: {
   children: React.ReactNode
   label: string
-  name1: string
-  name2: string
+  /** Optional — used on compare page for "Actor1 vs Actor2" share text */
+  name1?: string
+  name2?: string
+  /** Optional subtitle shown in the share modal when name1/name2 not provided */
+  subtitle?: string
+  /** Extra classes on the outer <section> element (e.g. spacing) */
+  className?: string
 }) {
   const contentRef = useRef<HTMLDivElement>(null)
   const [capturing, setCapturing] = useState(false)
@@ -55,9 +62,14 @@ export default function ShareableSection({
   const [copied, setCopied]       = useState(false)
 
   const pageUrl    = typeof window !== 'undefined' ? window.location.href : ''
-  const shareText  = `${name1} vs ${name2} on CineTrace`
-  const filename   = `${name1}-vs-${name2}-${label.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.png`
-    .replace(/--+/g, '-')
+  const shareText  = name1 && name2
+    ? `${name1} vs ${name2} on CineTrace`
+    : subtitle
+    ? `${subtitle} — cinetrace.in`
+    : `${label} — cinetrace.in`
+  const modalSub   = name1 && name2 ? `${name1} vs ${name2}` : (subtitle ?? label)
+  const filename   = (name1 && name2 ? `${name1}-vs-${name2}` : (subtitle ?? label))
+    .replace(/[^a-z0-9]/gi, '-').toLowerCase().replace(/--+/g, '-') + '.png'
 
   // ── Capture ──────────────────────────────────────────────────────────────────
 
@@ -124,7 +136,7 @@ export default function ShareableSection({
   // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
-    <section>
+    <section className={className}>
 
       {/* ── Section label row with share button ── */}
       <div className="flex items-center justify-between mb-4">
@@ -207,7 +219,7 @@ export default function ShareableSection({
               Share snapshot
             </p>
             <p className="text-[11px] text-white/30 text-center -mt-2">
-              {name1} vs {name2}
+              {modalSub}
             </p>
 
             {/* Preview thumbnail */}

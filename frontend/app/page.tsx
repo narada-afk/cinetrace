@@ -12,6 +12,7 @@ import InsightsCarousel from '@/components/InsightsCarousel'
 import { type InsightCardData } from '@/components/InsightCard'
 import ConnectionFinder from '@/components/stats/ConnectionFinder'
 import CompareEntry from '@/components/CompareEntry'
+import ShareableSection from '@/components/ShareableSection'
 import { getInsights, getActorCollaborators, getActorLeadCollaborators, getActorDirectors, getActor, toActorSlug, type Insight } from '@/lib/api'
 import type { TrendingChip } from '@/components/HeroSearch'
 import type { NetworkCenter, NetworkNode } from '@/components/GraphPreview'
@@ -463,31 +464,41 @@ export default async function HomePage({
         <HeroSearch trendingActors={trendingChips} />
 
         {/* ── 2. Insights (moved above fold — viral engine) ────────────────── */}
-        <section className="mt-12 mb-12">
-          <h2 className="text-xs font-semibold uppercase tracking-widest text-white/40 mb-5">
-            🔥 Did you know?
-          </h2>
+        <ShareableSection
+          label="🔥 Did you know?"
+          subtitle="CineTrace Insights"
+          className="mt-12 mb-12"
+        >
           <InsightsCarousel cards={insightCards} />
-        </section>
+        </ShareableSection>
 
         {/* ── 3. Compare Entry ─────────────────────────────────────────────── */}
-        <section className="mt-0">
+        <ShareableSection
+          label="⚡ Head-to-Head"
+          subtitle="Compare actors on CineTrace"
+          className="mt-0"
+        >
           <CompareEntry />
-        </section>
+        </ShareableSection>
 
         {/* ── 4. Connection Finder ─────────────────────────────────────────── */}
-        <section className="mt-14">
+        <ShareableSection
+          label="🔗 Connection Finder"
+          subtitle="Six degrees of South cinema"
+          className="mt-14"
+        >
           <ConnectionFinder />
-        </section>
+        </ShareableSection>
 
         {/* ── 5. Graph Preview ─────────────────────────────────────────────── */}
-        <section className="mt-14">
-          <h2 className="text-xs font-semibold uppercase tracking-widest text-white/40 mb-1">
-            ✦ Frequent Collaborators
-          </h2>
+        <ShareableSection
+          label="✦ Frequent Collaborators"
+          subtitle="Cinema network on CineTrace"
+          className="mt-14"
+        >
           <p className="text-xs text-white/25 mb-4">Most frequent co-stars — tap any node to explore</p>
           <GraphPreview networkData={networkData} suggestions={trendingChips} />
-        </section>
+        </ShareableSection>
 
 
       </main>
