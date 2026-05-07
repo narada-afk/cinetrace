@@ -40,8 +40,8 @@ import type { ConnectionPath } from '@/lib/api'
 const ACTOR_W       = 80
 const MOVIE_W       = 72    // poster card width
 const CONN_W        = 36
-const ACTOR_STEP_MS = 500
-const MOVIE_STEP_MS = 350
+const ACTOR_STEP_MS = 300
+const MOVIE_STEP_MS = 200
 
 // ── Item model ─────────────────────────────────────────────────────────────────
 

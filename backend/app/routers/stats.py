@@ -103,7 +103,6 @@ def stats_top_costars(
 def stats_connection(
     actor1_id: int = Query(..., description="Start actor DB id"),
     actor2_id: int = Query(..., description="End actor DB id"),
-    db: Session = Depends(get_db),
 ):
     """
     BFS shortest collaboration path between two actors.
@@ -111,12 +110,9 @@ def stats_connection(
 
     Traversal is purely in-memory — graph_service holds a pre-built
     adjacency list loaded once at startup, so this endpoint makes
-    zero DB calls during BFS itself.
+    zero DB calls.  Unknown actor IDs are handled gracefully by
+    graph_service (returns found=False).
     """
-    for aid in (actor1_id, actor2_id):
-        if not actor_repo.get_by_id(db, aid):
-            raise HTTPException(status_code=404, detail=f"Actor {aid} not found")
-
     return graph_service.find_connection(actor1_id, actor2_id)
 
 
