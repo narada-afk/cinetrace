@@ -59,17 +59,18 @@ cur.execute("""
 rows_cast = cur.rowcount
 print(f"Fix 3 (Prabhas/Jack&Daniel): deleted {rows_am} actor_movies rows, {rows_cast} cast rows")
 
-# ── Fix 4: Rename Vijay → CM Vijay ───────────────────────────────────────────
-# Actor id=2 (Tamil, is_primary_actor=True) — reflects his current public name.
-# UPDATE is idempotent: re-running after the rename is a no-op (0 rows affected).
+# ── Fix 4: Revert CM Vijay → Vijay ───────────────────────────────────────────
+# A previous fix renamed him to "CM Vijay" but the avatar slug (cmvijay) doesn't
+# match the image file (vijay.png), so his photo was broken. Revert to "Vijay".
+# Idempotent: if already "Vijay" this is a no-op.
 cur.execute("""
     UPDATE actors
-    SET name = 'CM Vijay'
-    WHERE name = 'Vijay'
+    SET name = 'Vijay'
+    WHERE name = 'CM Vijay'
       AND industry = 'Tamil'
       AND is_primary_actor = TRUE
 """)
-print(f"Fix 4 (Vijay → CM Vijay): updated {cur.rowcount} row(s)")
+print(f"Fix 4 (CM Vijay → Vijay revert): updated {cur.rowcount} row(s)")
 
 conn.commit()
 conn.close()
