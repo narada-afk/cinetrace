@@ -62,6 +62,15 @@ function ActorBox({
     return () => document.removeEventListener('mousedown', h)
   }, [])
 
+  function selectFirst() {
+    if (results.length > 0) {
+      onSelect(results[0])
+      setQuery('')
+      setResults([])
+      setOpen(false)
+    }
+  }
+
   return (
     <div className="flex-1 min-w-0">
       <p className={`text-[10px] font-bold uppercase tracking-[0.18em] mb-2 ${colorClass}`}>
@@ -91,6 +100,7 @@ function ActorBox({
               ref={inputRef}
               value={query}
               onChange={e => setQuery(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') selectFirst() }}
               placeholder={placeholder}
               className="flex-1 bg-transparent py-3.5 text-white placeholder-white/25 outline-none text-sm"
             />
@@ -102,16 +112,20 @@ function ActorBox({
               className="absolute top-full left-0 right-0 mt-1.5 rounded-2xl overflow-hidden z-50 shadow-2xl border border-white/[0.10]"
               style={{ background: '#1e1e2c' }}
             >
-              {results.map(a => (
+              {results.map((a, idx) => (
                 <button
                   key={a.id}
                   onMouseDown={e => e.preventDefault()}
+                  onTouchStart={e => e.stopPropagation()}
                   onClick={() => { onSelect(a); setQuery(''); setResults([]); setOpen(false) }}
                   className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/[0.08] transition-colors text-left border-b border-white/[0.05] last:border-0"
                 >
                   <ActorAvatar name={a.name} size={32} />
                   <div className="min-w-0">
-                    <p className="text-white text-sm font-medium truncate">{a.name}</p>
+                    <p className="text-white text-sm font-medium truncate">
+                      {idx === 0 && <span className="text-white/25 text-[10px] mr-1.5">↵</span>}
+                      {a.name}
+                    </p>
                     {a.industry && <p className="text-white/35 text-xs">{a.industry}</p>}
                   </div>
                 </button>
@@ -145,6 +159,7 @@ export default function ConnectionFinder({
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState<string | null>(null)
   const [hasSearched, setHasSearched] = useState(false)
+  const [shake,   setShake]   = useState(false)
 
   // Staged loading messages
   const LOADING_MSGS = ['Finding paths…', 'Checking collaborators…', 'Building connection…', 'Almost there…']
@@ -158,7 +173,12 @@ export default function ConnectionFinder({
   const canSearch = actor1 !== null && actor2 !== null && actor1.id !== actor2.id
 
   async function handleFind() {
-    if (!canSearch) return
+    if (!canSearch) {
+      // Shake the button and show a hint so users know what's missing
+      setShake(true)
+      setTimeout(() => setShake(false), 600)
+      return
+    }
     setLoading(true)
     setResult(null)
     setError(null)
@@ -223,18 +243,31 @@ export default function ConnectionFinder({
 
       {/* Find button */}
       <div className="mt-5 flex flex-col sm:flex-row items-center gap-3">
-        <button
-          onClick={handleFind}
-          disabled={loading}
-          className={`
-            px-8 py-3 rounded-full font-bold text-sm transition-all duration-200
-            ${canSearch && !loading
-              ? 'bg-white text-[#0a0a0f] hover:scale-[1.03] hover:shadow-lg hover:shadow-white/20 active:scale-95'
-              : 'bg-white/[0.08] text-white/50 border border-white/[0.12] cursor-default'}
-          `}
-        >
-          {loading ? LOADING_MSGS[loadingMsgIdx] : 'Reveal Connection'}
-        </button>
+        <div className="flex flex-col items-start gap-1.5">
+          <button
+            onClick={handleFind}
+            disabled={loading}
+            className={`
+              px-8 py-3 rounded-full font-bold text-sm transition-all duration-200
+              ${canSearch && !loading
+                ? 'bg-white text-[#0a0a0f] hover:scale-[1.03] hover:shadow-lg hover:shadow-white/20 active:scale-95'
+                : 'bg-white/[0.08] text-white/50 border border-white/[0.12]'}
+            `}
+            style={shake ? { animation: 'cfShake 0.5s ease' } : undefined}
+          >
+            {loading ? LOADING_MSGS[loadingMsgIdx] : 'Reveal Connection'}
+          </button>
+          {/* Inline hint — only visible when shaking so it doesn't clutter the UI */}
+          <p
+            className="text-xs text-amber-400/70 pl-1 transition-all duration-200"
+            style={{ opacity: shake ? 1 : 0, transform: shake ? 'translateY(0)' : 'translateY(-4px)' }}
+          >
+            {!actor1 && !actor2 ? 'Select two actors above first' :
+             !actor1 ? 'Pick the "From" actor' :
+             !actor2 ? 'Pick the "To" actor' :
+             actor1.id === actor2.id ? 'Pick two different actors' : ''}
+          </p>
+        </div>
 
         {(!actor1 || !actor2) && defaultActors && defaultActors.length >= 2 && (
           <button
@@ -245,6 +278,15 @@ export default function ConnectionFinder({
           </button>
         )}
       </div>
+      <style>{`
+        @keyframes cfShake {
+          0%, 100% { transform: translateX(0); }
+          20%       { transform: translateX(-6px); }
+          40%       { transform: translateX(6px); }
+          60%       { transform: translateX(-4px); }
+          80%       { transform: translateX(4px); }
+        }
+      `}</style>
 
       {/* Error */}
       {error && <p className="mt-4 text-red-400 text-sm text-center">{error}</p>}
