@@ -81,17 +81,23 @@ async def start_stream(actor_fn, signal_fn):
     global _loop, _ACTOR_ID_MAP, _SIGNAL_ID_MAP
     _loop = asyncio.get_running_loop()
 
-    _ACTOR_ID_MAP, _SIGNAL_ID_MAP = await _loop.run_in_executor(None, resolve_user_ids)
-    all_ids = list(_ACTOR_ID_MAP.keys()) + list(_SIGNAL_ID_MAP.keys())
+    try:
+        _ACTOR_ID_MAP, _SIGNAL_ID_MAP = await _loop.run_in_executor(None, resolve_user_ids)
+        all_ids = list(_ACTOR_ID_MAP.keys()) + list(_SIGNAL_ID_MAP.keys())
 
-    stream = ActorStreamListener(actor_fn, signal_fn)
-    setup_stream_rules(stream, all_ids)
+        stream = ActorStreamListener(actor_fn, signal_fn)
+        setup_stream_rules(stream, all_ids)
 
-    thread = threading.Thread(
-        target=stream.filter,
-        kwargs={"tweet_fields": ["author_id", "text", "created_at"]},
-        daemon=True,
-    )
-    thread.start()
-    print(f"[stream] listening: {len(_ACTOR_ID_MAP)} actors + {len(_SIGNAL_ID_MAP)} signals")
-    return stream
+        thread = threading.Thread(
+            target=stream.filter,
+            kwargs={"tweet_fields": ["author_id", "text", "created_at"]},
+            daemon=True,
+        )
+        thread.start()
+        print(f"[stream] listening: {len(_ACTOR_ID_MAP)} actors + {len(_SIGNAL_ID_MAP)} signals")
+        return stream
+    except Exception as e:
+        print(f"[stream] DISABLED — could not start: {e}")
+        print("[stream] Scheduled tweets (broadcaster) will still run normally.")
+        print("[stream] Reactive tweets require Twitter Basic tier ($100/month) for Filtered Stream access.")
+        return None

@@ -2,6 +2,9 @@ import asyncio
 import tweepy
 import asyncpraw
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 import db
 import stats_client
@@ -11,16 +14,20 @@ import reddit_crafter
 import validator
 import screenshot as screenshotter
 import telegram_handler
+import broadcaster
 import stream_listener
 import trends_poller
 import reddit_monitor
 from actors import BY_HANDLE, ACTORS
+from inventory import SLOT_HOURS, GENERATION_HOUR
 from config import (
     TWITTER_API_KEY, TWITTER_API_SECRET,
     TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_TOKEN_SECRET, TWITTER_BEARER_TOKEN,
     REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, REDDIT_USERNAME, REDDIT_PASSWORD,
     MIN_HOURS_BETWEEN_POSTS, MAX_REPLIES_PER_ACTOR_PER_DAY,
 )
+
+IST = ZoneInfo("Asia/Kolkata")
 
 SIGNAL_RECENCY_HOURS = 48  # only reply to actor tweets posted within this window
 
@@ -48,6 +55,10 @@ def _cluster_key(actor_handle: str, signal_text: str) -> str:
 def _cluster_ok(actor_handle: str, signal_text: str) -> bool:
     key = _cluster_key(actor_handle, signal_text)
     now = datetime.now(timezone.utc)
+    # Purge entries older than 2 hours to keep dict small
+    stale = [k for k, t in _signal_cluster.items() if now - t > timedelta(hours=2)]
+    for k in stale:
+        del _signal_cluster[k]
     last = _signal_cluster.get(key)
     if last and now - last < timedelta(hours=1):
         print(f"[cluster] suppressed duplicate signal for @{actor_handle}")
@@ -62,10 +73,10 @@ def _rate_ok(actor_handle: str) -> tuple[bool, str]:
     if count >= MAX_REPLIES_PER_ACTOR_PER_DAY:
         return False, f"daily limit reached ({count})"
 
-    last = db.last_post_time()
+    last = db.last_post_time_for_actor(actor_handle)
     if last and datetime.utcnow() - last < timedelta(hours=MIN_HOURS_BETWEEN_POSTS):
         wait = (last + timedelta(hours=MIN_HOURS_BETWEEN_POSTS) - datetime.utcnow())
-        return False, f"too soon — wait {int(wait.seconds/60)}m"
+        return False, f"too soon for @{actor_handle} — wait {int(wait.seconds/60)}m"
 
     return True, ""
 
@@ -109,7 +120,7 @@ async def _pipeline(tweet_id: str, tweet_text: str, actor: dict,
     crafted = None
     for attempt in range(3):
         result = await crafter.craft_reply(
-            actor, profile, tweet_text, stat_angle, trigger_context
+            actor, profile, tweet_text, stat_angle, trend_context
         )
         reply_text = result.get("reply_text")
         confidence = result.get("confidence", 0)
@@ -138,7 +149,7 @@ async def _pipeline(tweet_id: str, tweet_text: str, actor: dict,
 
     # 5. Screenshot
     slug       = screenshotter.actor_slug(db_name)
-    screenshot = await screenshotter.capture_actor_page(slug)
+    screenshot = await screenshotter.capture_section_snapshot(slug, "overview")
 
     # 6. Store + send to Telegram for review
     row_id = db.insert_pending(
@@ -435,8 +446,52 @@ async def main():
     await tg_app.updater.start_polling()
     print("[main] Telegram polling started")
 
-    await stream_listener.start_stream(on_actor_tweet, on_signal_tweet)
+    # ── Broadcaster scheduler (IST timezone) ─────────────────────────────────
+    scheduler = AsyncIOScheduler(timezone=IST)
+
+    # 9 PM nightly — generate and send next day's schedule to Telegram
+    # 9:30 PM — retry (no-op if already generated)
+    for _gen_min in (0, 30):
+        scheduler.add_job(
+            lambda: asyncio.create_task(
+                broadcaster.generate_daily_schedule(telegram_handler.send_scheduled_for_review)
+            ),
+            trigger="cron", hour=GENERATION_HOUR, minute=_gen_min,
+            id=f"daily_schedule_gen_{_gen_min}", replace_existing=True,
+        )
+
+    # Slot posters — 7am, 10am, 1pm, 4pm, 7pm, 10pm IST
+    for slot_h in SLOT_HOURS:
+        scheduler.add_job(
+            lambda h=slot_h: asyncio.create_task(broadcaster.post_scheduled_slot(h)),
+            trigger="cron", hour=slot_h, minute=0,
+            id=f"slot_{slot_h}h", replace_existing=True,
+        )
+
+    scheduler.start()
+    print(f"[main] Broadcaster scheduler started (slots: {SLOT_HOURS}, generation: {GENERATION_HOUR}:00 IST)")
+
+    _stream_handle = await stream_listener.start_stream(on_actor_tweet, on_signal_tweet)
     print("[main] Twitter stream started (Tier 1 actors + Tier 2 signals)")
+
+    # Watchdog — restart stream thread if it dies (only if stream started successfully)
+    if _stream_handle:
+        async def _stream_watchdog():
+            import threading
+            nonlocal _stream_handle
+            while True:
+                await asyncio.sleep(300)
+                threads = {t.name for t in threading.enumerate()}
+                live = any("stream" in t.lower() or "tweepy" in t.lower() for t in threads)
+                if not live:
+                    print("[watchdog] stream thread dead — restarting")
+                    try:
+                        _stream_handle = await stream_listener.start_stream(on_actor_tweet, on_signal_tweet)
+                        if _stream_handle:
+                            print("[watchdog] stream restarted")
+                    except Exception as e:
+                        print(f"[watchdog] restart failed: {e}")
+        asyncio.create_task(_stream_watchdog())
 
     asyncio.create_task(trends_poller.poll_trends(on_trend))
     print("[main] Trends poller started")
