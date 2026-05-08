@@ -93,7 +93,12 @@ def _build_header(actor_name: str, handle: str, trigger: str, trigger_context: s
 
     if original_tweet:
         truncated = original_tweet[:200] + ("…" if len(original_tweet) > 200 else "")
-        label = "Reddit post" if trigger == "reddit_post" else "Their tweet"
+        if trigger == "reddit_post":
+            label = "Reddit post"
+        elif trigger == "signal":
+            label = "Signal tweet"
+        else:
+            label = "Their tweet"
         lines.append(f"\n*{label}:*\n_{truncated}_")
 
     lines.append(f"\n*Draft:*\n```\n{reply_text}\n```")

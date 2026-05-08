@@ -83,29 +83,36 @@ def _rate_ok(actor_handle: str) -> tuple[bool, str]:
 # ── Core pipeline ─────────────────────────────────────────────────────────────
 
 async def _pipeline(tweet_id: str, tweet_text: str, actor: dict,
-                    trigger_type: str = "tweet", trend_context: str = ""):
+                    trigger_type: str = "tweet", trend_context: str = "",
+                    exclude_angle: str = "") -> str | None:
+    """Returns the stat_angle chosen, or None if the tweet was dropped."""
     handle   = actor["handle"]
     db_name  = actor["db_name"]
 
     # Dedup
     if db.already_replied(tweet_id):
-        return
+        return None
 
     # Rate guard
     ok, reason = _rate_ok(handle)
     if not ok:
         print(f"[pipeline] skipped @{handle}: {reason}")
-        return
+        return None
 
     print(f"[pipeline] processing tweet {tweet_id} from @{handle}")
 
+    # Build intelligence context — tell it to avoid the reply's angle if this is standalone
+    intel_context = trend_context
+    if exclude_angle:
+        intel_context = f"{trend_context} [Use a DIFFERENT stat angle — NOT '{exclude_angle}']"
+
     # 1. Intelligence — should we engage?
     analysis = await intelligence.analyse_tweet(
-        actor["name"], handle, tweet_text, trend_context
+        actor["name"], handle, tweet_text, intel_context
     )
     if not analysis.get("should_engage"):
         print(f"[pipeline] no engage: {analysis.get('reason')}")
-        return
+        return None
 
     stat_angle = analysis.get("stat_angle", "career overview")
     print(f"[pipeline] engaging — stat angle: {stat_angle}")
@@ -145,7 +152,7 @@ async def _pipeline(tweet_id: str, tweet_text: str, actor: dict,
         print(f"[pipeline] dropped after 3 failed attempts for @{handle}")
         row_id = db.insert_pending(tweet_id, handle, db_name, "", 0, trigger_type)
         db.mark_dropped(row_id, "validation failed after 3 attempts")
-        return
+        return None
 
     # 5. Screenshot
     slug       = screenshotter.actor_slug(db_name)
@@ -177,13 +184,21 @@ async def _pipeline(tweet_id: str, tweet_text: str, actor: dict,
     else:
         db.mark_dropped(row_id, "telegram send failed")
 
+    return stat_angle
+
 # ── Post to Twitter (called from Telegram callback) ───────────────────────────
 
 async def post_approved(row: dict):
     try:
+        # Only reply to a real tweet ID — trend/signal synthetic IDs start with "trend_"/"signal_"
+        real_reply_id = None
+        tweet_id = row.get("tweet_id", "")
+        if row["trigger_type"] == "tweet" and not tweet_id.startswith(("trend_", "signal_")):
+            real_reply_id = tweet_id
+
         resp = _twitter.create_tweet(
             text=row["draft_reply"],
-            in_reply_to_tweet_id=row["tweet_id"] if row["trigger_type"] == "tweet" else None,
+            in_reply_to_tweet_id=real_reply_id,
         )
         reply_tweet_id = str(resp.data["id"])
         db.mark_posted(row["id"], reply_tweet_id)
@@ -220,53 +235,71 @@ async def on_signal_tweet(tweet, signal: dict):
 
     print(f"[signal] @{signal['handle']} ({signal_role}) → actor: {actor['name']}")
 
-    # Find actor's most recent tweet within the recency window
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=SIGNAL_RECENCY_HOURS)
-    loop = asyncio.get_running_loop()
+    stat_angle      = intelligence.classify_signal_angle(signal_role, signal_text)
+    trigger_context = f"{signal_name} ({signal_role}) tweeted: \"{signal_text[:120]}\""
+
+    # Try to find actor's most recent tweet within the recency window
+    cutoff       = datetime.now(timezone.utc) - timedelta(hours=SIGNAL_RECENCY_HOURS)
+    loop         = asyncio.get_running_loop()
+    target_id    = None
+    target_text  = None
+
     try:
-        # Resolve actor user ID then fetch recent tweets
         user_resp = await loop.run_in_executor(
             None,
             lambda: _twitter.get_users(usernames=[actor["handle"]], user_fields=["id"])
         )
-        if not user_resp.data:
-            print(f"[signal] could not resolve @{actor['handle']}")
-            return
-        uid = user_resp.data[0].id
-
-        tweets_resp = await loop.run_in_executor(
-            None,
-            lambda: _twitter.get_users_tweets(
-                uid, max_results=5,
-                tweet_fields=["created_at", "text"],
-                exclude=["retweets", "replies"],
+        if user_resp.data:
+            uid = user_resp.data[0].id
+            tweets_resp = await loop.run_in_executor(
+                None,
+                lambda: _twitter.get_users_tweets(
+                    uid, max_results=5,
+                    tweet_fields=["created_at", "text"],
+                    exclude=["retweets", "replies"],
+                )
             )
-        )
-        recent_tweet = None
-        if tweets_resp.data:
-            for t in tweets_resp.data:
-                created = t.created_at
-                if created and created.replace(tzinfo=timezone.utc) >= cutoff:
-                    recent_tweet = t
-                    break
-
-        if not recent_tweet:
-            print(f"[signal] no tweet from @{actor['handle']} in last {SIGNAL_RECENCY_HOURS}h")
-            return
+            if tweets_resp.data:
+                for t in tweets_resp.data:
+                    created = t.created_at
+                    if created and created.replace(tzinfo=timezone.utc) >= cutoff:
+                        target_id   = str(t.id)
+                        target_text = t.text
+                        break
     except Exception as e:
         print(f"[signal] fetch error: {e}")
-        return
 
-    stat_angle = intelligence.classify_signal_angle(signal_role, signal_text)
-    trigger_context = f"{signal_name} ({signal_role}) tweeted: \"{signal_text[:120]}\""
-
-    await _pipeline(
-        tweet_id        = str(recent_tweet.id),
-        tweet_text      = recent_tweet.text,
-        actor           = actor,
-        trigger_type    = "signal",
-        trend_context   = trigger_context,
-    )
+    if target_id:
+        # Actor tweeted recently — reply to their tweet AND post a standalone
+        print(f"[signal] replying to @{actor['handle']}'s recent tweet + standalone")
+        reply_angle = await _pipeline(
+            tweet_id      = target_id,
+            tweet_text    = target_text,
+            actor         = actor,
+            trigger_type  = "signal",
+            trend_context = trigger_context,
+        )
+        # Standalone — exclude the reply's angle so both tweets cover different stats
+        synthetic_id = f"signal_{signal['handle']}_{int(datetime.utcnow().timestamp())}"
+        await _pipeline(
+            tweet_id      = synthetic_id,
+            tweet_text    = signal_text,
+            actor         = actor,
+            trigger_type  = "signal",
+            trend_context = trigger_context,
+            exclude_angle = reply_angle or "",
+        )
+    else:
+        # No recent actor tweet — standalone only
+        print(f"[signal] no recent tweet from @{actor['handle']} — posting standalone")
+        synthetic_id = f"signal_{signal['handle']}_{int(datetime.utcnow().timestamp())}"
+        await _pipeline(
+            tweet_id      = synthetic_id,
+            tweet_text    = signal_text,
+            actor         = actor,
+            trigger_type  = "signal",
+            trend_context = trigger_context,
+        )
 
 # ── Trend handler ─────────────────────────────────────────────────────────────
 
