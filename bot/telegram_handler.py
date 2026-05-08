@@ -30,6 +30,43 @@ def set_reddit_format_callback(fn):
     global _reddit_format_callback
     _reddit_format_callback = fn
 
+# ── Scheduled tweet review ────────────────────────────────────────────────────
+
+async def send_scheduled_for_review(row_id: int, slot_label: str,
+                                     actor_name: str, tweet_text: str,
+                                     screenshot: bytes | None = None) -> int | None:
+    bot = Bot(token=TELEGRAM_BOT_TOKEN)
+    header = (
+        f"🗓 *Scheduled Tweet*\n"
+        f"Actor: *{actor_name}*\n"
+        f"Slot: `{slot_label}`\n\n"
+        f"```\n{tweet_text[:700]}\n```"
+    )
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("✅ Approve", callback_data=f"sched_approve:{row_id}"),
+        InlineKeyboardButton("❌ Skip",    callback_data=f"sched_skip:{row_id}"),
+    ]])
+    try:
+        if screenshot:
+            msg = await bot.send_photo(
+                chat_id=TELEGRAM_CHAT_ID,
+                photo=io.BytesIO(screenshot),
+                caption=header,
+                parse_mode="Markdown",
+                reply_markup=keyboard,
+            )
+        else:
+            msg = await bot.send_message(
+                chat_id=TELEGRAM_CHAT_ID,
+                text=header,
+                parse_mode="Markdown",
+                reply_markup=keyboard,
+            )
+        return msg.message_id
+    except Exception as e:
+        print(f"[telegram] scheduled send failed: {e}")
+        return None
+
 # ── Shared header builder ─────────────────────────────────────────────────────
 
 def _build_header(actor_name: str, handle: str, trigger: str, trigger_context: str,
@@ -230,6 +267,24 @@ async def _handle_reddit_skip(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.edit_message_reply_markup(reply_markup=None)
     await context.bot.send_message(TELEGRAM_CHAT_ID, "⏭ Reddit post skipped")
 
+async def _handle_sched_approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query  = update.callback_query
+    await query.answer()
+    row_id = int(query.data.split(":")[1])
+
+    db.mark_scheduled_approved(row_id)
+    await query.edit_message_reply_markup(reply_markup=None)
+    await context.bot.send_message(TELEGRAM_CHAT_ID, "✅ Scheduled tweet approved — will post at the scheduled time.")
+
+async def _handle_sched_skip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query  = update.callback_query
+    await query.answer()
+    row_id = int(query.data.split(":")[1])
+
+    db.mark_scheduled_rejected(row_id)
+    await query.edit_message_reply_markup(reply_markup=None)
+    await context.bot.send_message(TELEGRAM_CHAT_ID, "⏭ Scheduled tweet skipped.")
+
 # ── App builder ───────────────────────────────────────────────────────────────
 
 def build_app() -> Application:
@@ -243,5 +298,7 @@ def build_app() -> Application:
     _app.add_handler(CallbackQueryHandler(_handle_reddit_format_skip,pattern=r"^reddit_format_skip:"))
     _app.add_handler(CallbackQueryHandler(_handle_reddit_approve,    pattern=r"^reddit_approve:"))
     _app.add_handler(CallbackQueryHandler(_handle_reddit_skip,       pattern=r"^reddit_skip:"))
+    _app.add_handler(CallbackQueryHandler(_handle_sched_approve,     pattern=r"^sched_approve:"))
+    _app.add_handler(CallbackQueryHandler(_handle_sched_skip,        pattern=r"^sched_skip:"))
 
     return _app

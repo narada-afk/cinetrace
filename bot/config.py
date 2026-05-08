@@ -1,7 +1,11 @@
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv("/opt/cinetrace/.env")
+# Load from production path first, fall back to repo root .env for local dev
+_prod_env = Path("/opt/cinetrace/.env")
+_local_env = Path(__file__).parent.parent / ".env"
+load_dotenv(_prod_env if _prod_env.exists() else _local_env)
 
 TWITTER_API_KEY             = os.environ["TWITTER_API_KEY"]
 TWITTER_API_SECRET          = os.environ["TWITTER_API_SECRET"]

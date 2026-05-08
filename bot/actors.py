@@ -16,7 +16,7 @@ ACTORS: list[dict] = [
     {"name": "Kalyan Ram",         "db_name": "Kalyan Ram",           "handle": "NANDAMURIKALYAN", "industry": "Telugu"},
     # Tamil
     {"name": "Kamal Haasan",       "db_name": "Kamal Haasan",         "handle": "ikamalhaasan",    "industry": "Tamil"},
-    {"name": "Vijay",              "db_name": "CM Vijay",             "handle": "actorvijay",      "industry": "Tamil"},
+    {"name": "Vijay",              "db_name": "Vijay",                "handle": "actorvijay",      "industry": "Tamil"},
     {"name": "Dhanush",            "db_name": "Dhanush",              "handle": "dhanushkraja",    "industry": "Tamil"},
     {"name": "Suriya",             "db_name": "Suriya",               "handle": "Suriya_offl",     "industry": "Tamil"},
     {"name": "Sivakarthikeyan",    "db_name": "Sivakarthikeyan",      "handle": "Siva_Kartikeyan", "industry": "Tamil"},
@@ -34,7 +34,7 @@ ACTORS: list[dict] = [
     {"name": "Unni Mukundan",      "db_name": "Unni Mukundan",        "handle": "Iamunnimukundan", "industry": "Malayalam"},
     # Kannada
     {"name": "Yash",               "db_name": "Yash",                 "handle": "TheNameIsYash",   "industry": "Kannada"},
-    {"name": "Sudeep",             "db_name": "Sudeep",               "handle": "KicchaSudeep",    "industry": "Kannada"},
+    {"name": "Sudeep",             "db_name": "Sudeepa",              "handle": "KicchaSudeep",    "industry": "Kannada"},
     {"name": "Upendra",            "db_name": "Upendra",              "handle": "nimmaupendra",    "industry": "Kannada"},
     {"name": "Darshan",            "db_name": "Darshan",              "handle": "dasadarshan",     "industry": "Kannada"},
     {"name": "Rakshit Shetty",     "db_name": "Rakshit Shetty",       "handle": "rakshitshetty",   "industry": "Kannada"},
