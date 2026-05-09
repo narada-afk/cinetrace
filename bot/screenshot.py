@@ -3,9 +3,9 @@ screenshot.py
 =============
 Captures the actor page section as a PNG for attaching to tweets.
 
-Strategy: navigate to the actor page, find the section by its heading text,
-scroll to it, screenshot the containing card element directly.
-No html2canvas, no share modal — pure Playwright element screenshot.
+Strategy: navigate to the actor page, find the H2 section heading,
+scroll to it, then clip a fixed-height window starting from the heading.
+This avoids relying on container sizing which varies by data quantity.
 """
 
 import re
@@ -13,18 +13,22 @@ import asyncio
 from playwright.async_api import async_playwright
 from config import CINETRACE_BASE_URL
 
-# Maps inventory section → heading text to locate on the page
+# Maps inventory section → text fragment in the H2 heading
 _SECTION_HEADINGS = {
-    "directors":    "Directors Worked With",
+    "directors":     "Directors Worked With",
     "collaborators": "Lead Actresses",
-    "blockbusters": "Blockbusters",
+    "blockbusters":  "Blockbusters",
 }
+
+# How tall a window to capture below the heading (px)
+# Tall enough to show cards but not bleed into the next section
+_SECTION_HEIGHT = 560
 
 
 async def capture_section_snapshot(slug: str, section: str) -> bytes | None:
     """
-    Returns PNG bytes for the given actor + section card.
-    Falls back to the actor hero above-fold if section not found.
+    Returns PNG bytes for the given actor + section.
+    Falls back to the actor hero above-fold if the section heading isn't found.
     """
     url = f"{CINETRACE_BASE_URL}/actors/{slug}"
     try:
@@ -34,49 +38,46 @@ async def capture_section_snapshot(slug: str, section: str) -> bytes | None:
                 args=["--no-sandbox", "--disable-setuid-sandbox"],
             )
             page = await browser.new_page(
-                viewport={"width": 1280, "height": 900},
+                viewport={"width": 1280, "height": _SECTION_HEIGHT + 200},
                 color_scheme="dark",
             )
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            await page.wait_for_timeout(3000)  # let lazy sections + data fetches render
+            await page.wait_for_timeout(4000)  # let lazy API sections render
 
             heading_text = _SECTION_HEADINGS.get(section)
 
             if heading_text:
-                # Find the section by its H2 heading text, walk up 3 levels to the card container
-                JS = f"""() => {{
-                    const headings = Array.from(document.querySelectorAll("h2"));
-                    const h = headings.find(el => el.textContent.includes("{heading_text}"));
-                    if (!h) return null;
-                    // Walk up 3 ancestors to reach the section card div
-                    let el = h.parentElement?.parentElement?.parentElement;
-                    if (!el) return null;
-                    const rect = el.getBoundingClientRect();
-                    return {{ x: rect.x, y: rect.y + window.scrollY, w: rect.width, h: rect.height }};
-                }}"""
-                box = await page.evaluate(JS)
+                JS = (
+                    "() => {"
+                    "  const hs = Array.from(document.querySelectorAll('h2'));"
+                    "  const h = hs.find(el => el.textContent.includes('" + heading_text + "'));"
+                    "  if (!h) return null;"
+                    "  const rect = h.getBoundingClientRect();"
+                    "  return { x: rect.x, y: rect.y + window.scrollY, w: rect.width };"
+                    "}"
+                )
+                pos = await page.evaluate(JS)
 
-                if box and box["h"] > 200:
-                    # Scroll element into view, then clip-screenshot it
-                    clip_x = max(0, box["x"] - 16)
-                    clip_y = max(0, box["y"] - 16)
-                    clip_w = min(box["w"] + 32, 1280)
-                    clip_h = min(box["h"] + 32, 1400)
-                    # Ensure aspect ratio isn't too extreme for Telegram (max ~4:1)
-                    if clip_w / clip_h > 4:
-                        clip_h = clip_w // 4
-                    await page.evaluate(f"window.scrollTo(0, {max(0, box['y'] - 40)})")
-                    await page.wait_for_timeout(500)
+                if pos:
+                    # Scroll so the heading lands near the top of the viewport
+                    await page.evaluate(f"window.scrollTo(0, {max(0, pos['y'] - 12)})")
+                    await page.wait_for_timeout(400)
+                    # clip coords are viewport-relative — y=0 is the top of the
+                    # visible area after the scroll above
                     png = await page.screenshot(
                         type="png",
-                        clip={"x": clip_x, "y": clip_y, "width": clip_w, "height": clip_h},
+                        clip={
+                            "x":      max(0, pos["x"] - 16),
+                            "y":      0,
+                            "width":  min(pos["w"] + 32, 1280),
+                            "height": _SECTION_HEIGHT,
+                        },
                     )
                     await browser.close()
                     return png
                 else:
-                    print(f"[screenshot] section '{heading_text}' not found or too small (box={box}), falling back")
+                    print(f"[screenshot] heading '{heading_text}' not found for {slug}, falling back")
 
-            # Fallback: screenshot the hero / above-fold area
             return await _fallback(page, browser)
 
     except Exception as e:
@@ -85,6 +86,7 @@ async def capture_section_snapshot(slug: str, section: str) -> bytes | None:
 
 
 async def _fallback(page, browser) -> bytes | None:
+    """Screenshot the actor hero / above-fold area."""
     try:
         png = await page.screenshot(
             type="png",
@@ -100,6 +102,6 @@ async def _fallback(page, browser) -> bytes | None:
 def actor_slug(db_name: str) -> str:
     """Convert DB name to URL slug: 'Jr. NTR' → 'jr-ntr', 'Ram Charan' → 'ram-charan'"""
     s = db_name.lower()
-    s = re.sub(r'[^a-z0-9\s]', '', s)   # strip punctuation (dots, apostrophes, etc.)
-    s = re.sub(r'\s+', '-', s.strip())   # spaces → hyphens
+    s = re.sub(r'[^a-z0-9\s]', '', s)
+    s = re.sub(r'\s+', '-', s.strip())
     return s
