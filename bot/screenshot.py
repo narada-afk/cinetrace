@@ -1,35 +1,32 @@
 """
 screenshot.py
 =============
-Captures the share snapshot image from a cinetrace actor page section —
-the same PNG the user sees when they click "Share snapshot" on the site.
+Captures the actor page section as a PNG for attaching to tweets.
 
-Flow:
-  1. Navigate to /actors/{slug}
-  2. Click the share button for the target section (directors / collaborators / blockbusters / overview)
-  3. Wait for the modal + html2canvas to finish rendering
-  4. Extract the data URL from the <img> preview inside the modal
-  5. Return as PNG bytes → attach to tweet via Twitter media upload
+Strategy: navigate to the actor page, find the section by its heading text,
+scroll to it, screenshot the containing card element directly.
+No html2canvas, no share modal — pure Playwright element screenshot.
 """
 
-import base64
+import re
 import asyncio
 from playwright.async_api import async_playwright
 from config import CINETRACE_BASE_URL
 
-# Maps inventory `section` value → aria-label of the share button on the page
-_SECTION_LABELS = {
-    "directors":    "Share Directors Worked With",
-    "collaborators":"Share ✨ Lead Actresses",
-    "blockbusters": "Share Blockbusters",
+# Maps inventory section → heading text to locate on the page
+_SECTION_HEADINGS = {
+    "directors":    "Directors Worked With",
+    "collaborators": "Lead Actresses",
+    "blockbusters": "Blockbusters",
 }
 
-async def capture_section_snapshot(actor_slug: str, section: str) -> bytes | None:
+
+async def capture_section_snapshot(slug: str, section: str) -> bytes | None:
     """
-    Returns PNG bytes of the share snapshot card for the given actor + section.
-    Falls back to a viewport screenshot of the hero area if anything fails.
+    Returns PNG bytes for the given actor + section card.
+    Falls back to the actor hero above-fold if section not found.
     """
-    url = f"{CINETRACE_BASE_URL}/actors/{actor_slug}"
+    url = f"{CINETRACE_BASE_URL}/actors/{slug}"
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(
@@ -41,52 +38,58 @@ async def capture_section_snapshot(actor_slug: str, section: str) -> bytes | Non
                 color_scheme="dark",
             )
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            await page.wait_for_timeout(3000)   # let lazy sections + data fetches render
+            await page.wait_for_timeout(3000)  # let lazy sections + data fetches render
 
-            label = _SECTION_LABELS.get(section)
+            heading_text = _SECTION_HEADINGS.get(section)
 
-            if label:
-                # Find and click the share button for this section
-                btn = page.get_by_role("button", name=label)
-                if await btn.count() == 0:
-                    print(f"[screenshot] share button not found: '{label}', falling back")
-                    return await _fallback(page, browser)
+            if heading_text:
+                # Find the section by its H2 heading text, walk up 3 levels to the card container
+                JS = f"""() => {{
+                    const headings = Array.from(document.querySelectorAll("h2"));
+                    const h = headings.find(el => el.textContent.includes("{heading_text}"));
+                    if (!h) return null;
+                    // Walk up 3 ancestors to reach the section card div
+                    let el = h.parentElement?.parentElement?.parentElement;
+                    if (!el) return null;
+                    const rect = el.getBoundingClientRect();
+                    return {{ x: rect.x, y: rect.y + window.scrollY, w: rect.width, h: rect.height }};
+                }}"""
+                box = await page.evaluate(JS)
 
-                await btn.scroll_into_view_if_needed()
-                await btn.click()
+                if box and box["h"] > 80:
+                    # Scroll element into view, then clip-screenshot it
+                    await page.evaluate(f"window.scrollTo(0, {max(0, box['y'] - 40)})")
+                    await page.wait_for_timeout(500)
+                    png = await page.screenshot(
+                        type="png",
+                        clip={
+                            "x":      max(0, box["x"] - 16),
+                            "y":      max(0, box["y"] - 16),
+                            "width":  min(box["w"] + 32, 1280),
+                            "height": min(box["h"] + 32, 1400),
+                        },
+                    )
+                    await browser.close()
+                    return png
+                else:
+                    print(f"[screenshot] section '{heading_text}' not found or too small (box={box}), falling back")
 
-                # Wait for modal img with a data URL src (html2canvas output)
-                img = page.locator('img[alt="Section preview"]')
-                await img.wait_for(timeout=12000)
-
-                # Extract data URL → decode to bytes
-                data_url = await img.get_attribute("src")
-                await browser.close()
-
-                if data_url and data_url.startswith("data:image/png;base64,"):
-                    return base64.b64decode(data_url.split(",", 1)[1])
-
-                print(f"[screenshot] unexpected img src format, falling back")
-                return None
-
-            else:
-                # "overview" — screenshot the hero / above-fold area
-                result = await _fallback(page, browser)
-                return result
+            # Fallback: screenshot the hero / above-fold area
+            return await _fallback(page, browser)
 
     except Exception as e:
-        print(f"[screenshot] failed for {actor_slug}/{section}: {e}")
+        print(f"[screenshot] failed for {slug}/{section}: {e}")
         return None
 
 
 async def _fallback(page, browser) -> bytes | None:
     try:
-        screenshot = await page.screenshot(
+        png = await page.screenshot(
             type="png",
             clip={"x": 0, "y": 0, "width": 1280, "height": 670},
         )
         await browser.close()
-        return screenshot
+        return png
     except Exception as e:
         print(f"[screenshot] fallback failed: {e}")
         return None
@@ -94,7 +97,6 @@ async def _fallback(page, browser) -> bytes | None:
 
 def actor_slug(db_name: str) -> str:
     """Convert DB name to URL slug: 'Jr. NTR' → 'jr-ntr', 'Ram Charan' → 'ram-charan'"""
-    import re
     s = db_name.lower()
     s = re.sub(r'[^a-z0-9\s]', '', s)   # strip punctuation (dots, apostrophes, etc.)
     s = re.sub(r'\s+', '-', s.strip())   # spaces → hyphens
