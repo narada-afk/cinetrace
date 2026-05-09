@@ -486,9 +486,8 @@ async def main():
     # 9:30 PM — retry (no-op if already generated)
     for _gen_min in (0, 30):
         scheduler.add_job(
-            lambda: asyncio.create_task(
-                broadcaster.generate_daily_schedule(telegram_handler.send_scheduled_for_review)
-            ),
+            broadcaster.generate_daily_schedule,
+            args=[telegram_handler.send_scheduled_for_review],
             trigger="cron", hour=GENERATION_HOUR, minute=_gen_min,
             id=f"daily_schedule_gen_{_gen_min}", replace_existing=True,
         )
@@ -496,7 +495,8 @@ async def main():
     # Slot posters — 7am, 10am, 1pm, 4pm, 7pm, 10pm IST
     for slot_h in SLOT_HOURS:
         scheduler.add_job(
-            lambda h=slot_h: asyncio.create_task(broadcaster.post_scheduled_slot(h)),
+            broadcaster.post_scheduled_slot,
+            args=[slot_h],
             trigger="cron", hour=slot_h, minute=0,
             id=f"slot_{slot_h}h", replace_existing=True,
         )
