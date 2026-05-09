@@ -19,9 +19,9 @@ from config import CINETRACE_BASE_URL
 
 # Maps inventory `section` value → aria-label of the share button on the page
 _SECTION_LABELS = {
-    "directors":    "Share Directors section",
-    "collaborators":"Share Collaborators section",
-    "blockbusters": "Share Blockbusters section",
+    "directors":    "Share Directors Worked With",
+    "collaborators":"Share ✨ Lead Actresses",
+    "blockbusters": "Share Blockbusters",
 }
 
 async def capture_section_snapshot(actor_slug: str, section: str) -> bytes | None:
@@ -40,8 +40,8 @@ async def capture_section_snapshot(actor_slug: str, section: str) -> bytes | Non
                 viewport={"width": 1280, "height": 900},
                 color_scheme="dark",
             )
-            await page.goto(url, wait_until="networkidle", timeout=25000)
-            await page.wait_for_timeout(1500)   # let lazy sections render
+            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            await page.wait_for_timeout(3000)   # let lazy sections + data fetches render
 
             label = _SECTION_LABELS.get(section)
 
