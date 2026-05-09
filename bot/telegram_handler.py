@@ -48,20 +48,23 @@ async def send_scheduled_for_review(row_id: int, slot_label: str,
     ]])
     try:
         if screenshot:
-            msg = await bot.send_photo(
-                chat_id=TELEGRAM_CHAT_ID,
-                photo=io.BytesIO(screenshot),
-                caption=header,
-                parse_mode="Markdown",
-                reply_markup=keyboard,
-            )
-        else:
-            msg = await bot.send_message(
-                chat_id=TELEGRAM_CHAT_ID,
-                text=header,
-                parse_mode="Markdown",
-                reply_markup=keyboard,
-            )
+            try:
+                msg = await bot.send_photo(
+                    chat_id=TELEGRAM_CHAT_ID,
+                    photo=io.BytesIO(screenshot),
+                    caption=header,
+                    parse_mode="Markdown",
+                    reply_markup=keyboard,
+                )
+                return msg.message_id
+            except Exception as photo_err:
+                print(f"[telegram] photo send failed ({photo_err}), falling back to text")
+        msg = await bot.send_message(
+            chat_id=TELEGRAM_CHAT_ID,
+            text=header,
+            parse_mode="Markdown",
+            reply_markup=keyboard,
+        )
         return msg.message_id
     except Exception as e:
         print(f"[telegram] scheduled send failed: {e}")

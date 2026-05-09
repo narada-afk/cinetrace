@@ -56,18 +56,20 @@ async def capture_section_snapshot(slug: str, section: str) -> bytes | None:
                 }}"""
                 box = await page.evaluate(JS)
 
-                if box and box["h"] > 80:
+                if box and box["h"] > 200:
                     # Scroll element into view, then clip-screenshot it
+                    clip_x = max(0, box["x"] - 16)
+                    clip_y = max(0, box["y"] - 16)
+                    clip_w = min(box["w"] + 32, 1280)
+                    clip_h = min(box["h"] + 32, 1400)
+                    # Ensure aspect ratio isn't too extreme for Telegram (max ~4:1)
+                    if clip_w / clip_h > 4:
+                        clip_h = clip_w // 4
                     await page.evaluate(f"window.scrollTo(0, {max(0, box['y'] - 40)})")
                     await page.wait_for_timeout(500)
                     png = await page.screenshot(
                         type="png",
-                        clip={
-                            "x":      max(0, box["x"] - 16),
-                            "y":      max(0, box["y"] - 16),
-                            "width":  min(box["w"] + 32, 1280),
-                            "height": min(box["h"] + 32, 1400),
-                        },
+                        clip={"x": clip_x, "y": clip_y, "width": clip_w, "height": clip_h},
                     )
                     await browser.close()
                     return png
