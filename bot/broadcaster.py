@@ -61,7 +61,7 @@ _KEY_TO_SECTION: dict[str, str] = {
 # ── Tweet formatter ───────────────────────────────────────────────────────────
 
 def _format_tweet(actor_db_name: str, fact: dict) -> str:
-    slug = actor_db_name.lower().replace(" ", "").replace(".", "")
+    slug = ss.actor_slug(actor_db_name)
     url  = f"{CINETRACE_BASE_URL}/actors/{slug}"
 
     parts = [

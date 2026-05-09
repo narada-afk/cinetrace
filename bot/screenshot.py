@@ -93,4 +93,9 @@ async def _fallback(page, browser) -> bytes | None:
 
 
 def actor_slug(db_name: str) -> str:
-    return db_name.lower().replace(" ", "").replace(".", "")
+    """Convert DB name to URL slug: 'Jr. NTR' → 'jr-ntr', 'Ram Charan' → 'ram-charan'"""
+    import re
+    s = db_name.lower()
+    s = re.sub(r'[^a-z0-9\s]', '', s)   # strip punctuation (dots, apostrophes, etc.)
+    s = re.sub(r'\s+', '-', s.strip())   # spaces → hyphens
+    return s
