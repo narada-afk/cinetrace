@@ -18,18 +18,27 @@ import asyncio
 from playwright.async_api import async_playwright
 from config import CINETRACE_SCREENSHOT_URL
 
-# Maps section → H2 heading text to scroll to on the actor page
+# Maps section → H2 heading text to scroll to on the actor page.
+# "career" is handled separately via [data-section="career-chart"] attribute.
 _SECTION_HEADINGS = {
     "directors":     "Directors Worked With",
     "blockbusters":  "Blockbusters",
-    # These all show the "By the Numbers" insight cards — best visual for data tweets
     "collaborators": "By the Numbers",
     "overview":      "By the Numbers",
-    "filmography":   "By the Numbers",
+    # filmography tweets now use the career chart
+    "filmography":   None,
 }
 
 # Fallback height when section bounds can't be calculated
 _SECTION_HEIGHT = 500
+
+# Finds the [data-section] element and returns its bounding rect (document coords)
+_FIND_DATA_SECTION_JS = """(name) => {
+    const el = document.querySelector(`[data-section="${name}"]`);
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return {y: r.top + window.scrollY, x: r.left, w: r.width, h: Math.min(r.height, 700)};
+}"""
 
 _FIND_HEADING_JS = """(heading) => {
     const hs = Array.from(document.querySelectorAll("h2"));
@@ -59,7 +68,11 @@ async def capture_section_snapshot(slug: str, section: str,
     if section == "compare" and compare_with:
         return await _capture_compare(slug, compare_with)
 
-    # ── Actor page sections ───────────────────────────────────────────────────
+    # ── Career chart (data-section attribute, client-rendered) ────────────────
+    if section in ("career", "filmography"):
+        return await _capture_career_chart(slug)
+
+    # ── Actor page sections (H2 heading approach) ─────────────────────────────
     url = f"{CINETRACE_SCREENSHOT_URL}/actors/{slug}"
     heading_text = _SECTION_HEADINGS.get(section)
 
@@ -102,6 +115,61 @@ async def capture_section_snapshot(slug: str, section: str,
 
     except Exception as e:
         print(f"[screenshot] failed for {slug}/{section}: {e}")
+        return None
+
+
+async def _capture_career_chart(slug: str) -> bytes | None:
+    """Screenshot the ActorCareerChart section on the actor page.
+
+    The component is client-rendered and fetches data after hydration, so we
+    wait for the SVG to appear before clipping.
+    """
+    url = f"{CINETRACE_SCREENSHOT_URL}/actors/{slug}"
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-setuid-sandbox"],
+            )
+            page = await browser.new_page(
+                viewport={"width": 1280, "height": 900},
+                color_scheme="dark",
+            )
+            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+
+            # Wait for the career chart SVG to render (client-side fetch + paint)
+            try:
+                await page.wait_for_selector(
+                    '[data-section="career-chart"] svg',
+                    timeout=10000,
+                )
+            except Exception:
+                print(f"[screenshot] career chart SVG not found for {slug}, falling back to hero")
+                return await _hero_fallback(page, browser)
+
+            # Extra tick so the animated line draw starts
+            await page.wait_for_timeout(1200)
+
+            pos = await page.evaluate(_FIND_DATA_SECTION_JS, "career-chart")
+            if not pos:
+                return await _hero_fallback(page, browser)
+
+            await page.evaluate("(y) => window.scrollTo(0, y)", max(0, pos["y"] - 16))
+            await page.wait_for_timeout(300)
+
+            png = await page.screenshot(
+                type="png",
+                clip={
+                    "x":      max(0, pos["x"] - 16),
+                    "y":      0,
+                    "width":  min(pos["w"] + 32, 1280),
+                    "height": min(int(pos["h"]) + 32, 700),
+                },
+            )
+            await browser.close()
+            return png
+    except Exception as e:
+        print(f"[screenshot] career chart failed for {slug}: {e}")
         return None
 
 

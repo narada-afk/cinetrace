@@ -9,6 +9,7 @@ import CollaborationsSection from '@/components/CollaborationsSection'
 import CompareSection from '@/components/CompareSection'
 import ActorConnections from '@/components/ActorConnections'
 import ActorInsightsCarousel from '@/components/ActorInsightsCarousel'
+import ActorCareerChart from '@/components/ActorCareerChart'
 import FullFilmography from '@/components/FullFilmography'
 import {
   getActor,
@@ -184,7 +185,14 @@ export default async function ActorPage({ params, searchParams }: PageProps) {
           movies={movies}
         />
 
-        {/* ── 7. Full Filmography (expandable grid) ─────────────── */}
+        {/* ── 7. Career Chart ───────────────────────────────────── */}
+        <ActorCareerChart
+          actorId={numericId}
+          actorName={actor.name}
+          firstFilmYear={firstFilm?.release_year ?? 1970}
+        />
+
+        {/* ── 8. Full Filmography (expandable grid) ─────────────── */}
         {movies.length > 0 && (
           <FullFilmography movies={movies} />
         )}
