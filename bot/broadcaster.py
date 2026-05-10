@@ -58,6 +58,14 @@ _KEY_TO_SECTION: dict[str, str] = {
     for f in facts
 }
 
+# stat_key → compare_with slug (only for "compare" section facts)
+_KEY_TO_COMPARE_WITH: dict[str, str] = {
+    f["key"]: f.get("compare_with", "")
+    for facts in FACTS.values()
+    for f in facts
+    if f.get("compare_with")
+}
+
 # ── Tweet formatter ───────────────────────────────────────────────────────────
 
 def _format_tweet(actor_db_name: str, fact: dict) -> str:
@@ -117,10 +125,12 @@ def _pick_actors_for_day(used_keys_last_7_days: set[str]) -> list[str]:
 
 # ── Snapshot helper ───────────────────────────────────────────────────────────
 
-async def _capture(actor_db_name: str, section: str) -> bytes | None:
+async def _capture(actor_db_name: str, section: str,
+                   compare_with: str = "") -> bytes | None:
     slug = ss.actor_slug(actor_db_name)
     try:
-        return await ss.capture_section_snapshot(slug, section)
+        return await ss.capture_section_snapshot(slug, section,
+                                                  compare_with=compare_with)
     except Exception as e:
         print(f"[broadcaster] snapshot failed for {actor_db_name}/{section}: {e}")
         return None
@@ -161,8 +171,9 @@ async def generate_daily_schedule(send_for_review_fn) -> None:
             continue
 
         fact = random.choice(fresh_facts)
-        section   = fact.get("section", "overview")
-        tweet_text = _format_tweet(actor_db_name, fact)
+        section      = fact.get("section", "overview")
+        compare_with = fact.get("compare_with", "")
+        tweet_text   = _format_tweet(actor_db_name, fact)
 
         row_id = db.insert_scheduled_tweet(
             scheduled_date = tomorrow,
@@ -174,7 +185,7 @@ async def generate_daily_schedule(send_for_review_fn) -> None:
         )
 
         # Capture share snapshot for Telegram preview
-        png = await _capture(actor_db_name, section)
+        png = await _capture(actor_db_name, section, compare_with=compare_with)
 
         slot_label = datetime(tomorrow.year, tomorrow.month, tomorrow.day,
                               slot_hour, 0, tzinfo=IST).strftime("%-I:%M %p IST")
@@ -212,10 +223,11 @@ async def post_scheduled_slot(slot_hour: int) -> None:
 
     actor_db_name = row["actor_db_name"]
     section       = row.get("section") or _KEY_TO_SECTION.get(row.get("stat_key", ""), "overview")
+    compare_with  = _KEY_TO_COMPARE_WITH.get(row.get("stat_key", ""), "")
 
     # Capture share snapshot to attach to tweet
     media_ids: list[str] | None = None
-    png = await _capture(actor_db_name, section)
+    png = await _capture(actor_db_name, section, compare_with=compare_with)
     if png:
         try:
             media = _api_v1.media_upload(filename="snapshot.png", file=io.BytesIO(png))

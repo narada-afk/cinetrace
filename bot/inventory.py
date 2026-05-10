@@ -7,11 +7,13 @@ Every fact here must be: genuinely surprising, number-backed, debate-worthy.
 Tweet assembled as:
     {hook}\n\n{body}\n\n📊 {url}\n{hashtags}
 
-section values → which cinetrace share card to screenshot:
-  "directors"      → #directors   (purple card)
-  "collaborators"  → #collaborators (teal card)
-  "blockbusters"   → #blockbusters  (gold card)
-  "overview"       → actor hero section (full page above-fold)
+section values → which cinetrace page/section to screenshot:
+  "directors"    → actor page "Directors Worked With" section
+  "collaborators"→ actor page "By the Numbers" insight cards
+  "blockbusters" → actor page "Blockbusters" section
+  "overview"     → actor page "By the Numbers" insight cards (general stats)
+  "filmography"  → actor page "By the Numbers" (decade/career-count facts)
+  "compare"      → /compare/{actor}-vs-{compare_with} page (needs compare_with field)
 """
 
 from __future__ import annotations
@@ -22,15 +24,16 @@ FACTS: dict[str, list[dict]] = {
 
     "Kamal Haasan": [
         {
-            "key":     "kh_vs_rajini",
-            "section": "overview",
+            "key":          "kh_vs_rajini",
+            "section":      "compare",
+            "compare_with": "rajinikanth",
             "hook":    "Kamal Haasan has 54 MORE films than Rajinikanth.",
             "body":    "246 vs 192.\nYet the debate about who is bigger never ends.\nThat is the magic of Rajini.",
             "hashtags": "#KamalHaasan #Rajinikanth #Kollywood",
         },
         {
             "key":     "kh_70s_insane",
-            "section": "overview",
+            "section": "filmography",
             "hook":    "Kamal Haasan made 104 films in the 1970s alone.",
             "body":    "That single decade has more films than Allu Arjun's entire career.\n104 films. One decade. One man.",
             "hashtags": "#KamalHaasan #Kollywood #SouthCinema",
@@ -70,7 +73,7 @@ FACTS: dict[str, list[dict]] = {
     "Rajinikanth": [
         {
             "key":     "rj_85_in_80s",
-            "section": "overview",
+            "section": "filmography",
             "hook":    "Rajinikanth did 85 films in just the 1980s.",
             "body":    "That is nearly 9 films a year for a full decade.\nThe entire filmographies of Yash, Ram Charan, and Allu Arjun — combined — don't match that.",
             "hashtags": "#Rajinikanth #Superstar #Kollywood",
@@ -110,7 +113,7 @@ FACTS: dict[str, list[dict]] = {
         },
         {
             "key":     "mm_80s_206",
-            "section": "overview",
+            "section": "filmography",
             "hook":    "Mammootty made 206 films in the 1980s alone.",
             "body":    "That is more than Ram Charan, Allu Arjun, Yash, and Jr. NTR's entire careers — combined.\nOne decade. 206 films.",
             "hashtags": "#Mammootty #Mollywood #SouthCinema",
@@ -164,7 +167,7 @@ FACTS: dict[str, list[dict]] = {
         },
         {
             "key":     "ml_80s_166",
-            "section": "overview",
+            "section": "filmography",
             "hook":    "Mohanlal made 166 films in just the 1980s.",
             "body":    "That is over 16 films a year for a decade.\nAnd somehow, each role was different.",
             "hashtags": "#Mohanlal #Lalettan #Mollywood",
@@ -182,15 +185,16 @@ FACTS: dict[str, list[dict]] = {
             "hashtags": "#Vijay #Thalapathy #Kollywood",
         },
         {
-            "key":     "vj_ajith_343",
-            "section": "overview",
+            "key":          "vj_ajith_343",
+            "section":      "compare",
+            "compare_with": "ajith-kumar",
             "hook":    "Vijay and Ajith have worked with the EXACT same number of actors. 343 each.",
             "body":    "Same era. Same industry. Same network depth.\nThe biggest rivalry in Tamil cinema is mathematically even.",
             "hashtags": "#Vijay #Ajith #Kollywood",
         },
         {
             "key":     "vj_90s_24",
-            "section": "overview",
+            "section": "filmography",
             "hook":    "Vijay made 24 films in the 1990s — before anyone knew his name.",
             "body":    "His busiest decade came before his biggest fame.\n24 films in the 90s. Most fans have seen none of them.",
             "hashtags": "#Vijay #Thalapathy #Kollywood",
@@ -208,15 +212,16 @@ FACTS: dict[str, list[dict]] = {
 
     "Ajith Kumar": [
         {
-            "key":     "ak_vijay_343",
-            "section": "overview",
+            "key":          "ak_vijay_343",
+            "section":      "compare",
+            "compare_with": "vijay",
             "hook":    "Ajith and Vijay have worked with exactly 343 actors each.",
             "body":    "Same count. Same era. Same industry.\nThe biggest rivalry in Tamil cinema is perfectly balanced — the data says draw.",
             "hashtags": "#Ajith #Thala #Vijay #Kollywood",
         },
         {
             "key":     "ak_90s_26",
-            "section": "overview",
+            "section": "filmography",
             "hook":    "Ajith made 26 films in the 1990s — before superstardom.",
             "body":    "His most productive decade was also his least celebrated.\n26 films before anyone called him Thala.",
             "hashtags": "#Ajith #Thala #Kollywood",

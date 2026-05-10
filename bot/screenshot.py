@@ -1,11 +1,16 @@
 """
 screenshot.py
 =============
-Captures the actor page section as a PNG for attaching to tweets.
+Captures actor page sections as PNGs for tweet attachments.
 
-Strategy: navigate to the actor page, find the H2 section heading,
-scroll to it, then clip a fixed-height window starting from the heading.
-This avoids relying on container sizing which varies by data quantity.
+Section → page strategy:
+  "directors"    → actor page "Directors Worked With" heading, 600px window
+  "blockbusters" → actor page "Blockbusters" heading, 600px window
+  "collaborators"→ actor page "By the Numbers" (insight cards)
+  "overview"     → actor page "By the Numbers" (insight cards)
+  "filmography"  → actor page "By the Numbers" (All Films has unloaded images)
+  "compare"      → /compare/{slug}-vs-{compare_with} page, above-fold
+  fallback       → actor page hero above-fold (670px)
 """
 
 import re
@@ -13,27 +18,44 @@ import asyncio
 from playwright.async_api import async_playwright
 from config import CINETRACE_SCREENSHOT_URL
 
-# Maps inventory section → text fragment in the H2 heading on the actor page.
-# "collaborators" → "By the Numbers" shows the insight cards (Iconic Pair, Leading Ladies, etc.)
-# which is the best visual for connection/co-star tweets.
+# Maps section → H2 heading text to scroll to on the actor page
 _SECTION_HEADINGS = {
     "directors":     "Directors Worked With",
-    "collaborators": "By the Numbers",
     "blockbusters":  "Blockbusters",
+    # These all show the "By the Numbers" insight cards — best visual for data tweets
+    "collaborators": "By the Numbers",
+    "overview":      "By the Numbers",
+    "filmography":   "By the Numbers",
 }
 
-# How tall a window to capture below the heading (px).
-# 600px covers the tallest section (By the Numbers insight cards ~370px)
-# without bleeding into the next section for shorter ones.
+# Fixed height of the captured window (px)
 _SECTION_HEIGHT = 600
 
+_FIND_HEADING_JS = """(heading) => {
+    const hs = Array.from(document.querySelectorAll("h2"));
+    const h = hs.find(el => el.textContent.includes(heading));
+    if (!h) return null;
+    const r = h.getBoundingClientRect();
+    return {y: r.top + window.scrollY, x: r.x, w: r.width};
+}"""
 
-async def capture_section_snapshot(slug: str, section: str) -> bytes | None:
+
+async def capture_section_snapshot(slug: str, section: str,
+                                   compare_with: str = "") -> bytes | None:
     """
     Returns PNG bytes for the given actor + section.
-    Falls back to the actor hero above-fold if the section heading isn't found.
+    Falls back to actor hero if the section heading isn't found.
+
+    compare_with: second actor slug, required when section == "compare".
     """
+    # ── Compare page ──────────────────────────────────────────────────────────
+    if section == "compare" and compare_with:
+        return await _capture_compare(slug, compare_with)
+
+    # ── Actor page sections ───────────────────────────────────────────────────
     url = f"{CINETRACE_SCREENSHOT_URL}/actors/{slug}"
+    heading_text = _SECTION_HEADINGS.get(section)
+
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(
@@ -45,28 +67,14 @@ async def capture_section_snapshot(slug: str, section: str) -> bytes | None:
                 color_scheme="dark",
             )
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            await page.wait_for_timeout(4000)  # let lazy API sections render
-
-            heading_text = _SECTION_HEADINGS.get(section)
+            await page.wait_for_timeout(4000)
 
             if heading_text:
-                JS = (
-                    "() => {"
-                    "  const hs = Array.from(document.querySelectorAll('h2'));"
-                    "  const h = hs.find(el => el.textContent.includes('" + heading_text + "'));"
-                    "  if (!h) return null;"
-                    "  const rect = h.getBoundingClientRect();"
-                    "  return { x: rect.x, y: rect.y + window.scrollY, w: rect.width };"
-                    "}"
-                )
-                pos = await page.evaluate(JS)
-
+                pos = await page.evaluate(_FIND_HEADING_JS, heading_text)
                 if pos:
-                    # Scroll so the heading lands near the top of the viewport
-                    await page.evaluate(f"window.scrollTo(0, {max(0, pos['y'] - 12)})")
+                    await page.evaluate("(y) => window.scrollTo(0, y)",
+                                        max(0, pos["y"] - 12))
                     await page.wait_for_timeout(400)
-                    # clip coords are viewport-relative — y=0 is the top of the
-                    # visible area after the scroll above
                     png = await page.screenshot(
                         type="png",
                         clip={
@@ -79,16 +87,43 @@ async def capture_section_snapshot(slug: str, section: str) -> bytes | None:
                     await browser.close()
                     return png
                 else:
-                    print(f"[screenshot] heading '{heading_text}' not found for {slug}, falling back")
+                    print(f"[screenshot] '{heading_text}' not found for {slug}, "
+                          f"falling back to hero")
 
-            return await _fallback(page, browser)
+            return await _hero_fallback(page, browser)
 
     except Exception as e:
         print(f"[screenshot] failed for {slug}/{section}: {e}")
         return None
 
 
-async def _fallback(page, browser) -> bytes | None:
+async def _capture_compare(slug1: str, slug2: str) -> bytes | None:
+    """Screenshot the /compare/{slug1}-vs-{slug2} page above-fold."""
+    url = f"{CINETRACE_SCREENSHOT_URL}/compare/{slug1}-vs-{slug2}"
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-setuid-sandbox"],
+            )
+            page = await browser.new_page(
+                viewport={"width": 1280, "height": 800},
+                color_scheme="dark",
+            )
+            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            await page.wait_for_timeout(4000)
+            png = await page.screenshot(
+                type="png",
+                clip={"x": 0, "y": 0, "width": 1280, "height": 700},
+            )
+            await browser.close()
+            return png
+    except Exception as e:
+        print(f"[screenshot] compare failed for {slug1}-vs-{slug2}: {e}")
+        return None
+
+
+async def _hero_fallback(page, browser) -> bytes | None:
     """Screenshot the actor hero / above-fold area."""
     try:
         png = await page.screenshot(
@@ -103,7 +138,7 @@ async def _fallback(page, browser) -> bytes | None:
 
 
 def actor_slug(db_name: str) -> str:
-    """Convert DB name to URL slug: 'Jr. NTR' → 'jr-ntr', 'Ram Charan' → 'ram-charan'"""
+    """'Jr. NTR' → 'jr-ntr', 'Ram Charan' → 'ram-charan'"""
     s = db_name.lower()
     s = re.sub(r'[^a-z0-9\s]', '', s)
     s = re.sub(r'\s+', '-', s.strip())
