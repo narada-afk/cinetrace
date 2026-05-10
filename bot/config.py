@@ -18,7 +18,10 @@ TELEGRAM_BOT_TOKEN  = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID    = int(os.environ["TELEGRAM_CHAT_ID"])
 
 DATABASE_URL        = os.environ["DATABASE_URL"]
-CINETRACE_BASE_URL  = os.getenv("CINETRACE_BASE_URL", "https://cinetrace.in")
+CINETRACE_BASE_URL    = os.getenv("CINETRACE_BASE_URL", "https://cinetrace.in")
+# Internal URL used by Playwright inside Docker — avoids Cloudflare/SSL overhead.
+# Falls back to the public URL so local dev works without setting this.
+CINETRACE_SCREENSHOT_URL = os.getenv("CINETRACE_SCREENSHOT_URL", CINETRACE_BASE_URL)
 CINETRACE_API_URL   = "http://backend:8000"
 
 # Reddit (optional — monitor disabled if not set)

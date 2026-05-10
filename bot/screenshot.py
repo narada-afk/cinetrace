@@ -11,18 +11,21 @@ This avoids relying on container sizing which varies by data quantity.
 import re
 import asyncio
 from playwright.async_api import async_playwright
-from config import CINETRACE_BASE_URL
+from config import CINETRACE_SCREENSHOT_URL
 
-# Maps inventory section → text fragment in the H2 heading
+# Maps inventory section → text fragment in the H2 heading on the actor page.
+# "collaborators" → "By the Numbers" shows the insight cards (Iconic Pair, Leading Ladies, etc.)
+# which is the best visual for connection/co-star tweets.
 _SECTION_HEADINGS = {
     "directors":     "Directors Worked With",
-    "collaborators": "Lead Actresses",
+    "collaborators": "By the Numbers",
     "blockbusters":  "Blockbusters",
 }
 
-# How tall a window to capture below the heading (px)
-# Tall enough to show cards but not bleed into the next section
-_SECTION_HEIGHT = 560
+# How tall a window to capture below the heading (px).
+# 600px covers the tallest section (By the Numbers insight cards ~370px)
+# without bleeding into the next section for shorter ones.
+_SECTION_HEIGHT = 600
 
 
 async def capture_section_snapshot(slug: str, section: str) -> bytes | None:
@@ -30,7 +33,7 @@ async def capture_section_snapshot(slug: str, section: str) -> bytes | None:
     Returns PNG bytes for the given actor + section.
     Falls back to the actor hero above-fold if the section heading isn't found.
     """
-    url = f"{CINETRACE_BASE_URL}/actors/{slug}"
+    url = f"{CINETRACE_SCREENSHOT_URL}/actors/{slug}"
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(
