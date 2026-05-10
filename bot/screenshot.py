@@ -28,15 +28,22 @@ _SECTION_HEADINGS = {
     "filmography":   "By the Numbers",
 }
 
-# Fixed height of the captured window (px)
-_SECTION_HEIGHT = 600
+# Fallback height when section bounds can't be calculated
+_SECTION_HEIGHT = 500
 
 _FIND_HEADING_JS = """(heading) => {
     const hs = Array.from(document.querySelectorAll("h2"));
-    const h = hs.find(el => el.textContent.includes(heading));
-    if (!h) return null;
+    const idx = hs.findIndex(el => el.textContent.includes(heading));
+    if (idx < 0) return null;
+    const h = hs[idx];
+    const next = hs[idx + 1];
     const r = h.getBoundingClientRect();
-    return {y: r.top + window.scrollY, x: r.x, w: r.width};
+    const sectionTop = r.top + window.scrollY;
+    // Height = distance to next heading, capped at 650px, minimum 200px
+    const sectionH = next
+        ? Math.min(Math.max(next.getBoundingClientRect().top + window.scrollY - sectionTop, 200), 650)
+        : 500;
+    return {y: sectionTop, x: r.x, w: r.width, h: sectionH};
 }"""
 
 
@@ -63,7 +70,7 @@ async def capture_section_snapshot(slug: str, section: str,
                 args=["--no-sandbox", "--disable-setuid-sandbox"],
             )
             page = await browser.new_page(
-                viewport={"width": 1280, "height": _SECTION_HEIGHT + 200},
+                viewport={"width": 1280, "height": 900},
                 color_scheme="dark",
             )
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
@@ -75,13 +82,14 @@ async def capture_section_snapshot(slug: str, section: str,
                     await page.evaluate("(y) => window.scrollTo(0, y)",
                                         max(0, pos["y"] - 12))
                     await page.wait_for_timeout(400)
+                    section_h = int(pos.get("h", _SECTION_HEIGHT))
                     png = await page.screenshot(
                         type="png",
                         clip={
                             "x":      max(0, pos["x"] - 16),
                             "y":      0,
                             "width":  min(pos["w"] + 32, 1280),
-                            "height": _SECTION_HEIGHT,
+                            "height": section_h,
                         },
                     )
                     await browser.close()
