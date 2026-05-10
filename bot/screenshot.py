@@ -106,8 +106,19 @@ async def capture_section_snapshot(slug: str, section: str,
 
 
 async def _capture_compare(slug1: str, slug2: str) -> bytes | None:
-    """Screenshot the /compare/{slug1}-vs-{slug2} page above-fold."""
+    """Screenshot the /compare/{slug1}-vs-{slug2} chart section.
+
+    Scrolls past the actor header / filter controls so the Year vs Metric
+    line chart is the hero of the image.
+    """
     url = f"{CINETRACE_SCREENSHOT_URL}/compare/{slug1}-vs-{slug2}"
+    # JS: find the recharts/svg chart container and return its document Y
+    _FIND_CHART_JS = """() => {
+        const el = document.querySelector('.recharts-wrapper, svg.recharts-surface');
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return r.top + window.scrollY;
+    }"""
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(
@@ -115,15 +126,29 @@ async def _capture_compare(slug1: str, slug2: str) -> bytes | None:
                 args=["--no-sandbox", "--disable-setuid-sandbox"],
             )
             page = await browser.new_page(
-                viewport={"width": 1280, "height": 800},
+                viewport={"width": 1280, "height": 900},
                 color_scheme="dark",
             )
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            await page.wait_for_timeout(4000)
-            png = await page.screenshot(
-                type="png",
-                clip={"x": 0, "y": 0, "width": 1280, "height": 700},
-            )
+            # Extra wait so the interactive chart renders
+            await page.wait_for_timeout(5000)
+
+            chart_y = await page.evaluate(_FIND_CHART_JS)
+            if chart_y and chart_y > 20:
+                # Scroll so chart top is near the top of the viewport
+                scroll_to = max(0, int(chart_y) - 20)
+                await page.evaluate("(y) => window.scrollTo(0, y)", scroll_to)
+                await page.wait_for_timeout(400)
+                png = await page.screenshot(
+                    type="png",
+                    clip={"x": 0, "y": 0, "width": 1280, "height": 620},
+                )
+            else:
+                # Fallback: capture the full above-fold area
+                png = await page.screenshot(
+                    type="png",
+                    clip={"x": 0, "y": 0, "width": 1280, "height": 700},
+                )
             await browser.close()
             return png
     except Exception as e:
