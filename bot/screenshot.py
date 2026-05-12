@@ -14,9 +14,27 @@ Section → page strategy:
 """
 
 import re
+import socket
 import asyncio
 from playwright.async_api import async_playwright
 from config import CINETRACE_SCREENSHOT_URL
+
+def _backend_host_resolver_rules() -> str:
+    """
+    Playwright's Chromium subprocess doesn't use Docker DNS.
+    Resolve both 'backend' and 'frontend' to their container IPs so that:
+      - direct backend API calls work (used by some screenshot paths)
+      - client-side XHRs back to the frontend origin work (career chart uses
+        /api/backend/... proxy, which requires resolving 'frontend')
+    """
+    rules: list[str] = []
+    for host in ("backend", "frontend"):
+        try:
+            ip = socket.gethostbyname(host)
+            rules.append(f"MAP {host} {ip}")
+        except OSError:
+            pass
+    return ", ".join(rules)
 
 # Maps section → H2 heading text to scroll to on the actor page.
 # "career" is handled separately via [data-section="career-chart"] attribute.
@@ -119,17 +137,23 @@ async def capture_section_snapshot(slug: str, section: str,
 
 
 async def _capture_career_chart(slug: str) -> bytes | None:
-    """Screenshot the ActorCareerChart section on the actor page.
+    """Screenshot the ActorCareerChart section.
 
-    The component is client-rendered and fetches data after hydration, so we
-    wait for the SVG to appear before clipping.
+    We load /actors/{slug}/chart — a minimal page that renders ONLY the career
+    chart component, making SSR fast and React hydration near-instant (one
+    component vs the full actor page with 10+ sections).
     """
-    url = f"{CINETRACE_SCREENSHOT_URL}/actors/{slug}"
+    url = f"{CINETRACE_SCREENSHOT_URL}/actors/{slug}/chart"
+    resolver = _backend_host_resolver_rules()
+    chromium_args = ["--no-sandbox", "--disable-setuid-sandbox"]
+    if resolver:
+        chromium_args.append(f"--host-resolver-rules={resolver}")
+
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(
                 headless=True,
-                args=["--no-sandbox", "--disable-setuid-sandbox"],
+                args=chromium_args,
             )
             page = await browser.new_page(
                 viewport={"width": 1280, "height": 900},
@@ -137,11 +161,17 @@ async def _capture_career_chart(slug: str) -> bytes | None:
             )
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
 
-            # Wait for the career chart SVG to render (client-side fetch + paint)
+            # Wait for the career chart SVG to render.
+            # The component is dynamically imported (ssr: false) so we wait for:
+            #   1. React hydration + dynamic chunk download
+            #   2. useEffect fires → /api/backend/stats/chart-data fetched
+            #   3. DualChart SVG painted
+            # With Docker DNS resolution in place, the /api/backend proxy call
+            # resolves correctly and the SVG typically appears within 15 s.
             try:
                 await page.wait_for_selector(
                     '[data-section="career-chart"] svg',
-                    timeout=10000,
+                    timeout=35000,
                 )
             except Exception:
                 print(f"[screenshot] career chart SVG not found for {slug}, falling back to hero")

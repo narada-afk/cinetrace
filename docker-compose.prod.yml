@@ -22,7 +22,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
     # No ports — only reachable by other services on the internal Docker network
     volumes:
-      - postgres_data_prod:/var/lib/postgresql/data
+      - south-cinema-analytics_postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 10s
@@ -88,6 +88,7 @@ services:
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
       BOT_TWITTER_HANDLE: ${BOT_TWITTER_HANDLE}
       CINETRACE_BASE_URL: ${CINETRACE_BASE_URL}
+      CINETRACE_SCREENSHOT_URL: ${CINETRACE_SCREENSHOT_URL:-http://frontend:3000}
       REDDIT_CLIENT_ID: ${REDDIT_CLIENT_ID:-}
       REDDIT_CLIENT_SECRET: ${REDDIT_CLIENT_SECRET:-}
       REDDIT_USERNAME: ${REDDIT_USERNAME:-}
@@ -100,4 +101,5 @@ services:
     restart: unless-stopped
 
 volumes:
-  postgres_data_prod:
+  south-cinema-analytics_postgres_data:
+    external: true
