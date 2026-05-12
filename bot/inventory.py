@@ -106,7 +106,7 @@ FACTS: dict[str, list[dict]] = {
         },
         {
             "key":     "kh_kb_29",
-            "section": "directors",
+            "section": "director-loyalty",
             "hook":    "One director worked with Kamal Haasan 29 times.",
             "body":    "K. Balachander directed Kamal 29 times — the longest actor-director partnership in Tamil film history.\nAlmost 1 in every 8 Kamal films.",
             "hashtags": "#KamalHaasan #Kollywood",
@@ -158,7 +158,7 @@ FACTS: dict[str, list[dict]] = {
         },
         {
             "key":     "rj_sp_24",
-            "section": "directors",
+            "section": "director-loyalty",
             "hook":    "The same director made 24 films with Rajinikanth.",
             "body":    "S.P. Muthuraman directed him 24 times — that is 1 in every 8 Rajini films.\nMost fans have never heard this name.",
             "hashtags": "#Rajinikanth #Superstar #Kollywood",
@@ -249,7 +249,7 @@ FACTS: dict[str, list[dict]] = {
     "Mohanlal": [
         {
             "key":     "ml_priyan_36",
-            "section": "directors",
+            "section": "director-loyalty",
             "hook":    "One director made 36 films with Mohanlal. 36.",
             "body":    "Priyadarshan directed him 36 times — the highest actor-director count on this list.\nThat partnership alone spans three decades.",
             "hashtags": "#Mohanlal #Lalettan #Mollywood",

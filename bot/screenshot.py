@@ -96,6 +96,10 @@ async def capture_section_snapshot(slug: str, section: str,
     if section in ("career", "filmography"):
         return await _capture_career_chart(slug)
 
+    # ── Director loyalty social card (SSR, data-section attribute) ────────────
+    if section == "director-loyalty":
+        return await _capture_director_loyalty(slug)
+
     # ── Actor page sections (H2 heading approach) ─────────────────────────────
     url = f"{CINETRACE_SCREENSHOT_URL}/actors/{slug}"
     heading_text = _SECTION_HEADINGS.get(section)
@@ -206,6 +210,55 @@ async def _capture_career_chart(slug: str) -> bytes | None:
             return png
     except Exception as e:
         print(f"[screenshot] career chart failed for {slug}: {e}")
+        return None
+
+
+async def _capture_director_loyalty(slug: str) -> bytes | None:
+    """Screenshot the /social/director-loyalty/{slug} social card.
+
+    Pure SSR — all data is rendered server-side, no client fetches.
+    DOM is complete after domcontentloaded; 1.5 s covers web-font loading
+    and the actor avatar image settling.
+    """
+    url = f"{CINETRACE_SCREENSHOT_URL}/social/director-loyalty/{slug}"
+    resolver = _backend_host_resolver_rules()
+    chromium_args = ["--no-sandbox", "--disable-setuid-sandbox"]
+    if resolver:
+        chromium_args.append(f"--host-resolver-rules={resolver}")
+
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True, args=chromium_args)
+            page = await browser.new_page(
+                viewport={"width": _VIEWPORT_W, "height": 900},
+                color_scheme="dark",
+            )
+            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            # Fonts + avatar image
+            await page.wait_for_timeout(1500)
+
+            pos = await page.evaluate(_FIND_DATA_SECTION_JS, "director-loyalty")
+            if not pos:
+                print(f"[screenshot] director-loyalty section not found for {slug}")
+                return await _hero_fallback(page, browser)
+
+            # Scroll the card to viewport top, then clip full-width
+            await page.evaluate("(y) => window.scrollTo(0, y)", max(0, int(pos["y"]) - 16))
+            await page.wait_for_timeout(200)
+
+            png = await page.screenshot(
+                type="png",
+                clip={
+                    "x":      0,
+                    "y":      0,
+                    "width":  _VIEWPORT_W,
+                    "height": min(int(pos["h"]) + 40, 600),
+                },
+            )
+            await browser.close()
+            return png
+    except Exception as e:
+        print(f"[screenshot] director loyalty failed for {slug}: {e}")
         return None
 
 
