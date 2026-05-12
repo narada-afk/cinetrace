@@ -70,7 +70,7 @@ export default async function DirectorLoyaltyPage({ params }: PageProps) {
       <div
         data-section="director-loyalty"
         className="mx-auto flex flex-col items-center"
-        style={{ maxWidth: '560px', paddingTop: '48px', paddingBottom: '56px' }}
+        style={{ maxWidth: '560px', paddingTop: '36px', paddingBottom: '52px' }}
       >
 
         {/* ── Actor: the documentary subject ─────────────────────────────── */}
@@ -102,27 +102,28 @@ export default async function DirectorLoyaltyPage({ params }: PageProps) {
             />
           </div>
 
-          {/* Actor name */}
+          {/* Actor name — 14px so it survives 50% feed compression */}
           <p
-            className="text-white/80 uppercase font-light text-center"
-            style={{ fontSize: '12px', letterSpacing: '0.3em' }}
+            className="text-white/80 uppercase text-center"
+            style={{ fontSize: '14px', letterSpacing: '0.2em', fontWeight: 400 }}
           >
             {actor.name}
           </p>
         </div>
 
-        {/* ── Chapter title: the provocation ─────────────────────────────── */}
+        {/* ── Chapter title — subliminal at feed scale, intentional ───────── */}
+        {/* At 47% compression this reads as visual rhythm, not literal text.  */}
+        {/* Tracking reduced from 0.52em → 0.3em so letters survive as a unit */}
         <p
           className="text-center"
           style={{
             color:         'rgba(245, 158, 11, 0.65)',
-            fontSize:      '10px',
-            letterSpacing: '0.52em',
+            fontSize:      '12px',
+            letterSpacing: '0.3em',
             textTransform: 'uppercase',
-            marginBottom:  '56px',
+            marginBottom:  '48px',
           }}
         >
-          {/* Non-breaking spaces keep this on one line */}
           ONE&nbsp;DIRECTOR.&nbsp;ALWAYS.
         </p>
 
@@ -153,12 +154,13 @@ export default async function DirectorLoyaltyPage({ params }: PageProps) {
         </p>
 
         {/* ── Director name: the revelation ──────────────────────────────── */}
+        {/* weight 300 → 400: light type at ~13px after compression blurs    */}
         <p
           className="text-white uppercase text-center"
           style={{
             fontSize:      '28px',
             letterSpacing: '0.18em',
-            fontWeight:    300,
+            fontWeight:    400,
             marginBottom:  '12px',
           }}
         >

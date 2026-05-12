@@ -92,6 +92,10 @@ async def capture_section_snapshot(slug: str, section: str,
     if section == "compare" and compare_with:
         return await _capture_compare(slug, compare_with)
 
+    # ── Connection Finder social card (SSR, data-section attribute) ───────────
+    if section == "connections" and compare_with:
+        return await _capture_connections(slug, compare_with)
+
     # ── Career chart (data-section attribute, client-rendered) ────────────────
     if section in ("career", "filmography"):
         return await _capture_career_chart(slug)
@@ -259,6 +263,55 @@ async def _capture_director_loyalty(slug: str) -> bytes | None:
             return png
     except Exception as e:
         print(f"[screenshot] director loyalty failed for {slug}: {e}")
+        return None
+
+
+async def _capture_connections(slug1: str, slug2: str) -> bytes | None:
+    """Screenshot the /social/connections/{slug1}/{slug2} social card.
+
+    Pure SSR — all data fetched server-side. domcontentloaded + 1.5 s covers
+    font loading and avatar images. Card height scales with chain depth;
+    clip height is derived from the data-section bounding box (cap 700 px).
+    """
+    url = f"{CINETRACE_SCREENSHOT_URL}/social/connections/{slug1}/{slug2}"
+    resolver = _backend_host_resolver_rules()
+    chromium_args = ["--no-sandbox", "--disable-setuid-sandbox"]
+    if resolver:
+        chromium_args.append(f"--host-resolver-rules={resolver}")
+
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True, args=chromium_args)
+            page = await browser.new_page(
+                viewport={"width": _VIEWPORT_W, "height": 900},
+                color_scheme="dark",
+            )
+            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            # Fonts + avatar images
+            await page.wait_for_timeout(1500)
+
+            pos = await page.evaluate(_FIND_DATA_SECTION_JS, "connection-finder")
+            if not pos:
+                print(f"[screenshot] connection-finder section not found for {slug1}/{slug2}")
+                return await _hero_fallback(page, browser)
+
+            # Scroll card to viewport top, then clip full width
+            await page.evaluate("(y) => window.scrollTo(0, y)", max(0, int(pos["y"]) - 16))
+            await page.wait_for_timeout(200)
+
+            png = await page.screenshot(
+                type="png",
+                clip={
+                    "x":      0,
+                    "y":      0,
+                    "width":  _VIEWPORT_W,
+                    "height": min(int(pos["h"]) + 40, 700),
+                },
+            )
+            await browser.close()
+            return png
+    except Exception as e:
+        print(f"[screenshot] connections failed for {slug1}/{slug2}: {e}")
         return None
 
 
