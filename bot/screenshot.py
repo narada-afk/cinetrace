@@ -47,6 +47,12 @@ _SECTION_HEADINGS = {
     "filmography":   None,
 }
 
+# Viewport width for all screenshots.
+# 800 px — wide enough for tablet layout, narrow enough that Twitter/X renders
+# the image at full width on a phone without letterboxing. Components reflow
+# to a comfortable single-column at this breakpoint.
+_VIEWPORT_W = 800
+
 # Fallback height when section bounds can't be calculated
 _SECTION_HEIGHT = 500
 
@@ -101,7 +107,7 @@ async def capture_section_snapshot(slug: str, section: str,
                 args=["--no-sandbox", "--disable-setuid-sandbox"],
             )
             page = await browser.new_page(
-                viewport={"width": 1280, "height": 900},
+                viewport={"width": _VIEWPORT_W, "height": 900},
                 color_scheme="dark",
             )
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
@@ -119,7 +125,7 @@ async def capture_section_snapshot(slug: str, section: str,
                         clip={
                             "x":      max(0, pos["x"] - 16),
                             "y":      0,
-                            "width":  min(pos["w"] + 32, 1280),
+                            "width":  min(pos["w"] + 32, _VIEWPORT_W),
                             "height": section_h,
                         },
                     )
@@ -156,7 +162,7 @@ async def _capture_career_chart(slug: str) -> bytes | None:
                 args=chromium_args,
             )
             page = await browser.new_page(
-                viewport={"width": 1280, "height": 900},
+                viewport={"width": _VIEWPORT_W, "height": 900},
                 color_scheme="dark",
             )
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
@@ -192,8 +198,8 @@ async def _capture_career_chart(slug: str) -> bytes | None:
                 clip={
                     "x":      max(0, pos["x"] - 16),
                     "y":      0,
-                    "width":  min(pos["w"] + 32, 1280),
-                    "height": min(int(pos["h"]) + 32, 700),
+                    "width":  min(pos["w"] + 32, _VIEWPORT_W),
+                    "height": min(int(pos["h"]) + 32, 560),
                 },
             )
             await browser.close()
@@ -224,7 +230,7 @@ async def _capture_compare(slug1: str, slug2: str) -> bytes | None:
                 args=["--no-sandbox", "--disable-setuid-sandbox"],
             )
             page = await browser.new_page(
-                viewport={"width": 1280, "height": 900},
+                viewport={"width": _VIEWPORT_W, "height": 900},
                 color_scheme="dark",
             )
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
@@ -239,13 +245,13 @@ async def _capture_compare(slug1: str, slug2: str) -> bytes | None:
                 await page.wait_for_timeout(400)
                 png = await page.screenshot(
                     type="png",
-                    clip={"x": 0, "y": 0, "width": 1280, "height": 620},
+                    clip={"x": 0, "y": 0, "width": _VIEWPORT_W, "height": 500},
                 )
             else:
                 # Fallback: capture the full above-fold area
                 png = await page.screenshot(
                     type="png",
-                    clip={"x": 0, "y": 0, "width": 1280, "height": 700},
+                    clip={"x": 0, "y": 0, "width": _VIEWPORT_W, "height": 500},
                 )
             await browser.close()
             return png
@@ -259,7 +265,7 @@ async def _hero_fallback(page, browser) -> bytes | None:
     try:
         png = await page.screenshot(
             type="png",
-            clip={"x": 0, "y": 0, "width": 1280, "height": 670},
+            clip={"x": 0, "y": 0, "width": _VIEWPORT_W, "height": 500},
         )
         await browser.close()
         return png
