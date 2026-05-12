@@ -13,10 +13,40 @@ section values → which cinetrace page/section to screenshot:
   "blockbusters" → actor page "Blockbusters" section
   "overview"     → actor page "By the Numbers" insight cards (general stats)
   "filmography"  → actor page "By the Numbers" (decade/career-count facts)
+  "career"       → /actors/{slug}/chart minimal page (career chart SVG)
   "compare"      → /compare/{actor}-vs-{compare_with} page (needs compare_with field)
+
+Emotional metadata fields (all optional — see FACT_DEFAULTS for defaults):
+  pillar            str   Content category: nostalgia | debate | milestone | dynasty | comparison
+  debate_potential  int   1-10  How likely this is to spark replies/discussion
+  people_forget     bool  If True, broadcaster hints "most don't know this" in framing
+  preferred_window  list  Slot hours (IST) this fact performs best at — None = any slot
+  birthday_relevant bool  Flag for actor birthday posts
+  min_gap_days      int   Minimum days before this fact can be reused (default 14)
 """
 
 from __future__ import annotations
+
+# ── Defaults for every optional metadata field ────────────────────────────────
+
+FACT_DEFAULTS: dict = {
+    "pillar":            "milestone",
+    "debate_potential":  5,
+    "people_forget":     False,
+    "preferred_window":  None,      # None = any slot is fine
+    "birthday_relevant": False,
+    "min_gap_days":      14,
+}
+
+def get_enriched_fact(fact: dict) -> dict:
+    """Return fact merged with FACT_DEFAULTS — backward-compatible.
+
+    Callers can always access enriched["debate_potential"] etc. without
+    checking whether the raw fact dict contains those keys.
+    """
+    return {**FACT_DEFAULTS, **fact}
+
+# ── Fact library ──────────────────────────────────────────────────────────────
 
 FACTS: dict[str, list[dict]] = {
 
@@ -24,12 +54,17 @@ FACTS: dict[str, list[dict]] = {
 
     "Kamal Haasan": [
         {
-            "key":          "kh_vs_rajini",
-            "section":      "compare",
-            "compare_with": "rajinikanth",
+            "key":             "kh_vs_rajini",
+            "section":         "compare",
+            "compare_with":    "rajinikanth",
             "hook":    "Kamal Haasan has 54 MORE films than Rajinikanth.",
             "body":    "246 vs 192.\nYet the debate about who is bigger never ends.\nThat is the magic of Rajini.",
             "hashtags": "#KamalHaasan #Rajinikanth #Kollywood",
+            # metadata
+            "pillar":           "comparison",
+            "debate_potential":  9,
+            "preferred_window":  [19, 22],
+            "min_gap_days":      21,
         },
         {
             "key":     "kh_70s_insane",
@@ -37,6 +72,11 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "Kamal Haasan made 104 films in the 1970s alone.",
             "body":    "That single decade has more films than Allu Arjun's entire career.\n104 films. One decade. One man.",
             "hashtags": "#KamalHaasan #Kollywood #SouthCinema",
+            # metadata
+            "pillar":           "nostalgia",
+            "debate_potential":  6,
+            "people_forget":     True,
+            "preferred_window":  [7, 10],
         },
         {
             "key":     "kh_65_years",
@@ -44,6 +84,12 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "Kamal Haasan has been acting for 65 years.",
             "body":    "Started in 1960 as a child actor.\nStill headlining films in 2025.\nNo other South Indian actor has an active career this long.",
             "hashtags": "#KamalHaasan #Kollywood #SouthCinema",
+            # metadata
+            "pillar":            "milestone",
+            "debate_potential":   5,
+            "preferred_window":   [7, 10, 13],
+            "birthday_relevant":  True,
+            "min_gap_days":       30,
         },
         {
             "key":     "kh_rajini_costars",
@@ -51,6 +97,12 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "Kamal Haasan and Rajinikanth were co-stars in 36 films.",
             "body":    "They shared the screen 36 times before becoming parallel legends.\nThe greatest rivalry in Indian cinema started as a friendship.",
             "hashtags": "#KamalHaasan #Rajinikanth #Kollywood",
+            # metadata
+            "pillar":           "dynasty",
+            "debate_potential":  8,
+            "people_forget":     True,
+            "preferred_window":  [19, 22],
+            "min_gap_days":      21,
         },
         {
             "key":     "kh_kb_29",
@@ -58,6 +110,11 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "One director worked with Kamal Haasan 29 times.",
             "body":    "K. Balachander directed Kamal 29 times — the longest actor-director partnership in Tamil film history.\nAlmost 1 in every 8 Kamal films.",
             "hashtags": "#KamalHaasan #Kollywood",
+            # metadata
+            "pillar":           "dynasty",
+            "debate_potential":  5,
+            "people_forget":     True,
+            "preferred_window":  [13, 16],
         },
         {
             "key":     "kh_659_collabs",
@@ -65,6 +122,9 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "659 actors have worked with Kamal Haasan.",
             "body":    "The most connected actor in South Indian cinema — by a wide margin.\nMore than any other actor on this list.",
             "hashtags": "#KamalHaasan #Kollywood #SouthCinema",
+            # metadata
+            "pillar":           "milestone",
+            "debate_potential":  4,
         },
     ],
 
@@ -77,6 +137,11 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "Rajinikanth did 85 films in just the 1980s.",
             "body":    "That is nearly 9 films a year for a full decade.\nThe entire filmographies of Yash, Ram Charan, and Allu Arjun — combined — don't match that.",
             "hashtags": "#Rajinikanth #Superstar #Kollywood",
+            # metadata
+            "pillar":           "nostalgia",
+            "debate_potential":  8,
+            "people_forget":     True,
+            "preferred_window":  [19, 22],
         },
         {
             "key":     "rj_kamal_36",
@@ -84,6 +149,12 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "Rajinikanth and Kamal were co-stars in 35 films.",
             "body":    "Before they became icons, they were each other's screen partners.\n35 films together. Then two separate empires.",
             "hashtags": "#Rajinikanth #KamalHaasan #Kollywood",
+            # metadata
+            "pillar":           "dynasty",
+            "debate_potential":  8,
+            "people_forget":     True,
+            "preferred_window":  [19, 22],
+            "min_gap_days":      21,
         },
         {
             "key":     "rj_sp_24",
@@ -91,6 +162,11 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "The same director made 24 films with Rajinikanth.",
             "body":    "S.P. Muthuraman directed him 24 times — that is 1 in every 8 Rajini films.\nMost fans have never heard this name.",
             "hashtags": "#Rajinikanth #Superstar #Kollywood",
+            # metadata
+            "pillar":           "dynasty",
+            "debate_potential":  5,
+            "people_forget":     True,
+            "preferred_window":  [13, 16],
         },
         {
             "key":     "rj_5_langs",
@@ -98,6 +174,9 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "Rajinikanth acted in 5 languages across his career.",
             "body":    "Tamil, Telugu, Hindi, Kannada, English.\nThe original pan-Indian star — before that term even existed.",
             "hashtags": "#Rajinikanth #Superstar #SouthCinema",
+            # metadata
+            "pillar":           "milestone",
+            "debate_potential":  5,
         },
     ],
 
@@ -110,6 +189,12 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "Mammootty has more films than Rajinikanth and Kamal Haasan combined.",
             "body":    "Rajini: 192. Kamal: 246. Total: 438.\nMammootty: 444.\nThe most prolific major film career in all of South India.",
             "hashtags": "#Mammootty #Mollywood #SouthCinema",
+            # metadata
+            "pillar":           "comparison",
+            "debate_potential":  9,
+            "people_forget":     True,
+            "preferred_window":  [19, 22],
+            "min_gap_days":      21,
         },
         {
             "key":     "mm_80s_206",
@@ -117,6 +202,11 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "Mammootty made 206 films in the 1980s alone.",
             "body":    "That is more than Ram Charan, Allu Arjun, Yash, and Jr. NTR's entire careers — combined.\nOne decade. 206 films.",
             "hashtags": "#Mammootty #Mollywood #SouthCinema",
+            # metadata
+            "pillar":           "nostalgia",
+            "debate_potential":  7,
+            "people_forget":     True,
+            "preferred_window":  [19, 22],
         },
         {
             "key":     "mm_sukumari_104",
@@ -124,6 +214,11 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "The same actress appeared in 104 of Mammootty's films.",
             "body":    "Sukumari starred alongside him in 104 films.\nThat single co-star count is more than Allu Arjun's entire filmography.",
             "hashtags": "#Mammootty #Mollywood",
+            # metadata
+            "pillar":           "nostalgia",
+            "debate_potential":  6,
+            "people_forget":     True,
+            "preferred_window":  [13, 16],
         },
         {
             "key":     "mm_700",
@@ -131,6 +226,9 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "700 actors have worked with Mammootty. 700.",
             "body":    "The widest collaboration network in South Indian cinema.\nIn Mollywood, everyone has a Mammootty connection.",
             "hashtags": "#Mammootty #Mammukka #Mollywood",
+            # metadata
+            "pillar":           "milestone",
+            "debate_potential":  5,
         },
         {
             "key":     "mm_two_dirs_33",
@@ -138,6 +236,11 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "Two different directors worked with Mammootty exactly 33 times each.",
             "body":    "Joshiy: 33 films. I.V. Sasi: 33 films.\nPerfect symmetry — no other actor in South India has this.",
             "hashtags": "#Mammootty #Mollywood",
+            # metadata
+            "pillar":           "dynasty",
+            "debate_potential":  6,
+            "people_forget":     True,
+            "preferred_window":  [13, 16],
         },
     ],
 
@@ -150,6 +253,10 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "One director made 36 films with Mohanlal. 36.",
             "body":    "Priyadarshan directed him 36 times — the highest actor-director count on this list.\nThat partnership alone spans three decades.",
             "hashtags": "#Mohanlal #Lalettan #Mollywood",
+            # metadata
+            "pillar":           "dynasty",
+            "debate_potential":  6,
+            "preferred_window":  [16, 19],
         },
         {
             "key":     "ml_jagathy_114",
@@ -157,6 +264,11 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "The same co-star appeared in 114 of Mohanlal's films.",
             "body":    "Jagathy Sreekumar: 114 films with Mohanlal.\nThat number is more than Allu Arjun's entire career.",
             "hashtags": "#Mohanlal #Mollywood",
+            # metadata
+            "pillar":           "nostalgia",
+            "debate_potential":  7,
+            "people_forget":     True,
+            "preferred_window":  [19, 22],
         },
         {
             "key":     "ml_mamm_60",
@@ -164,6 +276,11 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "Mohanlal and Mammootty shared the screen in 60 films.",
             "body":    "South India's two greatest parallel careers — and they appeared together 60 times.\nThe Mollywood golden era was built on this.",
             "hashtags": "#Mohanlal #Mammootty #Mollywood",
+            # metadata
+            "pillar":           "comparison",
+            "debate_potential":  9,
+            "preferred_window":  [19, 22],
+            "min_gap_days":      21,
         },
         {
             "key":     "ml_80s_166",
@@ -171,6 +288,11 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "Mohanlal made 166 films in just the 1980s.",
             "body":    "That is over 16 films a year for a decade.\nAnd somehow, each role was different.",
             "hashtags": "#Mohanlal #Lalettan #Mollywood",
+            # metadata
+            "pillar":           "nostalgia",
+            "debate_potential":  7,
+            "people_forget":     True,
+            "preferred_window":  [19, 22],
         },
     ],
 
@@ -183,6 +305,11 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "Vijay's own father directed him 13 times.",
             "body":    "S.A. Chandrasekhar — Vijay's dad — directed him more than any other director in his career.\nThe Thalapathy factory started at home.",
             "hashtags": "#Vijay #Thalapathy #Kollywood",
+            # metadata
+            "pillar":           "dynasty",
+            "debate_potential":  7,
+            "people_forget":     True,
+            "preferred_window":  [13, 16, 19],
         },
         {
             "key":          "vj_ajith_343",
@@ -191,6 +318,11 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "Vijay and Ajith have worked with the EXACT same number of actors. 343 each.",
             "body":    "Same era. Same industry. Same network depth.\nThe biggest rivalry in Tamil cinema is mathematically even.",
             "hashtags": "#Vijay #Ajith #Kollywood",
+            # metadata
+            "pillar":           "debate",
+            "debate_potential":  10,
+            "preferred_window":  [19, 22],
+            "min_gap_days":      21,
         },
         {
             "key":     "vj_90s_24",
@@ -198,6 +330,11 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "Vijay made 24 films in the 1990s — before anyone knew his name.",
             "body":    "His busiest decade came before his biggest fame.\n24 films in the 90s. Most fans have seen none of them.",
             "hashtags": "#Vijay #Thalapathy #Kollywood",
+            # metadata
+            "pillar":           "nostalgia",
+            "debate_potential":  5,
+            "people_forget":     True,
+            "preferred_window":  [7, 10],
         },
         {
             "key":     "vj_vadivelu_14",
@@ -205,6 +342,11 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "Vadivelu appeared in 14 Vijay films.",
             "body":    "14 films together — more than most leading actors work with a single co-star in a lifetime.\nAsk any 90s Tamil kid which scenes they remember.",
             "hashtags": "#Vijay #Vadivelu #Kollywood",
+            # metadata
+            "pillar":           "nostalgia",
+            "debate_potential":  6,
+            "people_forget":     True,
+            "preferred_window":  [13, 16, 19],
         },
     ],
 
@@ -218,6 +360,11 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "Ajith and Vijay have worked with exactly 343 actors each.",
             "body":    "Same count. Same era. Same industry.\nThe biggest rivalry in Tamil cinema is perfectly balanced — the data says draw.",
             "hashtags": "#Ajith #Thala #Vijay #Kollywood",
+            # metadata
+            "pillar":           "debate",
+            "debate_potential":  10,
+            "preferred_window":  [19, 22],
+            "min_gap_days":      21,
         },
         {
             "key":     "ak_90s_26",
@@ -225,6 +372,11 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "Ajith made 26 films in the 1990s — before superstardom.",
             "body":    "His most productive decade was also his least celebrated.\n26 films before anyone called him Thala.",
             "hashtags": "#Ajith #Thala #Kollywood",
+            # metadata
+            "pillar":           "nostalgia",
+            "debate_potential":  5,
+            "people_forget":     True,
+            "preferred_window":  [7, 10],
         },
         {
             "key":     "ak_no_loyalty",
@@ -232,6 +384,11 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "No single director has worked with Ajith more than 4 times.",
             "body":    "Siva, Saran, H. Vinoth — all maxed at 4 films.\nHe has been equally fair to everyone. No one owns his career.",
             "hashtags": "#Ajith #Thala #Kollywood",
+            # metadata
+            "pillar":           "milestone",
+            "debate_potential":  6,
+            "people_forget":     True,
+            "preferred_window":  [13, 16],
         },
     ],
 
@@ -244,6 +401,11 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "Rajamouli directed Jr. NTR 7 times before RRR.",
             "body":    "RRR was their 7th collaboration — not their first.\nBy then they had a decade of trust already built.",
             "hashtags": "#JrNTR #Tarak #RRR #Tollywood",
+            # metadata
+            "pillar":           "dynasty",
+            "debate_potential":  8,
+            "people_forget":     True,
+            "preferred_window":  [13, 16, 19],
         },
         {
             "key":     "ntr_brahma_16",
@@ -251,6 +413,9 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "Brahmanandam appears in 16 of Jr. NTR's 43 films.",
             "body":    "More than 1 in every 3 NTR films has the same comedian.\nThe most consistent actor-comedian duo in Tollywood.",
             "hashtags": "#JrNTR #Brahmanandam #Tollywood",
+            # metadata
+            "pillar":           "nostalgia",
+            "debate_potential":  5,
         },
     ],
 
@@ -263,6 +428,10 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "Ram Charan has only 20 films. He is a global superstar.",
             "body":    "The most selective filmography of any top South Indian star.\n20 films. RRR. Worldwide fame. Less is more.",
             "hashtags": "#RamCharan #RRR #Tollywood",
+            # metadata
+            "pillar":           "milestone",
+            "debate_potential":  7,
+            "preferred_window":  [13, 16, 19],
         },
         {
             "key":     "rc_brahma_50pct",
@@ -270,6 +439,11 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "Brahmanandam appears in exactly half of Ram Charan's films.",
             "body":    "10 out of 20 films. 50% of his entire career has the same comedian.\nThat is not coincidence. That is a formula.",
             "hashtags": "#RamCharan #Brahmanandam #Tollywood",
+            # metadata
+            "pillar":           "nostalgia",
+            "debate_potential":  6,
+            "people_forget":     True,
+            "preferred_window":  [13, 16],
         },
         {
             "key":     "rc_ntr_5",
@@ -277,6 +451,11 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "Ram Charan's most frequent co-star is Jr. NTR — 5 films together.",
             "body":    "Their bond goes way deeper than RRR.\nWhen the data says 5 films, the friendship finally makes sense.",
             "hashtags": "#RamCharan #JrNTR #RRR #Tollywood",
+            # metadata
+            "pillar":           "dynasty",
+            "debate_potential":  7,
+            "people_forget":     True,
+            "preferred_window":  [19, 22],
         },
     ],
 
@@ -289,6 +468,10 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "Allu Arjun worked with the same director 6 times.",
             "body":    "Sukumar directed Bunny 6 times — more than any other director in his career.\nEvery Pushpa record was built on this one partnership.",
             "hashtags": "#AlluArjun #Bunny #Pushpa #Tollywood",
+            # metadata
+            "pillar":           "dynasty",
+            "debate_potential":  7,
+            "preferred_window":  [16, 19],
         },
         {
             "key":     "aa_brahma_42pct",
@@ -296,6 +479,11 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "Brahmanandam is in 42% of Allu Arjun's movies.",
             "body":    "14 out of 33 films.\nNearly half of Bunny's filmography has the same comedian in it.",
             "hashtags": "#AlluArjun #Brahmanandam #Tollywood",
+            # metadata
+            "pillar":           "nostalgia",
+            "debate_potential":  5,
+            "people_forget":     True,
+            "preferred_window":  [13, 16],
         },
     ],
 
@@ -308,6 +496,10 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "SS Rajamouli directed Prabhas 8 times.",
             "body":    "No other actor has been directed this often by India's biggest filmmaker.\nTheir partnership wrote the template for Telugu pan-India films.",
             "hashtags": "#Prabhas #Rajamouli #Baahubali #Tollywood",
+            # metadata
+            "pillar":           "dynasty",
+            "debate_potential":  7,
+            "preferred_window":  [16, 19],
         },
         {
             "key":     "pb_13_before",
@@ -315,6 +507,11 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "Prabhas had 13 films before Baahubali that most fans have never seen.",
             "body":    "He was consistent and underrated for a decade before the franchise.\nBaahubali didn't create him — it revealed him.",
             "hashtags": "#Prabhas #Baahubali #Tollywood",
+            # metadata
+            "pillar":           "nostalgia",
+            "debate_potential":  6,
+            "people_forget":     True,
+            "preferred_window":  [13, 16],
         },
     ],
 
@@ -327,6 +524,11 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "Dhanush has directed 4 films. While being a top actor.",
             "body":    "Actor, director, and he does both at the highest level.\nNo one else on this list pulls that off.",
             "hashtags": "#Dhanush #Kollywood #SouthCinema",
+            # metadata
+            "pillar":           "milestone",
+            "debate_potential":  6,
+            "people_forget":     True,
+            "preferred_window":  [13, 16],
         },
         {
             "key":     "dh_vetri_zero_failures",
@@ -334,6 +536,10 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "Every Dhanush-Vetrimaaran film has been critically acclaimed.",
             "body":    "5 collaborations. Zero failures.\nThe most reliable duo in Tamil cinema — and nobody debates it.",
             "hashtags": "#Dhanush #Vetrimaaran #Kollywood",
+            # metadata
+            "pillar":           "dynasty",
+            "debate_potential":  7,
+            "preferred_window":  [16, 19],
         },
         {
             "key":     "dh_4_languages",
@@ -341,6 +547,9 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "Dhanush has acted in Tamil, Telugu, Hindi, and Malayalam.",
             "body":    "The most cross-industry Tamil star of his generation.\nHis network reaches every corner of South India — and beyond.",
             "hashtags": "#Dhanush #Kollywood #SouthCinema",
+            # metadata
+            "pillar":           "milestone",
+            "debate_potential":  5,
         },
     ],
 
@@ -353,6 +562,11 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "Yash has worked with only 63 actors in his entire career.",
             "body":    "The smallest network on this list by far.\nYet his pan-India reach rivals actors with 10x the filmography.\nDepth beats breadth.",
             "hashtags": "#Yash #KGF #Sandalwood #SouthCinema",
+            # metadata
+            "pillar":           "milestone",
+            "debate_potential":  7,
+            "people_forget":     True,
+            "preferred_window":  [16, 19],
         },
         {
             "key":     "yash_2_films",
@@ -360,6 +574,10 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "Yash built pan-India stardom on essentially 2 films.",
             "body":    "KGF Chapter 1 and KGF Chapter 2. That is the entire case.\nHighest cultural ROI of any South Indian star this generation.",
             "hashtags": "#Yash #KGF #Sandalwood",
+            # metadata
+            "pillar":           "milestone",
+            "debate_potential":  8,
+            "preferred_window":  [19, 22],
         },
     ],
 
@@ -372,6 +590,10 @@ FACTS: dict[str, list[dict]] = {
             "hook":    "777 Charlie made the whole country cry — regardless of language.",
             "body":    "A Kannada film. A dog. No pan-India star cast.\nJust pure emotion that crossed every language border.",
             "hashtags": "#RakshitShetty #777Charlie #Sandalwood #SouthCinema",
+            # metadata
+            "pillar":           "nostalgia",
+            "debate_potential":  6,
+            "preferred_window":  [19, 22],
         },
     ],
 

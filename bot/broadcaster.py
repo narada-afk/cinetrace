@@ -26,7 +26,7 @@ from config import (
     TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_TOKEN_SECRET, TWITTER_BEARER_TOKEN,
     CINETRACE_BASE_URL,
 )
-from inventory import FACTS, SLOT_HOURS, all_actors_with_facts
+from inventory import FACTS, SLOT_HOURS, all_actors_with_facts, get_enriched_fact
 from actors import ACTORS
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -123,6 +123,33 @@ def _pick_actors_for_day(used_keys_last_7_days: set[str]) -> list[str]:
     random.shuffle(chosen)
     return chosen[:6]
 
+# ── Slot-aware fact picker ────────────────────────────────────────────────────
+
+def _pick_fact_for_slot(actor_db_name: str, slot_hour: int,
+                        used_keys: set[str]) -> dict | None:
+    """Return the best fact for this actor at this slot hour.
+
+    Selection priority:
+      1. Fresh facts (not in used_keys) that list this slot_hour in preferred_window
+      2. Any fresh fact (no preferred_window preference)
+      3. All facts (recycled) — same priority order as above
+    """
+    facts = FACTS.get(actor_db_name, [])
+    if not facts:
+        return None
+
+    fresh = [f for f in facts if f["key"] not in used_keys]
+    pool  = fresh if fresh else facts  # fall back to recycled if exhausted
+
+    # Prefer facts whose preferred_window includes this slot
+    preferred = [
+        f for f in pool
+        if (pw := get_enriched_fact(f).get("preferred_window")) is not None
+        and slot_hour in pw
+    ]
+
+    return random.choice(preferred) if preferred else random.choice(pool)
+
 # ── Snapshot helper ───────────────────────────────────────────────────────────
 
 async def _capture(actor_db_name: str, section: str,
@@ -162,15 +189,10 @@ async def generate_daily_schedule(send_for_review_fn) -> None:
     for i, slot_hour in enumerate(SLOT_HOURS):
         actor_db_name = actors[i] if i < len(actors) else random.choice(all_actors_with_facts())
 
-        facts = FACTS.get(actor_db_name, [])
-        fresh_facts = [f for f in facts if f["key"] not in used_keys]
-        if not fresh_facts:
-            fresh_facts = facts
-        if not fresh_facts:
+        fact = _pick_fact_for_slot(actor_db_name, slot_hour, used_keys)
+        if not fact:
             print(f"[broadcaster] no facts for {actor_db_name}, skipping slot {slot_hour}")
             continue
-
-        fact = random.choice(fresh_facts)
         section      = fact.get("section", "overview")
         compare_with = fact.get("compare_with", "")
         tweet_text   = _format_tweet(actor_db_name, fact)

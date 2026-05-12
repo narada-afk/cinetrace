@@ -197,6 +197,42 @@ def last_post_time_for_actor(handle: str) -> datetime | None:
             row = cur.fetchone()
             return row[0] if row else None
 
+def last_actor_activity_time(handle: str) -> datetime | None:
+    """Most recent created_at across pending + approved + posted.
+
+    Unlike last_post_time_for_actor() which only looks at confirmed posts,
+    this catches in-flight items sitting in the Telegram review queue —
+    preventing a second trigger from firing while a first is awaiting approval.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT MAX(created_at) FROM bot_tweet_log
+                   WHERE actor_handle = %s
+                   AND status IN ('pending', 'approved', 'posted')""",
+                (handle,)
+            )
+            row = cur.fetchone()
+            return row[0] if row else None
+
+def total_reactive_count_this_week() -> int:
+    """Count of reactive (non-scheduled) items queued or posted in the last 7 days.
+
+    Used to enforce MAX_REACTIVE_REPLIES_PER_WEEK across all actors combined.
+    Counts pending + approved + posted so items awaiting review are included.
+    """
+    since = datetime.utcnow() - timedelta(days=7)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT COUNT(*) FROM bot_tweet_log
+                   WHERE created_at >= %s
+                   AND trigger_type IN ('tweet', 'signal', 'trend', 'reddit_post')
+                   AND status IN ('pending', 'approved', 'posted')""",
+                (since,)
+            )
+            return cur.fetchone()[0]
+
 def insert_pending(tweet_id: str, actor_handle: str, actor_db_name: str,
                    draft_reply: str, confidence: float,
                    trigger_type: str = "tweet", platform: str = "twitter",

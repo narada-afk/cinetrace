@@ -1,4 +1,5 @@
 import asyncio
+import random
 import tweepy
 import asyncpraw
 from datetime import datetime, timedelta, timezone
@@ -25,6 +26,8 @@ from config import (
     TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_TOKEN_SECRET, TWITTER_BEARER_TOKEN,
     REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, REDDIT_USERNAME, REDDIT_PASSWORD,
     MIN_HOURS_BETWEEN_POSTS, MAX_REPLIES_PER_ACTOR_PER_DAY,
+    MAX_REACTIVE_REPLIES_PER_WEEK,
+    MIN_TRIGGER_TO_REVIEW_MINUTES, MAX_TRIGGER_TO_REVIEW_MINUTES,
 )
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -69,14 +72,22 @@ def _cluster_ok(actor_handle: str, signal_text: str) -> bool:
 # ── Rate guard ────────────────────────────────────────────────────────────────
 
 def _rate_ok(actor_handle: str) -> tuple[bool, str]:
+    # 1. Per-actor daily cap
     count = db.actor_reply_count_today(actor_handle)
     if count >= MAX_REPLIES_PER_ACTOR_PER_DAY:
-        return False, f"daily limit reached ({count})"
+        return False, f"daily cap ({count}/{MAX_REPLIES_PER_ACTOR_PER_DAY})"
 
-    last = db.last_post_time_for_actor(actor_handle)
+    # 2. Per-actor minimum gap — checks pending + approved + posted, not just posted
+    last = db.last_actor_activity_time(actor_handle)
     if last and datetime.utcnow() - last < timedelta(hours=MIN_HOURS_BETWEEN_POSTS):
-        wait = (last + timedelta(hours=MIN_HOURS_BETWEEN_POSTS) - datetime.utcnow())
-        return False, f"too soon for @{actor_handle} — wait {int(wait.seconds/60)}m"
+        wait = last + timedelta(hours=MIN_HOURS_BETWEEN_POSTS) - datetime.utcnow()
+        wait_min = max(0, int(wait.total_seconds() / 60))
+        return False, f"too soon for @{actor_handle} — wait {wait_min}m"
+
+    # 3. Cross-actor weekly reactive cap
+    weekly = db.total_reactive_count_this_week()
+    if weekly >= MAX_REACTIVE_REPLIES_PER_WEEK:
+        return False, f"weekly reactive cap reached ({weekly}/{MAX_REACTIVE_REPLIES_PER_WEEK})"
 
     return True, ""
 
@@ -97,6 +108,19 @@ async def _pipeline(tweet_id: str, tweet_text: str, actor: dict,
     ok, reason = _rate_ok(handle)
     if not ok:
         print(f"[pipeline] skipped @{handle}: {reason}")
+        return None
+
+    # Humanization jitter — wait a random interval before engaging so the bot
+    # doesn't reply the instant a trigger fires. Keeps activity patterns organic.
+    jitter_min = random.randint(MIN_TRIGGER_TO_REVIEW_MINUTES, MAX_TRIGGER_TO_REVIEW_MINUTES)
+    print(f"[pipeline] humanization jitter — engaging in {jitter_min}m (@{handle}, {tweet_id})")
+    await asyncio.sleep(jitter_min * 60)
+
+    # Re-check rate guard after the sleep — another pipeline branch may have fired
+    # for the same actor while we were waiting.
+    ok, reason = _rate_ok(handle)
+    if not ok:
+        print(f"[pipeline] skipped @{handle} (post-jitter): {reason}")
         return None
 
     print(f"[pipeline] processing tweet {tweet_id} from @{handle}")
