@@ -275,7 +275,6 @@ SIGNAL_ACCOUNTS: list[dict] = [
     {"name": "Zee Telugu",           "handle": "ZeeTelugu",        "role": "media"},
     {"name": "Colors Kannada",       "handle": "ColorsKannada",    "role": "media"},
     {"name": "Asianet",              "handle": "asianet",          "role": "media"},
-    {"name": "Mazhavil Manorama",    "handle": "MazhavilManorama", "role": "media"},
     {"name": "Surya TV",             "handle": "suryatv",          "role": "media"},
     {"name": "Zee Tamil",            "handle": "ZeeTamil",         "role": "media"},
     {"name": "Kalaignar TV",         "handle": "kalaignartv",      "role": "media"},
