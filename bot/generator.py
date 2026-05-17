@@ -323,11 +323,19 @@ async def generate_fact(
     try:
         msg = await _client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=600,
+            max_tokens=800,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": prompt}],
         )
-        raw = json.loads(msg.content[0].text)
+        text = msg.content[0].text.strip() if msg.content else ""
+        print(f"[generator] stop_reason={msg.stop_reason} len={len(text)} preview={text[:120]}")
+        # Strip markdown code fences if Claude wrapped the JSON
+        if text.startswith("```"):
+            text = text.split("```", 2)[1]
+            if text.startswith("json"):
+                text = text[4:]
+            text = text.strip()
+        raw = json.loads(text)
     except Exception as e:
         print(f"[generator] Claude call failed for {actor_db_name}: {e}")
         return None
