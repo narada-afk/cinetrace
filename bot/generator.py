@@ -174,10 +174,11 @@ def _movies_block(movies: list) -> str:
 
 
 def _collabs_block(items: list, limit: int = 20) -> str:
-    lines = [
-        f"  {c['name']}: {c.get('film_count', '?')} films"
-        for c in items[:limit]
-    ]
+    lines = []
+    for c in items[:limit]:
+        name  = c.get("actor") or c.get("director") or c.get("name", "?")
+        count = c.get("films") or c.get("film_count", "?")
+        lines.append(f"  {name}: {count} films")
     return "\n".join(lines) or "  (no data)"
 
 
