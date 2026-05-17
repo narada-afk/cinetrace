@@ -85,9 +85,11 @@ Pick the ONE fact_type that best describes the stat you found:
   "director_spread"   → stats about directors in general (counts, variety, patterns)
   "collab"            → co-star appeared in X% or N films alongside them
   "streak_trajectory" → consecutive hit/miss streak, or career BO trajectory over years
-  "milestone"         → specific ₹100Cr / ₹200Cr / ₹500Cr films and when they happened
-  "decade_longevity"  → decade film counts, career span, active years
-  "comparison"        → direct comparison with another actor (set compare_with to their slug)
+  "milestone"         → specific ₹100Cr / ₹200Cr / ₹500Cr films and when they happened — ONLY if the fact is purely about this actor with NO named comparison to another actor
+  "decade_longevity"  → decade film counts, career span, active years — ONLY if no named actor comparison
+  "comparison"        → REQUIRED whenever you name another specific actor in the hook or body (e.g. "more than X's career", "unlike Y", "compared to Z"). Always set compare_with to their slug.
+
+RULE: If your hook or body mentions another actor by name, you MUST use fact_type "comparison".
 
 Respond ONLY with valid JSON. No explanation outside the JSON."""
 
