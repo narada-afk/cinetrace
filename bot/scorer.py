@@ -118,7 +118,13 @@ async def score_fact(actor_db_name: str, industry: str, fact: dict) -> dict:
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": prompt}],
         )
-        raw = json.loads(msg.content[0].text)
+        text = msg.content[0].text.strip() if msg.content else ""
+        if text.startswith("```"):
+            text = text.split("```", 2)[1]
+            if text.startswith("json"):
+                text = text[4:]
+            text = text.strip()
+        raw = json.loads(text)
 
         # Recompute total in case Claude's arithmetic drifted
         dims = [
