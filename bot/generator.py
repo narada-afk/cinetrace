@@ -26,8 +26,8 @@ _client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 # Keeps section logic in Python, not in Claude's head
 FACT_TYPE_TO_SECTION: dict[str, str] = {
     "director_one":      "director-loyalty",  # dedicated director loyalty social card
-    "director_spread":   "directors",          # Directors Worked With section
-    "collab":            "career",             # career chart — Films/yr shows output context
+    "director_spread":   "directors",          # Directors Worked With section (chip clicked)
+    "collab":            "compare",            # compare page — collab always names a co-star
     "streak_trajectory": "career",             # career chart — Hit Rate shows the streak
     "milestone":         "blockbusters",       # Blockbusters section lists milestone films
     "decade_longevity":  "career",             # career chart — Films/yr shows decade peaks
@@ -37,7 +37,6 @@ FACT_TYPE_TO_SECTION: dict[str, str] = {
 # Career chart mode to pre-select via ?mode= URL param
 # Only relevant when section == "career"
 FACT_TYPE_TO_CHART_MODE: dict[str, str] = {
-    "collab":            "films",     # film count by year contextualises co-star count
     "streak_trajectory": "hit_rate",  # hit rate line makes the streak visible
     "decade_longevity":  "films",     # film count by year makes decade peaks visible
 }
@@ -83,13 +82,13 @@ Counterintuitive beats obvious. Precise beats vague.
 Pick the ONE fact_type that best describes the stat you found:
   "director_one"      → one director worked with this actor far more than any other
   "director_spread"   → stats about directors in general (counts, variety, patterns)
-  "collab"            → co-star appeared in X% or N films alongside them
+  "collab"            → co-star appeared in X% or N films alongside them — set compare_with to the co-star's slug
   "streak_trajectory" → consecutive hit/miss streak, or career BO trajectory over years
   "milestone"         → specific ₹100Cr / ₹200Cr / ₹500Cr films and when they happened — ONLY if the fact is purely about this actor with NO named comparison to another actor
   "decade_longevity"  → decade film counts, career span, active years — ONLY if no named actor comparison
   "comparison"        → REQUIRED whenever you name another specific actor in the hook or body (e.g. "more than X's career", "unlike Y", "compared to Z"). Always set compare_with to their slug.
 
-RULE: If your hook or body mentions another actor by name, you MUST use fact_type "comparison".
+RULE: If your hook or body mentions another actor by name for a head-to-head career comparison, use "comparison". If it's specifically about how often two actors co-starred in films together, use "collab". Both require compare_with to be set to the other actor's slug.
 
 Respond ONLY with valid JSON. No explanation outside the JSON."""
 
@@ -351,8 +350,8 @@ async def generate_fact(
     compare_with = raw.get("compare_with", "").strip()
     if compare_with and compare_with not in _ACTOR_SLUGS:
         compare_with = ""
-    if fact_type == "comparison" and not compare_with:
-        # Can't do compare without a valid second actor — fall back
+    if fact_type in ("comparison", "collab") and not compare_with:
+        # Can't do compare/collab without a valid second actor — fall back
         fact_type = "decade_longevity"
         section   = FACT_TYPE_TO_SECTION[fact_type]
 
