@@ -22,7 +22,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
     # No ports — only reachable by other services on the internal Docker network
     volumes:
-      - south-cinema-analytics_postgres_data:/var/lib/postgresql/data
+      - cinetrace_postgres_data_prod:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 10s
@@ -101,5 +101,5 @@ services:
     restart: unless-stopped
 
 volumes:
-  south-cinema-analytics_postgres_data:
+  cinetrace_postgres_data_prod:
     external: true
