@@ -192,11 +192,12 @@ function Legend({ series }: { series: ChartData['series'] }) {
 interface CompareChartBuilderProps {
   actor1: Actor
   actor2: Actor
+  initialMetric?: string
 }
 
-export default function CompareChartBuilder({ actor1, actor2 }: CompareChartBuilderProps) {
+export default function CompareChartBuilder({ actor1, actor2, initialMetric = 'avg_rating' }: CompareChartBuilderProps) {
   const router = useRouter()
-  const [yAxis, setYAxis] = useState('avg_rating')
+  const [yAxis, setYAxis] = useState(initialMetric)
   const [industry, setIndustry] = useState('All')
   const [yearFrom, setYearFrom] = useState(1970)
   const [attentionPulse, setAttentionPulse] = useState(false)

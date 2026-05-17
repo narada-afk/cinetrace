@@ -204,13 +204,14 @@ async def _try_generate(actor_db_name: str) -> tuple[dict | None, dict | None]:
 
 async def _capture(actor_db_name: str, section: str,
                    compare_with: str = "", chart_mode: str = "rating",
-                   director_name: str = "") -> bytes | None:
+                   director_name: str = "", chart_metric: str = "film_count") -> bytes | None:
     slug = ss.actor_slug(actor_db_name)
     try:
         return await ss.capture_section_snapshot(slug, section,
                                                   compare_with=compare_with,
                                                   chart_mode=chart_mode,
-                                                  director_name=director_name)
+                                                  director_name=director_name,
+                                                  chart_metric=chart_metric)
     except Exception as e:
         print(f"[broadcaster] snapshot failed for {actor_db_name}/{section}: {e}")
         return None
@@ -268,6 +269,7 @@ async def generate_daily_schedule(send_for_review_fn) -> None:
         compare_with  = fact.get("compare_with", "")
         chart_mode    = fact.get("chart_mode", "rating")
         director_name = fact.get("director_name", "")
+        chart_metric  = fact.get("chart_metric", "film_count")
         tweet_text    = _format_tweet(actor_db_name, fact)
 
         # Generated facts use "stat_key"; inventory facts use "key"
@@ -282,12 +284,13 @@ async def generate_daily_schedule(send_for_review_fn) -> None:
             section        = section,
             chart_mode     = chart_mode,
             director_name  = director_name,
+            chart_metric   = chart_metric,
         )
 
         # Capture share snapshot for Telegram preview
         png = await _capture(actor_db_name, section,
                              compare_with=compare_with, chart_mode=chart_mode,
-                             director_name=director_name)
+                             director_name=director_name, chart_metric=chart_metric)
 
         slot_label = datetime(tomorrow.year, tomorrow.month, tomorrow.day,
                               slot_hour, 0, tzinfo=IST).strftime("%-I:%M %p IST")
@@ -330,11 +333,13 @@ async def post_scheduled_slot(slot_hour: int) -> None:
     chart_mode    = row.get("chart_mode") or "rating"
     compare_with  = _KEY_TO_COMPARE_WITH.get(row.get("stat_key", ""), "")
     director_name = row.get("director_name") or ""
+    chart_metric  = row.get("chart_metric") or "film_count"
 
     # Capture share snapshot to attach to tweet
     media_ids: list[str] | None = None
     png = await _capture(actor_db_name, section, compare_with=compare_with,
-                         chart_mode=chart_mode, director_name=director_name)
+                         chart_mode=chart_mode, director_name=director_name,
+                         chart_metric=chart_metric)
     if png:
         try:
             media = _api_v1.media_upload(filename="snapshot.png", file=io.BytesIO(png))

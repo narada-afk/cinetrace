@@ -126,7 +126,8 @@ Find the most surprising hidden fact. Respond with JSON:
   "body": "2-3 short lines — the pattern and meaning. Do NOT restate the hook.",
   "hashtags": "#Tag1 #Tag2",
   "fact_type": "one of: director_one | director_spread | collab | streak_trajectory | milestone | decade_longevity | comparison",
-  "compare_with": "other-actor-slug if fact_type is comparison, else empty string",
+  "compare_with": "other-actor-slug if fact_type is comparison or collab, else empty string",
+  "chart_metric": "for comparison/collab facts, pick the metric that best shows the contrast in your fact: film_count (films per year) | avg_rating | hit_rate | avg_box_office | total_box_office | avg_budget | avg_popularity | unique_directors | unique_costars | total_collaborations | director_collaborations. Match to what the fact is actually about.",
   "director_name": "exact director name (from TOP DIRECTORS list) if fact_type is director_one or director_spread and fact is about one specific director, else empty string",
   "stat_key": "short_snake_case key describing this angle (e.g. hit_streak_2019_2023)",
   "confidence": 0-100
@@ -362,6 +363,7 @@ async def generate_fact(
         return None
 
     director_name = (raw.get("director_name") or "").strip()
+    chart_metric  = (raw.get("chart_metric") or "film_count").strip()
 
     return {
         "hook":          hook,
@@ -370,6 +372,7 @@ async def generate_fact(
         "section":       section,
         "chart_mode":    FACT_TYPE_TO_CHART_MODE.get(fact_type, "rating"),
         "compare_with":  compare_with,
+        "chart_metric":  chart_metric,
         "director_name": director_name,
         "stat_key":      f"gen_{raw.get('stat_key', 'unknown')}",
         "confidence":    int(raw.get("confidence", 50)),

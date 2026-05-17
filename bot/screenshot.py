@@ -121,18 +121,20 @@ _CLICK_DIRECTOR_CHIP_JS = """(directorName) => {
 async def capture_section_snapshot(slug: str, section: str,
                                    compare_with: str = "",
                                    chart_mode: str = "rating",
-                                   director_name: str = "") -> bytes | None:
+                                   director_name: str = "",
+                                   chart_metric: str = "film_count") -> bytes | None:
     """
     Returns PNG bytes for the given actor + section.
     Falls back to actor hero if the section heading isn't found.
 
-    compare_with: second actor slug, required when section == "compare".
+    compare_with:  second actor slug, required when section == "compare".
     director_name: specific director to expand in the directors chip list.
                    If empty, expands the first (most collaborated) director.
+    chart_metric:  Y-axis metric for compare chart screenshots.
     """
-    # ── Compare page ──────────────────────────────────────────────────────────
+    # ── Compare chart (dedicated minimal page, same pattern as career chart) ──
     if section == "compare" and compare_with:
-        return await _capture_compare(slug, compare_with)
+        return await _capture_compare_chart(slug, compare_with, metric=chart_metric)
 
     # ── Connection Finder social card (SSR, data-section attribute) ───────────
     if section == "connections" and compare_with:
@@ -366,55 +368,67 @@ async def _capture_connections(slug1: str, slug2: str) -> bytes | None:
         return None
 
 
-async def _capture_compare(slug1: str, slug2: str) -> bytes | None:
-    """Screenshot the /compare/{slug1}-vs-{slug2} chart section.
+async def _capture_compare_chart(slug1: str, slug2: str,
+                                  metric: str = "film_count") -> bytes | None:
+    """Screenshot the /compare/{slug1}-vs-{slug2}/chart minimal page.
 
-    Scrolls past the actor header / filter controls so the Year vs Metric
-    line chart is the hero of the image.
+    Equivalent to _capture_career_chart but for two-actor comparisons.
+    Waits for the SVG line chart inside [data-section="compare-chart"] to render.
     """
-    url = f"{CINETRACE_SCREENSHOT_URL}/compare/{slug1}-vs-{slug2}"
-    # JS: find the recharts/svg chart container and return its document Y
-    _FIND_CHART_JS = """() => {
-        const el = document.querySelector('.recharts-wrapper, svg.recharts-surface');
-        if (!el) return null;
-        const r = el.getBoundingClientRect();
-        return r.top + window.scrollY;
-    }"""
+    url = f"{CINETRACE_SCREENSHOT_URL}/compare/{slug1}-vs-{slug2}/chart?metric={metric}"
+    resolver = _backend_host_resolver_rules()
+    chromium_args = ["--no-sandbox", "--disable-setuid-sandbox"]
+    if resolver:
+        chromium_args.append(f"--host-resolver-rules={resolver}")
+
     try:
         async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=True,
-                args=["--no-sandbox", "--disable-setuid-sandbox"],
-            )
+            browser = await p.chromium.launch(headless=True, args=chromium_args)
             page = await browser.new_page(
                 viewport={"width": _VIEWPORT_W, "height": 900},
                 color_scheme="dark",
             )
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            # Extra wait so the interactive chart renders
-            await page.wait_for_timeout(5000)
 
-            chart_y = await page.evaluate(_FIND_CHART_JS)
-            if chart_y and chart_y > 20:
-                # Scroll so chart top is near the top of the viewport
-                scroll_to = max(0, int(chart_y) - 20)
-                await page.evaluate("(y) => window.scrollTo(0, y)", scroll_to)
-                await page.wait_for_timeout(400)
-                png = await page.screenshot(
-                    type="png",
-                    clip={"x": 0, "y": 0, "width": _VIEWPORT_W, "height": 500},
+            # Wait for the SVG chart to render (client-side fetch + draw)
+            try:
+                await page.wait_for_selector(
+                    '[data-section="compare-chart"] svg',
+                    timeout=35000,
                 )
-            else:
-                # Fallback: capture the full above-fold area
-                png = await page.screenshot(
-                    type="png",
-                    clip={"x": 0, "y": 0, "width": _VIEWPORT_W, "height": 500},
-                )
+            except Exception:
+                print(f"[screenshot] compare chart SVG not found for {slug1}-vs-{slug2}, falling back to hero")
+                return await _hero_fallback(page, browser)
+
+            # Extra tick for animated line draw to complete
+            await page.wait_for_timeout(1200)
+
+            pos = await page.evaluate(_FIND_DATA_SECTION_JS, "compare-chart")
+            if not pos:
+                return await _hero_fallback(page, browser)
+
+            await page.evaluate("(y) => window.scrollTo(0, y)", max(0, pos["y"] - 16))
+            await page.wait_for_timeout(300)
+
+            png = await page.screenshot(
+                type="png",
+                clip={
+                    "x":      0,
+                    "y":      0,
+                    "width":  _VIEWPORT_W,
+                    "height": min(int(pos["h"]) + 32, 600),
+                },
+            )
             await browser.close()
             return png
     except Exception as e:
-        print(f"[screenshot] compare failed for {slug1}-vs-{slug2}: {e}")
+        print(f"[screenshot] compare chart failed for {slug1}-vs-{slug2}: {e}")
         return None
+
+
+async def _capture_compare(slug1: str, slug2: str) -> bytes | None:
+    """Kept for backwards compatibility — routes to the chart page."""
+    return await _capture_compare_chart(slug1, slug2)
 
 
 async def _hero_fallback(page, browser) -> bytes | None:
