@@ -21,6 +21,9 @@ import tweepy
 
 import db
 import screenshot as ss
+import stats_client
+import generator as gen
+import scorer as sc
 from config import (
     TWITTER_API_KEY, TWITTER_API_SECRET,
     TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_TOKEN_SECRET, TWITTER_BEARER_TOKEN,
@@ -92,33 +95,43 @@ def _format_tweet(actor_db_name: str, fact: dict) -> str:
 
 # ── Industry picker — ensure variety across 6 slots ─────────────────────────
 
-def _pick_actors_for_day(used_keys_last_7_days: set[str]) -> list[str]:
+_ACTOR_INDUSTRY: dict[str, str] = {a["db_name"]: a.get("industry", "") for a in ACTORS}
+
+def _pick_actors_for_day(used_actors_last_7_days: set[str]) -> list[str]:
+    """Pick 6 actors across all 4 industries, preferring actors not tweeted recently.
+
+    Now draws from the full ACTORS list (not just inventory), since the generator
+    can produce facts for any actor with DB data.
+    """
     by_industry: dict[str, list[str]] = {
-        "Telugu":    [],
-        "Tamil":     [],
-        "Malayalam": [],
-        "Kannada":   [],
+        "Telugu": [], "Tamil": [], "Malayalam": [], "Kannada": [],
     }
     for a in ACTORS:
-        name = a["db_name"]
-        industry = a.get("industry", "")
-        if name in FACTS and FACTS[name]:
-            fresh = [f for f in FACTS[name] if f["key"] not in used_keys_last_7_days]
-            if fresh:
-                by_industry.setdefault(industry, []).append(name)
+        by_industry.setdefault(a.get("industry", ""), []).append(a["db_name"])
 
     chosen: list[str] = []
     for ind in ["Telugu", "Tamil", "Malayalam", "Kannada"]:
         pool = by_industry.get(ind, [])
-        if pool:
-            chosen.append(random.choice(pool))
+        fresh = [n for n in pool if n not in used_actors_last_7_days]
+        pick_from = fresh if fresh else pool
+        if pick_from:
+            chosen.append(random.choice(pick_from))
 
-    all_eligible = [
-        name for names in by_industry.values() for name in names
-        if name not in chosen
+    remaining = [
+        a["db_name"] for a in ACTORS
+        if a["db_name"] not in chosen
     ]
-    random.shuffle(all_eligible)
-    chosen += all_eligible[: max(0, 6 - len(chosen))]
+    fresh_remaining = [n for n in remaining if n not in used_actors_last_7_days]
+    random.shuffle(fresh_remaining)
+    chosen += fresh_remaining[: max(0, 6 - len(chosen))]
+
+    if len(chosen) < 6:
+        random.shuffle(remaining)
+        for n in remaining:
+            if n not in chosen:
+                chosen.append(n)
+            if len(chosen) == 6:
+                break
 
     random.shuffle(chosen)
     return chosen[:6]
@@ -150,14 +163,54 @@ def _pick_fact_for_slot(actor_db_name: str, slot_hour: int,
 
     return random.choice(preferred) if preferred else random.choice(pool)
 
+# ── Generator helper ──────────────────────────────────────────────────────────
+
+async def _try_generate(actor_db_name: str) -> tuple[dict | None, dict | None]:
+    """Fetch live actor profile, generate a fact, and score it.
+
+    Returns (fact, score) where fact is None if generation failed or scored too low.
+    Score is always returned so it can be shown in Telegram even for borderline facts.
+    Falls back to None if the fact scores below the 'weak' threshold (< 25).
+    """
+    try:
+        profile = await stats_client.get_full_profile(actor_db_name)
+        if not profile:
+            print(f"[broadcaster] no profile for {actor_db_name}")
+            return None, None
+
+        industry      = _ACTOR_INDUSTRY.get(actor_db_name, "")
+        recent_tweets = db.get_recent_tweet_texts_for_actor(actor_db_name, days=30)
+        fact          = await gen.generate_fact(actor_db_name, industry, profile, recent_tweets)
+
+        if not fact:
+            return None, None
+
+        score = await sc.score_fact(actor_db_name, industry, fact)
+        total = score.get("total", 0)
+        v     = score.get("verdict", "borderline")
+        print(f"[broadcaster] {actor_db_name}: {fact['stat_key']} scored {total}/60 ({v})")
+
+        if v == "weak":
+            print(f"[broadcaster] score too low ({total}), falling back to inventory")
+            return None, None
+
+        return fact, score
+
+    except Exception as e:
+        print(f"[broadcaster] generator/scorer failed for {actor_db_name}: {e}")
+        return None, None
+
 # ── Snapshot helper ───────────────────────────────────────────────────────────
 
 async def _capture(actor_db_name: str, section: str,
-                   compare_with: str = "") -> bytes | None:
+                   compare_with: str = "", chart_mode: str = "rating",
+                   director_name: str = "") -> bytes | None:
     slug = ss.actor_slug(actor_db_name)
     try:
         return await ss.capture_section_snapshot(slug, section,
-                                                  compare_with=compare_with)
+                                                  compare_with=compare_with,
+                                                  chart_mode=chart_mode,
+                                                  director_name=director_name)
     except Exception as e:
         print(f"[broadcaster] snapshot failed for {actor_db_name}/{section}: {e}")
         return None
@@ -169,6 +222,9 @@ async def generate_daily_schedule(send_for_review_fn) -> None:
     Called at 9 PM IST.
     Generates 6 tweet drafts for tomorrow, stores them as 'pending',
     captures share snapshot, sends each to Telegram for approval with image preview.
+
+    Primary path: AI generator fetches live actor stats and surfaces a hidden fact.
+    Fallback: hand-curated inventory fact if the generator fails or has no data.
     """
     tomorrow = date.today() + timedelta(days=1)
 
@@ -176,38 +232,62 @@ async def generate_daily_schedule(send_for_review_fn) -> None:
         print(f"[broadcaster] schedule already exists for {tomorrow}, skipping")
         return
 
-    used_keys = db.get_used_fact_keys(days=7)
-    actors = _pick_actors_for_day(used_keys)
-
-    if len(actors) < 6:
-        all_names = all_actors_with_facts()
-        while len(actors) < 6:
-            actors.append(random.choice(all_names))
-
+    used_actors = db.get_used_actors(days=7)
+    actors = _pick_actors_for_day(used_actors)
     print(f"[broadcaster] generating schedule for {tomorrow}: {actors}")
 
-    for i, slot_hour in enumerate(SLOT_HOURS):
-        actor_db_name = actors[i] if i < len(actors) else random.choice(all_actors_with_facts())
+    # Pre-fetch inventory fallback state once
+    used_keys = db.get_used_fact_keys(days=7)
 
-        fact = _pick_fact_for_slot(actor_db_name, slot_hour, used_keys)
+    for i, slot_hour in enumerate(SLOT_HOURS):
+        actor_db_name = actors[i] if i < len(actors) else random.choice(list(_ACTOR_INDUSTRY))
+
+        # ── Primary: AI generator + scorer ────────────────────────────────────
+        fact, score = await _try_generate(actor_db_name)
+
+        # ── Fallback: inventory (if generator failed or scored weak) ───────────
         if not fact:
-            print(f"[broadcaster] no facts for {actor_db_name}, skipping slot {slot_hour}")
+            print(f"[broadcaster] falling back to inventory for {actor_db_name} slot {slot_hour}")
+            fact  = _pick_fact_for_slot(actor_db_name, slot_hour, used_keys)
+            score = None  # inventory facts don't get scored
+
+        # ── Last resort: any inventory actor ──────────────────────────────────
+        if not fact:
+            for fallback_actor in all_actors_with_facts():
+                fact = _pick_fact_for_slot(fallback_actor, slot_hour, used_keys)
+                if fact:
+                    actor_db_name = fallback_actor
+                    score = None
+                    break
+
+        if not fact:
+            print(f"[broadcaster] no fact available for slot {slot_hour}h, skipping")
             continue
-        section      = fact.get("section", "overview")
-        compare_with = fact.get("compare_with", "")
-        tweet_text   = _format_tweet(actor_db_name, fact)
+
+        section       = fact.get("section", "career")
+        compare_with  = fact.get("compare_with", "")
+        chart_mode    = fact.get("chart_mode", "rating")
+        director_name = fact.get("director_name", "")
+        tweet_text    = _format_tweet(actor_db_name, fact)
+
+        # Generated facts use "stat_key"; inventory facts use "key"
+        stat_key = fact.get("stat_key") or fact.get("key", "")
 
         row_id = db.insert_scheduled_tweet(
             scheduled_date = tomorrow,
             slot_hour      = slot_hour,
             actor_db_name  = actor_db_name,
             tweet_text     = tweet_text,
-            stat_key       = fact["key"],
+            stat_key       = stat_key,
             section        = section,
+            chart_mode     = chart_mode,
+            director_name  = director_name,
         )
 
         # Capture share snapshot for Telegram preview
-        png = await _capture(actor_db_name, section, compare_with=compare_with)
+        png = await _capture(actor_db_name, section,
+                             compare_with=compare_with, chart_mode=chart_mode,
+                             director_name=director_name)
 
         slot_label = datetime(tomorrow.year, tomorrow.month, tomorrow.day,
                               slot_hour, 0, tzinfo=IST).strftime("%-I:%M %p IST")
@@ -217,11 +297,13 @@ async def generate_daily_schedule(send_for_review_fn) -> None:
             actor_name = actor_db_name,
             tweet_text = tweet_text,
             screenshot = png,
+            score      = score,
         )
         if msg_id:
             db.set_scheduled_telegram_id(row_id, msg_id)
 
-        used_keys.add(fact["key"])
+        if stat_key:
+            used_keys.add(stat_key)
 
     print(f"[broadcaster] {len(SLOT_HOURS)} drafts sent to Telegram for {tomorrow}")
 
@@ -244,12 +326,15 @@ async def post_scheduled_slot(slot_hour: int) -> None:
         return
 
     actor_db_name = row["actor_db_name"]
-    section       = row.get("section") or _KEY_TO_SECTION.get(row.get("stat_key", ""), "overview")
+    section       = row.get("section") or _KEY_TO_SECTION.get(row.get("stat_key", ""), "career")
+    chart_mode    = row.get("chart_mode") or "rating"
     compare_with  = _KEY_TO_COMPARE_WITH.get(row.get("stat_key", ""), "")
+    director_name = row.get("director_name") or ""
 
     # Capture share snapshot to attach to tweet
     media_ids: list[str] | None = None
-    png = await _capture(actor_db_name, section, compare_with=compare_with)
+    png = await _capture(actor_db_name, section, compare_with=compare_with,
+                         chart_mode=chart_mode, director_name=director_name)
     if png:
         try:
             media = _api_v1.media_upload(filename="snapshot.png", file=io.BytesIO(png))

@@ -79,14 +79,56 @@ _FIND_HEADING_JS = """(heading) => {
     return {y: sectionTop, x: r.x, w: r.width, h: sectionH};
 }"""
 
+# Same as above but taller cap — used after a director chip is expanded
+_FIND_HEADING_TALL_JS = """(heading) => {
+    const hs = Array.from(document.querySelectorAll("h2"));
+    const idx = hs.findIndex(el => el.textContent.includes(heading));
+    if (idx < 0) return null;
+    const h = hs[idx];
+    const next = hs[idx + 1];
+    const r = h.getBoundingClientRect();
+    const sectionTop = r.top + window.scrollY;
+    const sectionH = next
+        ? Math.min(Math.max(next.getBoundingClientRect().top + window.scrollY - sectionTop, 200), 900)
+        : 700;
+    return {y: sectionTop, x: r.x, w: r.width, h: sectionH};
+}"""
+
+# Clicks the director chip matching director_name (or the first chip if empty)
+_CLICK_DIRECTOR_CHIP_JS = """(directorName) => {
+    const h2s = Array.from(document.querySelectorAll("h2"));
+    const h2 = h2s.find(el => el.textContent.includes("Directors Worked With"));
+    if (!h2) return false;
+    // Walk siblings until we find a container with buttons (the chip row)
+    let el = h2.nextElementSibling;
+    while (el) {
+        const buttons = Array.from(el.querySelectorAll("button"));
+        if (buttons.length > 0) {
+            const target = directorName
+                ? buttons.find(b => b.textContent.includes(directorName))
+                : buttons[0];
+            if (target) { target.click(); return true; }
+            // Fallback to first if named director not found
+            buttons[0].click();
+            return true;
+        }
+        el = el.nextElementSibling;
+    }
+    return false;
+}"""
+
 
 async def capture_section_snapshot(slug: str, section: str,
-                                   compare_with: str = "") -> bytes | None:
+                                   compare_with: str = "",
+                                   chart_mode: str = "rating",
+                                   director_name: str = "") -> bytes | None:
     """
     Returns PNG bytes for the given actor + section.
     Falls back to actor hero if the section heading isn't found.
 
     compare_with: second actor slug, required when section == "compare".
+    director_name: specific director to expand in the directors chip list.
+                   If empty, expands the first (most collaborated) director.
     """
     # ── Compare page ──────────────────────────────────────────────────────────
     if section == "compare" and compare_with:
@@ -98,7 +140,7 @@ async def capture_section_snapshot(slug: str, section: str,
 
     # ── Career chart (data-section attribute, client-rendered) ────────────────
     if section in ("career", "filmography"):
-        return await _capture_career_chart(slug)
+        return await _capture_career_chart(slug, mode=chart_mode)
 
     # ── Director loyalty social card (SSR, data-section attribute) ────────────
     if section == "director-loyalty":
@@ -127,6 +169,15 @@ async def capture_section_snapshot(slug: str, section: str,
                     await page.evaluate("(y) => window.scrollTo(0, y)",
                                         max(0, pos["y"] - 12))
                     await page.wait_for_timeout(400)
+
+                    # For directors: click a chip so the film grid expands
+                    if section == "directors":
+                        clicked = await page.evaluate(_CLICK_DIRECTOR_CHIP_JS, director_name)
+                        if clicked:
+                            await page.wait_for_timeout(600)
+                            # Re-measure after expansion (taller cap)
+                            pos = await page.evaluate(_FIND_HEADING_TALL_JS, heading_text) or pos
+
                     section_h = int(pos.get("h", _SECTION_HEIGHT))
                     png = await page.screenshot(
                         type="png",
@@ -150,14 +201,14 @@ async def capture_section_snapshot(slug: str, section: str,
         return None
 
 
-async def _capture_career_chart(slug: str) -> bytes | None:
-    """Screenshot the ActorCareerChart section.
+async def _capture_career_chart(slug: str, mode: str = "rating") -> bytes | None:
+    """Screenshot the ActorCareerChart section in the requested mode.
 
-    We load /actors/{slug}/chart — a minimal page that renders ONLY the career
-    chart component, making SSR fast and React hydration near-instant (one
-    component vs the full actor page with 10+ sections).
+    We load /actors/{slug}/chart?mode={mode} — a minimal page that renders ONLY
+    the career chart component. The mode param pre-selects the chart view so the
+    screenshot shows the right data dimension for the tweet.
     """
-    url = f"{CINETRACE_SCREENSHOT_URL}/actors/{slug}/chart"
+    url = f"{CINETRACE_SCREENSHOT_URL}/actors/{slug}/chart?mode={mode}"
     resolver = _backend_host_resolver_rules()
     chromium_args = ["--no-sandbox", "--disable-setuid-sandbox"]
     if resolver:

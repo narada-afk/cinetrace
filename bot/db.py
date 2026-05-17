@@ -51,7 +51,9 @@ CREATE INDEX IF NOT EXISTS idx_bot_tweet_log_created_at   ON bot_tweet_log(creat
 MIGRATIONS = [
     "ALTER TABLE bot_tweet_log ADD COLUMN IF NOT EXISTS platform   VARCHAR(20) NOT NULL DEFAULT 'twitter'",
     "ALTER TABLE bot_tweet_log ADD COLUMN IF NOT EXISTS source_url TEXT",
-    "ALTER TABLE scheduled_tweets ADD COLUMN IF NOT EXISTS section VARCHAR(50) NOT NULL DEFAULT 'overview'",
+    "ALTER TABLE scheduled_tweets ADD COLUMN IF NOT EXISTS section    VARCHAR(50) NOT NULL DEFAULT 'overview'",
+    "ALTER TABLE scheduled_tweets ADD COLUMN IF NOT EXISTS chart_mode    VARCHAR(20)  NOT NULL DEFAULT 'rating'",
+    "ALTER TABLE scheduled_tweets ADD COLUMN IF NOT EXISTS director_name VARCHAR(200) NOT NULL DEFAULT ''",
 ]
 
 def get_conn():
@@ -80,21 +82,26 @@ def scheduled_slots_exist(scheduled_date: date) -> bool:
 
 def insert_scheduled_tweet(scheduled_date: date, slot_hour: int,
                             actor_db_name: str, tweet_text: str,
-                            stat_key: str, section: str = "overview") -> int:
+                            stat_key: str, section: str = "career",
+                            chart_mode: str = "rating",
+                            director_name: str = "") -> int:
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """INSERT INTO scheduled_tweets
-                   (scheduled_date, slot_hour, actor_db_name, tweet_text, stat_key, section)
-                   VALUES (%s, %s, %s, %s, %s, %s)
+                   (scheduled_date, slot_hour, actor_db_name, tweet_text, stat_key, section, chart_mode, director_name)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                    ON CONFLICT (scheduled_date, slot_hour) DO UPDATE
-                       SET actor_db_name = EXCLUDED.actor_db_name,
-                           tweet_text    = EXCLUDED.tweet_text,
-                           stat_key      = EXCLUDED.stat_key,
-                           section       = EXCLUDED.section,
-                           status        = 'pending'
+                       SET actor_db_name  = EXCLUDED.actor_db_name,
+                           tweet_text     = EXCLUDED.tweet_text,
+                           stat_key       = EXCLUDED.stat_key,
+                           section        = EXCLUDED.section,
+                           chart_mode     = EXCLUDED.chart_mode,
+                           director_name  = EXCLUDED.director_name,
+                           status         = 'pending'
                    RETURNING id""",
-                (scheduled_date, slot_hour, actor_db_name, tweet_text, stat_key, section)
+                (scheduled_date, slot_hour, actor_db_name, tweet_text, stat_key,
+                 section, chart_mode, director_name)
             )
             row_id = cur.fetchone()[0]
         conn.commit()
@@ -153,6 +160,31 @@ def mark_scheduled_posted(row_id: int, tweet_id: str):
                 (tweet_id, row_id)
             )
         conn.commit()
+
+def get_used_actors(days: int = 7) -> set[str]:
+    """Actor db_names that had a scheduled tweet in the last N days."""
+    since = datetime.utcnow() - timedelta(days=days)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT actor_db_name FROM scheduled_tweets WHERE created_at >= %s",
+                (since,)
+            )
+            return {row[0] for row in cur.fetchall()}
+
+def get_recent_tweet_texts_for_actor(actor_db_name: str, days: int = 30) -> list[str]:
+    """Recent posted/approved tweet texts for this actor — used for angle dedup in generator."""
+    since = datetime.utcnow() - timedelta(days=days)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT tweet_text FROM scheduled_tweets
+                   WHERE actor_db_name = %s AND created_at >= %s
+                   AND status IN ('posted', 'approved')
+                   ORDER BY created_at DESC LIMIT 20""",
+                (actor_db_name, since)
+            )
+            return [row[0] for row in cur.fetchall()]
 
 def get_used_fact_keys(days: int = 7) -> set[str]:
     since = datetime.utcnow() - timedelta(days=days)

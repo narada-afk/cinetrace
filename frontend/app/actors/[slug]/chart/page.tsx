@@ -16,11 +16,15 @@ import { getActor, getActorMovies, searchActors } from '@/lib/api'
 // and React hydration is instant (only one component to attach).
 const ActorCareerChart = dynamic(() => import('@/components/ActorCareerChart'), { ssr: false })
 
+type Mode = 'rating' | 'hit_rate' | 'box_office' | 'films'
+const VALID_MODES: Mode[] = ['rating', 'hit_rate', 'box_office', 'films']
+
 interface PageProps {
-  params: { slug: string }
+  params:      { slug: string }
+  searchParams: { mode?: string }
 }
 
-export default async function ActorChartPage({ params }: PageProps) {
+export default async function ActorChartPage({ params, searchParams }: PageProps) {
   const slug = params.slug
 
   // Resolve slug → numeric actor ID (same logic as the main actor page)
@@ -46,12 +50,17 @@ export default async function ActorChartPage({ params }: PageProps) {
         .sort((a, b) => a.release_year - b.release_year)[0] ?? null
     : null
 
+  const initialMode = VALID_MODES.includes(searchParams.mode as Mode)
+    ? (searchParams.mode as Mode)
+    : 'rating'
+
   return (
     <div className="min-h-screen bg-[#0a0a0f] p-6 sm:p-8">
       <ActorCareerChart
         actorId={numericId}
         actorName={actor.name}
         firstFilmYear={firstFilm?.release_year ?? 1970}
+        initialMode={initialMode}
       />
     </div>
   )

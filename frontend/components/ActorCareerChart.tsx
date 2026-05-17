@@ -337,14 +337,16 @@ interface ActorCareerChartProps {
   actorId:        number
   actorName:      string
   firstFilmYear?: number
+  initialMode?:   Mode
 }
 
 export default function ActorCareerChart({
   actorId,
   actorName,
   firstFilmYear = 1970,
+  initialMode   = 'rating',
 }: ActorCareerChartProps) {
-  const [mode,     setMode]     = useState<Mode>('rating')
+  const [mode,     setMode]     = useState<Mode>(initialMode)
   const [industry, setIndustry] = useState('All')
   const [yearFrom, setYearFrom] = useState(firstFilmYear)
   const [yearTo,   setYearTo]   = useState(2026)
