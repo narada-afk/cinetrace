@@ -297,6 +297,32 @@ async def _handle_sched_skip(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.edit_message_reply_markup(reply_markup=None)
     await context.bot.send_message(TELEGRAM_CHAT_ID, "⏭ Scheduled tweet skipped.")
 
+# ── Posted notification ───────────────────────────────────────────────────────
+
+async def send_alert(message: str) -> None:
+    bot = Bot(token=TELEGRAM_BOT_TOKEN)
+    try:
+        await bot.send_message(
+            chat_id=TELEGRAM_CHAT_ID,
+            text=f"🚨 *Bot Alert*\n{message}",
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        print(f"[telegram] alert failed: {e}")
+
+async def send_posted_notification(actor_name: str, tweet_id: str, label: str = "Tweet") -> None:
+    bot = Bot(token=TELEGRAM_BOT_TOKEN)
+    url = f"https://x.com/i/web/status/{tweet_id}"
+    try:
+        await bot.send_message(
+            chat_id=TELEGRAM_CHAT_ID,
+            text=f"✅ *{label} posted* — {actor_name}\n{url}",
+            parse_mode="Markdown",
+            disable_web_page_preview=True,
+        )
+    except Exception as e:
+        print(f"[telegram] posted notification failed: {e}")
+
 # ── App builder ───────────────────────────────────────────────────────────────
 
 def build_app() -> Application:

@@ -347,6 +347,12 @@ async def post_scheduled_slot(slot_hour: int) -> None:
             print(f"[broadcaster] uploaded media {media_ids[0]} for slot {slot_hour}h")
         except Exception as e:
             print(f"[broadcaster] media upload failed for slot {slot_hour}h: {e}, posting text-only")
+            if "401" in str(e) or "Unauthorized" in str(e):
+                import telegram_handler
+                await telegram_handler.send_alert(
+                    f"Twitter 401 Unauthorized on media upload (slot {slot_hour}h).\n"
+                    f"Access tokens need to be regenerated in the Twitter Developer Portal."
+                )
 
     try:
         kwargs: dict = {"text": row["tweet_text"]}
@@ -356,5 +362,15 @@ async def post_scheduled_slot(slot_hour: int) -> None:
         tweet_id = str(resp.data["id"])
         db.mark_scheduled_posted(row["id"], tweet_id)
         print(f"[broadcaster] posted slot {slot_hour}h tweet → {tweet_id}")
+        import telegram_handler
+        await telegram_handler.send_posted_notification(
+            actor_db_name.replace("_", " ").title(), tweet_id, label="Scheduled tweet"
+        )
     except Exception as e:
         print(f"[broadcaster] failed to post slot {slot_hour}h: {e}")
+        if "401" in str(e) or "Unauthorized" in str(e):
+            import telegram_handler
+            await telegram_handler.send_alert(
+                f"Twitter 401 Unauthorized — slot {slot_hour}h tweet not posted.\n"
+                f"Access tokens need to be regenerated in the Twitter Developer Portal."
+            )
