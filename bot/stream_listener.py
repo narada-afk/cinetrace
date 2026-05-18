@@ -1,5 +1,6 @@
 import asyncio
 import threading
+import time
 import tweepy
 from actors import BY_HANDLE, ALL_HANDLES, SIGNALS_BY_HANDLE, ALL_SIGNAL_HANDLES
 from config import TWITTER_BEARER_TOKEN
@@ -8,11 +9,16 @@ _loop: asyncio.AbstractEventLoop | None = None
 _ACTOR_ID_MAP:  dict[str, dict] = {}   # user_id → actor dict
 _SIGNAL_ID_MAP: dict[str, dict] = {}   # user_id → signal account dict
 
+_BACKOFF_BASE    = 60    # seconds
+_BACKOFF_MAX     = 900   # 15 minutes cap
+_ALERT_THRESHOLD = 5     # alert after this many consecutive 429s
+
 class ActorStreamListener(tweepy.StreamingClient):
     def __init__(self, actor_fn, signal_fn, *args, **kwargs):
         super().__init__(TWITTER_BEARER_TOKEN, *args, **kwargs)
-        self._on_actor  = actor_fn
-        self._on_signal = signal_fn
+        self._on_actor       = actor_fn
+        self._on_signal      = signal_fn
+        self._consecutive_429 = 0
 
     def on_tweet(self, tweet):
         if not _loop:
@@ -37,9 +43,24 @@ class ActorStreamListener(tweepy.StreamingClient):
         print("[stream] disconnected")
 
     def on_request_error(self, status_code):
-        print(f"[stream] HTTP {status_code} — backing off 60s")
-        import time; time.sleep(60)
-        return True  # keep retrying
+        if status_code == 429:
+            self._consecutive_429 += 1
+            backoff = min(_BACKOFF_BASE * (2 ** (self._consecutive_429 - 1)), _BACKOFF_MAX)
+            print(f"[stream] HTTP 429 — backoff {backoff}s (consecutive: {self._consecutive_429})")
+            if self._consecutive_429 == _ALERT_THRESHOLD and _loop:
+                import telegram_handler
+                asyncio.run_coroutine_threadsafe(
+                    telegram_handler.send_alert(
+                        f"Stream rate-limited for {self._consecutive_429} consecutive requests. "
+                        f"Twitter API quota may be exhausted."
+                    ), _loop
+                )
+            time.sleep(backoff)
+        else:
+            self._consecutive_429 = 0
+            print(f"[stream] HTTP {status_code} — backing off 60s")
+            time.sleep(60)
+        return True
 
 def _resolve_batch(client, handles: list[str], lookup: dict, label: str) -> dict[str, dict]:
     resolved = {}

@@ -227,6 +227,9 @@ async def post_approved(row: dict):
         reply_tweet_id = str(resp.data["id"])
         db.mark_posted(row["id"], reply_tweet_id)
         print(f"[post] posted tweet {reply_tweet_id}")
+        actor = BY_HANDLE.get(row["actor_handle"], {})
+        actor_name = actor.get("name", row["actor_handle"])
+        await telegram_handler.send_posted_notification(actor_name, reply_tweet_id, label="Reply")
     except Exception as e:
         print(f"[post] failed: {e}")
 

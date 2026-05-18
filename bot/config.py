@@ -36,8 +36,8 @@ REDDIT_PASSWORD      = os.getenv("REDDIT_PASSWORD", "")
 MAX_REPLIES_PER_ACTOR_PER_DAY  = 1    # one actor gets at most one reactive reply/day
 MIN_HOURS_BETWEEN_POSTS        = 4    # minimum gap between any two reactive posts for same actor
 MAX_REACTIVE_REPLIES_PER_WEEK  = 8    # hard ceiling across ALL actors per 7-day rolling window
-MIN_TRIGGER_TO_REVIEW_MINUTES  = 60   # minimum wait from trigger detection → Telegram review
-MAX_TRIGGER_TO_REVIEW_MINUTES  = 110  # maximum wait (actual delay is randomised in this range)
+MIN_TRIGGER_TO_REVIEW_MINUTES  = 30   # minimum wait from trigger detection → Telegram review
+MAX_TRIGGER_TO_REVIEW_MINUTES  = 45   # maximum wait (actual delay is randomised in this range)
 
 CONFIDENCE_AUTO_THRESHOLD     = 101   # 101 = all go to Telegram (100% review mode)
 TREND_POLL_INTERVAL_SECONDS   = 1800  # 30 minutes
