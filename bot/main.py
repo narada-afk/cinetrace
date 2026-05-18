@@ -546,6 +546,12 @@ async def main():
                 if not live:
                     print("[watchdog] stream thread dead — restarting")
                     try:
+                        if _stream_handle:
+                            try:
+                                _stream_handle.disconnect()
+                            except Exception:
+                                pass
+                            await asyncio.sleep(30)  # let Twitter close the old connection
                         _stream_handle = await stream_listener.start_stream(on_actor_tweet, on_signal_tweet)
                         if _stream_handle:
                             print("[watchdog] stream restarted")
