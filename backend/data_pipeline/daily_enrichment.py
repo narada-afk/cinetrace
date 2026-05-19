@@ -32,6 +32,7 @@ from data_pipeline.tmdb_client import fetch_movie_details
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID", "")
+TMDB_API_KEY       = os.getenv("TMDB_API_KEY", "")
 USD_TO_INR         = 84.0
 RECENT_MONTHS      = 6   # re-enrich films released within this window
 NOTABLE_THRESHOLD  = 20  # ₹Cr — flag missing BO if film looks notable (has imdb_rating)
@@ -107,24 +108,31 @@ def _find_notable_gaps(db) -> list[dict]:
 def run():
     t_start = time.monotonic()
     db = SessionLocal()
+    has_tmdb = bool(TMDB_API_KEY.strip())
 
     try:
-        missing_before = _count_missing(db)
-        print(f"[enrichment] {missing_before} films missing BO data before enrichment")
+        filled = 0
+        re_updated = 0
 
-        # Step 1: Fill missing BO from TMDB
-        enrich_box_office(batch_size=500, min_crore=0.5)
+        if has_tmdb:
+            missing_before = _count_missing(db)
+            print(f"[enrichment] {missing_before} films missing BO data before enrichment")
 
-        missing_after = _count_missing(db)
-        filled = missing_before - missing_after
-        print(f"[enrichment] filled {filled} films, {missing_after} still missing")
+            # Step 1: Fill missing BO from TMDB
+            enrich_box_office(batch_size=500, min_crore=0.5)
 
-        # Step 2: Re-enrich recent films
-        db.expire_all()
-        re_updated = _reenrich_recent(db)
-        print(f"[enrichment] re-enriched {re_updated} recent films")
+            missing_after = _count_missing(db)
+            filled = missing_before - missing_after
+            print(f"[enrichment] filled {filled} films, {missing_after} still missing")
 
-        # Step 3: Find notable gaps
+            # Step 2: Re-enrich recent films
+            db.expire_all()
+            re_updated = _reenrich_recent(db)
+            print(f"[enrichment] re-enriched {re_updated} recent films")
+        else:
+            print("[enrichment] TMDB_API_KEY not set — skipping enrichment, running gap audit only")
+
+        # Step 3: Find notable gaps (always runs)
         db.expire_all()
         gaps = _find_notable_gaps(db)
 
@@ -133,8 +141,11 @@ def run():
         # Build Telegram digest
         lines = [f"📊 *Daily DB Enrichment — {date.today()}*\n"]
 
-        lines.append(f"✅ BO data filled: *{filled}* films")
-        lines.append(f"🔄 Recent films re-synced: *{re_updated}* films")
+        if has_tmdb:
+            lines.append(f"✅ BO data filled: *{filled}* films")
+            lines.append(f"🔄 Recent films re-synced: *{re_updated}* films")
+        else:
+            lines.append("⚠️ TMDB_API_KEY not set — enrichment skipped")
         lines.append(f"⏱ Time: {elapsed}s\n")
 
         if gaps:
