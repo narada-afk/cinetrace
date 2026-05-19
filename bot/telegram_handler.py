@@ -35,15 +35,21 @@ def set_reddit_format_callback(fn):
 async def send_scheduled_for_review(row_id: int, slot_label: str,
                                      actor_name: str, tweet_text: str,
                                      screenshot: bytes | None = None,
-                                     score: dict | None = None) -> int | None:
+                                     score: dict | None = None,
+                                     data_gaps: list[dict] | None = None) -> int | None:
     from scorer import format_score_line
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
     score_line = f"\n{format_score_line(score)}\n" if score else ""
+    gap_lines = ""
+    if data_gaps:
+        items = "\n".join(f"  • {g['title']} ({g['release_year']})" for g in data_gaps)
+        gap_lines = f"\n⚠️ *Missing BO data — verify claims:*\n{items}\n"
     header = (
         f"🗓 *Scheduled Tweet*\n"
         f"Actor: *{actor_name}*\n"
         f"Slot: `{slot_label}`"
-        f"{score_line}\n"
+        f"{score_line}"
+        f"{gap_lines}\n"
         f"```\n{tweet_text[:700]}\n```"
     )
     keyboard = InlineKeyboardMarkup([[

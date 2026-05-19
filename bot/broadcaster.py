@@ -294,6 +294,10 @@ async def generate_daily_schedule(send_for_review_fn) -> None:
 
         slot_label = datetime(tomorrow.year, tomorrow.month, tomorrow.day,
                               slot_hour, 0, tzinfo=IST).strftime("%-I:%M %p IST")
+        data_gaps = db.get_data_gaps(actor_db_name)
+        if data_gaps:
+            print(f"[broadcaster] data gaps for {actor_db_name}: {[g['title'] for g in data_gaps]}")
+
         msg_id = await send_for_review_fn(
             row_id     = row_id,
             slot_label = slot_label,
@@ -301,6 +305,7 @@ async def generate_daily_schedule(send_for_review_fn) -> None:
             tweet_text = tweet_text,
             screenshot = png,
             score      = score,
+            data_gaps  = data_gaps or None,
         )
         if msg_id:
             db.set_scheduled_telegram_id(row_id, msg_id)

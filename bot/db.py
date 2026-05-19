@@ -199,6 +199,28 @@ def get_used_fact_keys(days: int = 7) -> set[str]:
             )
             return {row[0] for row in cur.fetchall()}
 
+def get_data_gaps(actor_db_name: str) -> list[dict]:
+    """Return films ≥1 year old with no box_office for this actor — used as pre-tweet warning."""
+    cutoff_year = datetime.utcnow().year - 1
+    actor_name = actor_db_name.replace("_", " ")
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """SELECT m.title, m.release_year
+                   FROM movies m
+                   JOIN actor_movies am ON am.movie_id = m.id
+                   JOIN actors a ON a.id = am.actor_id
+                   WHERE a.name ILIKE %s
+                     AND m.box_office IS NULL
+                     AND m.release_year > 0
+                     AND m.release_year <= %s
+                     AND m.is_documentary = FALSE
+                   ORDER BY m.release_year DESC
+                   LIMIT 5""",
+                (f"%{actor_name}%", cutoff_year)
+            )
+            return [dict(r) for r in cur.fetchall()]
+
 def already_replied(tweet_id: str) -> bool:
     with get_conn() as conn:
         with conn.cursor() as cur:
