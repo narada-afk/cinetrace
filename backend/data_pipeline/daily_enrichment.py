@@ -89,20 +89,22 @@ def _reenrich_recent(db) -> int:
 
 
 def _find_notable_gaps(db) -> list[dict]:
-    """Films with no BO data that look notable — has imdb_rating or release_year >= 2020."""
-    films = db.query(Movie).filter(
-        Movie.box_office.is_(None),
-        Movie.release_year >= 2018,
-        Movie.release_year > 0,
-        Movie.is_documentary == False,
-    ).order_by(Movie.release_year.desc()).all()
-
-    gaps = []
-    for f in films:
-        if f.imdb_rating and f.imdb_rating >= 6.5:
-            gaps.append({"title": f.title, "year": f.release_year,
-                         "rating": f.imdb_rating, "has_tmdb": f.tmdb_id is not None})
-    return gaps[:20]  # cap at 20 to keep Telegram message readable
+    """Films with no BO data that look notable — imdb_rating >= 6.5, released 2018+."""
+    rows = db.execute(text("""
+        SELECT title, release_year, imdb_rating, tmdb_id
+        FROM movies
+        WHERE box_office IS NULL
+          AND release_year >= 2018
+          AND release_year > 0
+          AND imdb_rating >= 6.5
+          AND (is_documentary IS NULL OR is_documentary = FALSE)
+        ORDER BY release_year DESC
+        LIMIT 20
+    """)).fetchall()
+    return [
+        {"title": r[0], "year": r[1], "rating": r[2], "has_tmdb": r[3] is not None}
+        for r in rows
+    ]
 
 
 def run():
