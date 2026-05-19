@@ -1,0 +1,33 @@
+name: Daily DB Enrichment
+
+on:
+  schedule:
+    - cron: '30 23 * * *'  # 5:00 AM IST daily
+  workflow_dispatch:        # allow manual trigger from GitHub UI
+
+jobs:
+  enrich:
+    name: Enrich & audit DB
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Run enrichment on server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: narada
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: TMDB_API_KEY,TELEGRAM_BOT_TOKEN,TELEGRAM_CHAT_ID
+          script: |
+            set -e
+            BACKEND=$(docker ps --filter name=backend -q | head -1)
+            docker exec \
+              -e TMDB_API_KEY="$TMDB_API_KEY" \
+              -e TELEGRAM_BOT_TOKEN="$TELEGRAM_BOT_TOKEN" \
+              -e TELEGRAM_CHAT_ID="$TELEGRAM_CHAT_ID" \
+              "$BACKEND" \
+              python -m data_pipeline.daily_enrichment
+        env:
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
