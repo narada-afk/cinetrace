@@ -121,7 +121,7 @@ def run():
             print(f"[enrichment] {missing_before} films missing BO data before enrichment")
 
             # Step 1: Fill missing BO from TMDB
-            enrich_box_office(batch_size=500, min_crore=0.5)
+            enrich_box_office(batch_size=2000, min_crore=0.5)
 
             missing_after = _count_missing(db)
             filled = missing_before - missing_after
