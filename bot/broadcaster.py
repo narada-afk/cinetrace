@@ -216,6 +216,105 @@ async def _capture(actor_db_name: str, section: str,
         print(f"[broadcaster] snapshot failed for {actor_db_name}/{section}: {e}")
         return None
 
+# ── Insight-engine path (INSIGHT_ENGINE_ENABLED) ─────────────────────────────
+
+async def _generate_daily_schedule_engine(tomorrow: date) -> None:
+    """Discovery → ranking → dedup → LLM copywriting → Telegram approval.
+
+    The LLM only converts structured insights into language — it never
+    invents facts. See docs/insight-engine.md.
+    """
+    from engine import db as engine_db
+    from engine.approval.telegram import review_header
+    from engine.generators import get_generator
+    from engine.models import Platform
+    from engine.pipeline import run_discovery_pipeline
+    from engine.scheduler.planner import plan_slots
+    from telegram_handler import send_insight_for_review
+
+    if engine_db.slot_content_exists(Platform.TWITTER, tomorrow):
+        print(f"[broadcaster] engine content already exists for {tomorrow}, skipping")
+        return
+
+    ranked = run_discovery_pipeline()
+    planned = plan_slots(ranked, n_slots=len(SLOT_HOURS))
+    twitter = get_generator(Platform.TWITTER)
+
+    sent = 0
+    for slot_hour, r in zip(SLOT_HOURS, planned):
+        item = await twitter.generate(r.insight, insight_id=r.db_id)
+        if item is None:
+            print(f"[broadcaster] generation/validation failed for slot {slot_hour}h "
+                  f"({r.insight.rule}), skipping")
+            continue
+
+        item_id = engine_db.insert_content_item(
+            item, scheduled_date=tomorrow, slot_hour=slot_hour)
+
+        # Stat-card portrait of the primary actor for the review preview
+        png = None
+        if item.media_ref:
+            try:
+                png = await ss.capture_section_snapshot(item.media_ref, "stat-card")
+            except Exception as e:
+                print(f"[broadcaster] stat-card capture failed for {item.media_ref}: {e}")
+
+        slot_label = datetime(tomorrow.year, tomorrow.month, tomorrow.day,
+                              slot_hour, 0, tzinfo=IST).strftime("%-I:%M %p IST")
+        msg_id = await send_insight_for_review(
+            item_id=item_id,
+            header=review_header(r, slot_label),
+            text=item.text,
+            screenshot=png,
+        )
+        if msg_id:
+            engine_db.set_content_telegram_id(item_id, msg_id)
+        sent += 1
+
+    print(f"[broadcaster] engine: {sent}/{len(SLOT_HOURS)} drafts sent to Telegram for {tomorrow}")
+
+
+async def _post_scheduled_slot_engine(slot_hour: int) -> None:
+    from engine import db as engine_db
+    from engine.models import Platform
+    from telegram_handler import send_alert
+
+    today = date.today()
+    row = engine_db.get_slot_content(Platform.TWITTER, today, slot_hour)
+
+    if not row:
+        print(f"[broadcaster] engine: no content for {today} slot {slot_hour}h")
+        return
+    if row["status"] != "approved":
+        print(f"[broadcaster] engine: slot {slot_hour}h not approved (status={row['status']}), skipping")
+        return
+
+    media_ids: list[str] | None = None
+    if row.get("media_ref"):
+        try:
+            png = await ss.capture_section_snapshot(row["media_ref"], "stat-card")
+            if png:
+                media = _api_v1.media_upload(filename="snapshot.png", file=io.BytesIO(png))
+                media_ids = [str(media.media_id)]
+        except Exception as e:
+            print(f"[broadcaster] engine: media failed for slot {slot_hour}h: {e}, posting text-only")
+
+    try:
+        kwargs: dict = {"text": row["text"]}
+        if media_ids:
+            kwargs["media_ids"] = media_ids
+        resp = _twitter.create_tweet(**kwargs)
+        tweet_id = str(resp.data["id"])
+        engine_db.mark_content_posted(row["id"], tweet_id)
+        print(f"[broadcaster] engine: posted slot {slot_hour}h tweet → {tweet_id}")
+    except Exception as e:
+        engine_db.mark_content_failed(row["id"], str(e))
+        print(f"[broadcaster] engine: failed to post slot {slot_hour}h: {e}")
+        try:
+            await send_alert(f"Insight tweet for slot {slot_hour}h failed to post: {e}")
+        except Exception:
+            pass
+
 # ── Nightly generation ────────────────────────────────────────────────────────
 
 async def generate_daily_schedule(send_for_review_fn) -> None:
@@ -228,6 +327,11 @@ async def generate_daily_schedule(send_for_review_fn) -> None:
     Fallback: hand-curated inventory fact if the generator fails or has no data.
     """
     tomorrow = date.today() + timedelta(days=1)
+
+    from engine.config import get_config
+    if get_config().enabled:
+        await _generate_daily_schedule_engine(tomorrow)
+        return
 
     if db.scheduled_slots_exist(tomorrow):
         print(f"[broadcaster] schedule already exists for {tomorrow}, skipping")
@@ -320,6 +424,11 @@ async def post_scheduled_slot(slot_hour: int) -> None:
     Called at each slot time (7, 10, 13, 16, 19, 22 IST).
     Posts the approved tweet for today's slot with the share snapshot image.
     """
+    from engine.config import get_config
+    if get_config().enabled:
+        await _post_scheduled_slot_engine(slot_hour)
+        return
+
     today = date.today()
     row   = db.get_scheduled_tweet(today, slot_hour)
 

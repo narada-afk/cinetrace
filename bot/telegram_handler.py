@@ -80,6 +80,41 @@ async def send_scheduled_for_review(row_id: int, slot_label: str,
         print(f"[telegram] scheduled send failed: {e}")
         return None
 
+# ── Insight-engine content review ─────────────────────────────────────────────
+
+async def send_insight_for_review(item_id: int, header: str, text: str,
+                                  screenshot: bytes | None = None) -> int | None:
+    """Review card for engine content_items — buttons carry ins_approve/ins_skip."""
+    bot = Bot(token=TELEGRAM_BOT_TOKEN)
+    body = f"🗓 *Scheduled Tweet (Insight Engine)*\n{header}\n\n```\n{text[:700]}\n```"
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("✅ Approve", callback_data=f"ins_approve:{item_id}"),
+        InlineKeyboardButton("❌ Skip",    callback_data=f"ins_skip:{item_id}"),
+    ]])
+    try:
+        if screenshot:
+            try:
+                msg = await bot.send_photo(
+                    chat_id=TELEGRAM_CHAT_ID,
+                    photo=io.BytesIO(screenshot),
+                    caption=body,
+                    parse_mode="Markdown",
+                    reply_markup=keyboard,
+                )
+                return msg.message_id
+            except Exception as photo_err:
+                print(f"[telegram] insight photo send failed ({photo_err}), falling back to text")
+        msg = await bot.send_message(
+            chat_id=TELEGRAM_CHAT_ID,
+            text=body,
+            parse_mode="Markdown",
+            reply_markup=keyboard,
+        )
+        return msg.message_id
+    except Exception as e:
+        print(f"[telegram] insight review send failed: {e}")
+        return None
+
 # ── Shared header builder ─────────────────────────────────────────────────────
 
 def _build_header(actor_name: str, handle: str, trigger: str, trigger_context: str,
@@ -303,6 +338,26 @@ async def _handle_sched_skip(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.edit_message_reply_markup(reply_markup=None)
     await context.bot.send_message(TELEGRAM_CHAT_ID, "⏭ Scheduled tweet skipped.")
 
+async def _handle_ins_approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from engine import db as engine_db
+    query = update.callback_query
+    await query.answer()
+    item_id = int(query.data.split(":")[1])
+
+    engine_db.mark_content_approved(item_id)
+    await query.edit_message_reply_markup(reply_markup=None)
+    await context.bot.send_message(TELEGRAM_CHAT_ID, "✅ Insight tweet approved — will post at the scheduled time.")
+
+async def _handle_ins_skip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from engine import db as engine_db
+    query = update.callback_query
+    await query.answer()
+    item_id = int(query.data.split(":")[1])
+
+    engine_db.mark_content_rejected(item_id)
+    await query.edit_message_reply_markup(reply_markup=None)
+    await context.bot.send_message(TELEGRAM_CHAT_ID, "⏭ Insight tweet skipped.")
+
 # ── Posted notification ───────────────────────────────────────────────────────
 
 async def send_alert(message: str) -> None:
@@ -344,5 +399,7 @@ def build_app() -> Application:
     _app.add_handler(CallbackQueryHandler(_handle_reddit_skip,       pattern=r"^reddit_skip:"))
     _app.add_handler(CallbackQueryHandler(_handle_sched_approve,     pattern=r"^sched_approve:"))
     _app.add_handler(CallbackQueryHandler(_handle_sched_skip,        pattern=r"^sched_skip:"))
+    _app.add_handler(CallbackQueryHandler(_handle_ins_approve,       pattern=r"^ins_approve:"))
+    _app.add_handler(CallbackQueryHandler(_handle_ins_skip,          pattern=r"^ins_skip:"))
 
     return _app

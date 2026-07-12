@@ -70,6 +70,9 @@ def run_migrations():
         conn.commit()
     print("[db] migrations applied")
 
+    from engine.db import run_engine_migrations
+    run_engine_migrations()
+
 # ── Scheduled tweets ──────────────────────────────────────────────────────────
 
 def scheduled_slots_exist(scheduled_date: date) -> bool:
