@@ -132,6 +132,10 @@ async def capture_section_snapshot(slug: str, section: str,
                    If empty, expands the first (most collaborated) director.
     chart_metric:  Y-axis metric for compare chart screenshots.
     """
+    # ── Stat-card portrait (StatMuse-style actor avatar card) ────────────────
+    if section == "stat-card":
+        return await _capture_stat_card(slug)
+
     # ── Compare chart (dedicated minimal page, same pattern as career chart) ──
     if section == "compare" and compare_with:
         return await _capture_compare_chart(slug, compare_with, metric=chart_metric)
@@ -365,6 +369,53 @@ async def _capture_connections(slug1: str, slug2: str) -> bytes | None:
             return png
     except Exception as e:
         print(f"[screenshot] connections failed for {slug1}/{slug2}: {e}")
+        return None
+
+
+async def _capture_stat_card(slug: str) -> bytes | None:
+    """Screenshot the /social/stat-card/{slug} portrait card.
+
+    560×560 square — actor avatar fills most of the frame, StatMuse-style.
+    SSR only; domcontentloaded + 1.5 s covers font loading and avatar image.
+    """
+    url = f"{CINETRACE_SCREENSHOT_URL}/social/stat-card/{slug}"
+    resolver = _backend_host_resolver_rules()
+    chromium_args = ["--no-sandbox", "--disable-setuid-sandbox"]
+    if resolver:
+        chromium_args.append(f"--host-resolver-rules={resolver}")
+
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True, args=chromium_args)
+            page = await browser.new_page(
+                viewport={"width": _VIEWPORT_W, "height": 900},
+                color_scheme="dark",
+            )
+            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            await page.wait_for_timeout(1500)
+
+            pos = await page.evaluate(_FIND_DATA_SECTION_JS, "stat-card")
+            if not pos:
+                print(f"[screenshot] stat-card section not found for {slug}")
+                return await _hero_fallback(page, browser)
+
+            await page.evaluate("(y) => window.scrollTo(0, y)", max(0, int(pos["y"]) - 8))
+            await page.wait_for_timeout(200)
+
+            # Card is 560×560; centre it in the 800px viewport (120px each side)
+            png = await page.screenshot(
+                type="png",
+                clip={
+                    "x":      120,
+                    "y":      0,
+                    "width":  560,
+                    "height": 560,
+                },
+            )
+            await browser.close()
+            return png
+    except Exception as e:
+        print(f"[screenshot] stat-card failed for {slug}: {e}")
         return None
 
 

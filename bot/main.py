@@ -510,14 +510,12 @@ async def main():
     scheduler = AsyncIOScheduler(timezone=IST)
 
     # 9 PM nightly — generate and send next day's schedule to Telegram
-    # 9:30 PM — retry (no-op if already generated)
-    for _gen_min in (0, 30):
-        scheduler.add_job(
-            broadcaster.generate_daily_schedule,
-            args=[telegram_handler.send_scheduled_for_review],
-            trigger="cron", hour=GENERATION_HOUR, minute=_gen_min,
-            id=f"daily_schedule_gen_{_gen_min}", replace_existing=True,
-        )
+    scheduler.add_job(
+        broadcaster.generate_daily_schedule,
+        args=[telegram_handler.send_scheduled_for_review],
+        trigger="cron", hour=GENERATION_HOUR, minute=0,
+        id="daily_schedule_gen", replace_existing=True,
+    )
 
     # Slot posters — 7am, 10am, 1pm, 4pm, 7pm, 10pm IST
     for slot_h in SLOT_HOURS:

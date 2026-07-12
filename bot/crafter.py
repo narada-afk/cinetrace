@@ -202,6 +202,98 @@ def _compute_cream(movies: list, collaborators: list, directors: list) -> dict:
 
 # ── Main crafter ──────────────────────────────────────────────────────────────
 
+SCHEDULED_SYSTEM_PROMPT = """You are the content writer for CineTrace — a South Indian cinema analytics account.
+
+Your job: craft ONE standalone tweet using real cinetrace.in data that makes a film fan stop scrolling.
+
+─── FORMULA: Hook → Proof → Weight ───
+1. HOOK — the number or fact that earns attention in the first line
+2. PROOF — what the data shows around that number (context, comparison, pattern)
+3. WEIGHT — one short line that lands the "so what"
+
+─── VOICE ───
+Sharp. Human. Understated. A film-obsessed analyst talking to another film-obsessed person.
+No fanboy energy. No corporate tone. No AI filler ("Interestingly," "It's worth noting," "Remarkably").
+The best tweets sound like something a knowledgeable friend would say.
+
+─── FORMAT RULES ───
+- Total tweet max 260 characters including hashtags and URL
+- Hashtags on their own line (2–3 max), then profile URL on the very last line
+- No "check out" or "→" before the URL
+- No emoji unless the number is genuinely jaw-dropping (one 🔥 max)
+- Don't name the bot or CineTrace in the text body — the link does that
+
+─── STAT RULES ───
+- Use ONLY exact numbers from the live data provided — do NOT invent, round, or extrapolate
+- If box office data is sparse, lean on filmography or collaboration stats instead
+- Pick the single most striking stat that fits the requested angle
+
+Respond ONLY with valid JSON. No explanation outside the JSON."""
+
+SCHEDULED_TEMPLATE = """Actor: {actor_name} — {industry} industry
+Angle to highlight: {stat_focus}
+
+── LIVE DATA ──
+Career: {total_films} films | {career_span} ({years_active} years active)
+Films with BO data: {films_with_bo_data}
+BO milestones: {films_100cr}× ₹100Cr+ | {films_200cr}× ₹200Cr+ | {films_500cr}× ₹500Cr+
+Career BO average: {avg_box_office}
+Last-5-films average: {recent_avg} ({trajectory})
+Longest ₹100Cr+ streak: {max_hit_streak}
+Hit rate (₹100Cr+ / films with BO data): {hit_rate}
+Highest-grossing film: {top_film}
+Best-reviewed film: {best_reviewed}
+Earner vs critic divergence: {divergence}
+Top director pairing: {top_director}
+Top co-star pairing: {top_collab}
+Industries: {industries}
+First ₹100Cr film: {first_100cr}
+First ₹500Cr film: {first_500cr}
+Best output year: {best_year}
+
+Profile URL: {profile_url}
+Hashtags: {hashtags}
+
+Focus specifically on: "{stat_focus}"
+Use real numbers from the live data above. Do not invent figures.
+
+Respond with JSON:
+{{
+  "tweet_text": "full tweet — hashtags on a line by themselves, URL on the very last line",
+  "stat_used": "exact stat you cited (include the number)",
+  "confidence": 0-100
+}}"""
+
+
+async def craft_scheduled_tweet(actor: dict, profile: dict,
+                                stat_focus: str, hashtags: str) -> dict:
+    movies        = profile.get("movies", [])
+    collaborators = profile.get("collaborators", [])
+    directors     = profile.get("directors", [])
+
+    cream = _compute_cream(movies, collaborators, directors)
+
+    prompt = SCHEDULED_TEMPLATE.format(
+        actor_name  = actor["name"],
+        industry    = actor.get("industry", "South Indian"),
+        stat_focus  = stat_focus,
+        hashtags    = hashtags,
+        profile_url = profile["profile_url"],
+        **cream,
+    )
+
+    msg = await _client.messages.create(
+        model      = "claude-haiku-4-5-20251001",
+        max_tokens = 400,
+        system     = SCHEDULED_SYSTEM_PROMPT,
+        messages   = [{"role": "user", "content": prompt}],
+    )
+    try:
+        return json.loads(msg.content[0].text)
+    except Exception:
+        return {"tweet_text": None, "stat_used": None, "confidence": 0}
+
+
 async def craft_reply(actor: dict, profile: dict, tweet_text: str, stat_angle: str,
                       trigger_context: str = "") -> dict:
     movies       = profile.get("movies", [])

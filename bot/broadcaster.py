@@ -287,10 +287,8 @@ async def generate_daily_schedule(send_for_review_fn) -> None:
             chart_metric   = chart_metric,
         )
 
-        # Capture share snapshot for Telegram preview
-        png = await _capture(actor_db_name, section,
-                             compare_with=compare_with, chart_mode=chart_mode,
-                             director_name=director_name, chart_metric=chart_metric)
+        # Capture actor portrait stat-card for Telegram preview
+        png = await _capture(actor_db_name, "stat-card")
 
         slot_label = datetime(tomorrow.year, tomorrow.month, tomorrow.day,
                               slot_hour, 0, tzinfo=IST).strftime("%-I:%M %p IST")
@@ -340,11 +338,9 @@ async def post_scheduled_slot(slot_hour: int) -> None:
     director_name = row.get("director_name") or ""
     chart_metric  = row.get("chart_metric") or "film_count"
 
-    # Capture share snapshot to attach to tweet
+    # Capture actor portrait stat-card to attach to tweet
     media_ids: list[str] | None = None
-    png = await _capture(actor_db_name, section, compare_with=compare_with,
-                         chart_mode=chart_mode, director_name=director_name,
-                         chart_metric=chart_metric)
+    png = await _capture(actor_db_name, "stat-card")
     if png:
         try:
             media = _api_v1.media_upload(filename="snapshot.png", file=io.BytesIO(png))
