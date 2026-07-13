@@ -53,6 +53,7 @@ def run_discovery_pipeline(dry_run: bool = False) -> list[RankedInsight]:
 
     # 1. Discover — fail-safe per rule: one broken query never kills the run
     insights = []
+    health: list[dict] = []
     conn = engine_db.get_conn()
     try:
         for rule in all_rules():
@@ -61,6 +62,9 @@ def run_discovery_pipeline(dry_run: bool = False) -> list[RankedInsight]:
             except Exception as e:
                 conn.rollback()
                 log.warning("rule %s failed: %s", rule.name, e)
+            finally:
+                if rule.last_health:
+                    health.append(rule.last_health)
 
         # 2. Build ranking context (bulk fetches)
         actor_ids = {i for ins in insights for i in ins.actor_ids()}
@@ -92,6 +96,7 @@ def run_discovery_pipeline(dry_run: bool = False) -> list[RankedInsight]:
     if not dry_run:
         for r in top:
             r.db_id = engine_db.insert_insight(r)
+        engine_db.record_rule_health(health)
         log.info("persisted %d insights", len(top))
 
     return top

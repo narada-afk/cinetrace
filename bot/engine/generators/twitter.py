@@ -10,6 +10,7 @@ violations fed back, then discard).
 from __future__ import annotations
 
 import json
+import re
 
 import anthropic
 
@@ -35,9 +36,21 @@ Hard rules:
 - Do not add any statistic, year, count, film name, or claim not present in the JSON.
 - Only improve readability and curiosity.
 - You may compute a year gap/span from year values that ARE in the JSON.
+- Numbers must keep their meaning: a value labelled as a calendar year is a
+  year (write "since 2014" or "in 1986"), never a duration; a film count is
+  films, never years. If unsure how to use a number, leave it out.
 
-Voice: sharp, human, understated — a film-obsessed analyst talking to another
-film-obsessed person. No fanboy energy, no AI filler ("Interestingly", "Remarkably").
+Voice: follow the "editorial_voice" given in the request. All voices are sharp,
+human, understated — a film-obsessed analyst talking to another film-obsessed
+person. No fanboy energy, no AI filler ("Interestingly", "Remarkably").
+
+BANNED constructions (overused templates — never produce these shapes):
+- "That's not a X — that's a Y"
+- "Let that sink in"
+- "Read that again"
+- "X isn't just Y, it's Z"
+- rhetorical questions as openers
+Also avoid any framing listed under "avoid_phrasings" in the request.
 
 Format:
 - Max {char_limit} characters total.
@@ -46,6 +59,17 @@ Format:
 - No emoji unless the number is genuinely jaw-dropping (one max).
 
 Respond ONLY with the tweet text. No JSON, no explanation."""
+
+# Rotating editorial voices — the account should feel like a small desk of
+# editors, not one template. Chosen deterministically per insight so retries
+# keep the same voice.
+EDITORIAL_VOICES = [
+    "The archivist: lead with the number, no adjectives, let the stat sit alone. Dry, factual, almost deadpan.",
+    "The storyteller: one tiny narrative beat — setup, then the number as the payoff. Warm but restrained.",
+    "The stat-nerd: compare or contextualize the number against something in the data. Precise, playful.",
+    "The minimalist: shortest possible sentences. Fragments allowed. White space does the work.",
+    "The historian: anchor the fact in its era using years from the data. Measured, respectful tone.",
+]
 
 # One-line style angle per rule — how to frame this kind of fact
 STYLE_HINTS: dict[str, str] = {
@@ -67,6 +91,16 @@ STYLE_HINTS: dict[str, str] = {
 }
 
 
+_BANNED_TEMPLATE_RE = re.compile(
+    r"that'?s not (a |just )?\w+.{0,30}?[—–-]|isn'?t just|let that sink|read that again",
+    re.IGNORECASE,
+)
+
+
+def _has_banned_template(text: str) -> bool:
+    return bool(_BANNED_TEMPLATE_RE.search(text))
+
+
 @register
 class TwitterGenerator(ContentGenerator):
     platform = Platform.TWITTER
@@ -74,20 +108,27 @@ class TwitterGenerator(ContentGenerator):
 
     async def generate(self, insight: Insight, insight_id: int,
                        tone: str | None = None,
-                       char_limit: int | None = None) -> ContentItem | None:
+                       char_limit: int | None = None,
+                       avoid_texts: list[str] | None = None) -> ContentItem | None:
         limit = char_limit or self.default_char_limit
         primary = insight.primary_entity
         profile_url = (
             f"{CINETRACE_BASE_URL}/actors/{primary.slug}" if primary.slug else ""
         )
 
+        # Deterministic voice per insight (stable across retries) so the desk
+        # of editors rotates but a given fact keeps one voice.
+        voice = tone or EDITORIAL_VOICES[insight_id % len(EDITORIAL_VOICES)]
+
         payload = {
             "insight": json.loads(insight.model_dump_json(exclude={"discovered_at"})),
             "style_hint": STYLE_HINTS.get(insight.rule, ""),
+            "editorial_voice": voice,
             "profile_url": profile_url,
         }
-        if tone:
-            payload["tone"] = tone
+        # Recent tweets whose framing must not be reused (anti-repetition)
+        if avoid_texts:
+            payload["avoid_phrasings"] = avoid_texts[:20]
 
         messages = [{"role": "user", "content": json.dumps(payload, ensure_ascii=False)}]
 
@@ -101,7 +142,11 @@ class TwitterGenerator(ContentGenerator):
             text = msg.content[0].text.strip()
 
             ok, violations = validate(text, insight)
-            if ok and len(text) <= limit + 20:
+            # Style-only soft check: banned rhetorical templates trigger a
+            # rewrite on the first attempt, but never cause a discard —
+            # factual correctness is the only hard gate.
+            style_issue = attempt == 0 and _has_banned_template(text)
+            if ok and not style_issue and len(text) <= limit + 20:
                 return ContentItem(
                     insight_id=insight_id,
                     platform=self.platform,
@@ -113,6 +158,10 @@ class TwitterGenerator(ContentGenerator):
 
             if len(text) > limit + 20:
                 violations.append(f"tweet is {len(text)} chars, limit {limit}")
+            if style_issue and not violations:
+                violations.append(
+                    "avoid the 'That's not X — that's Y' / 'isn't just' template; "
+                    "rephrase with a different structure")
             log.warning("attempt %d failed validation for %s: %s",
                         attempt + 1, insight.rule, violations)
             messages += [

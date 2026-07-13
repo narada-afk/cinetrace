@@ -48,10 +48,6 @@ SAMPLE_ROWS = {
         "first_film_year": 1952, "last_film_year": 1999,
         "film_count": 280, "span_years": 47,
     }],
-    "debut_ages": [{
-        "id": 9, "name": "Vijay", "industry": "Tamil", "debut_year": 1984,
-        "first_film_year": 1992, "film_count": 68, "wait_years": 8,
-    }],
     "most_frequent_costars": [{
         "actor1_id": 10, "actor1_name": "Prem Nazir", "industry": "Malayalam",
         "actor2_id": 11, "actor2_name": "Sheela", "films": 130,
@@ -97,7 +93,9 @@ def _no_prose(value) -> bool:
 
 
 def test_all_rules_registered():
-    assert len(all_rules()) == 15
+    # debut_ages was removed in the v1 hardening pass — actors.debut_year is
+    # 100% NULL; reinstate the rule once the column is backfilled.
+    assert len(all_rules()) == 14
 
 
 @pytest.mark.parametrize("rule_name", sorted(SAMPLE_ROWS))

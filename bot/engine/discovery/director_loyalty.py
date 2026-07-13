@@ -49,6 +49,7 @@ class DirectorLoyalty(DiscoveryRule):
                     Metric(key="total_films", value=r["total_films"], unit="films"),
                 ],
                 facts={"industry": r["industry"]},
+                confidence=1.0,   # verified counts from actor_director_stats
             )
             for r in rows
         ]

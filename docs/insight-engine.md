@@ -90,12 +90,54 @@ gaps/spans derivable from payload years are whitelisted) and any output that
 drops the primary entity's name. Failed validation ⇒ one retry with the
 violations fed back, then discard.
 
+## Confidence (data reliability)
+
+Every `Insight` carries `confidence: float 0–1` — how *reliable the underlying
+data* is, independent of how interesting it is. Verified counts from complete
+tables (`network_power`, `most_frequent_costars`) = 1.0; derived stats with
+minor assumptions ≈ 0.9; insights over sparse/inferred data scale down with
+coverage (`most_multilingual`, `director_box_office`, `blockbuster_streaks` use
+`0.3 + coverage×0.7`; `longest_film_gaps` = 0.6 since a "gap" is inferred from
+absent credits). Set it in the rule's `rows_to_insights`.
+
+The ranker computes **`final = interest_score × confidence`**, so sparse or
+inferred data can't dominate just by producing a surprising number. Confidence
+is persisted (`insights.confidence`), shown on the dashboard, and travels in the
+JSON payload every generator/API consumes.
+
 ## Ranking
 
 Six features, each 0–1 (`engine/ranking/features.py`): novelty (fingerprint
 seen before?), surprise (metric magnitude or rule-supplied percentile),
 popularity (actor fame, ported from the backend), visual_potential (rule hint
-+ slug bonus), recency (underlying period), completeness.
++ slug bonus), recency (underlying period), completeness. The weighted sum is
+then multiplied by the insight's confidence (see above).
+
+## Year sanity
+
+Every rule that touches release years must use `sane_year("m.release_year")`
+from `shared/sql.py` instead of a bare `IS NOT NULL` — it rejects NULL, 0,
+negatives, pre-1900 and future years in one place. The movies table contains
+hundreds of `release_year = 0` rows; without this guard they produce absurd
+"1982-year gap" insights.
+
+## Rule health
+
+`DiscoveryRule.discover()` records `last_health` each run — status
+(healthy/warning/broken), rows scanned, rows emitted, seconds, and a
+remediation reason. The pipeline writes these to the `rule_health` table and the
+dashboard surfaces them. An empty rule reports a warning (never fails silently);
+a broken query reports the exception. Override `empty_remediation` on a rule to
+give operators a specific hint.
+
+## Scheduling diversity
+
+Ranking selects the best insights; `plan_slots` (`engine/scheduler/planner.py`)
+keeps the *feed* varied without touching ranking. Caps (in `DiversityLimits`):
+one insight per rule/day, ≤1 per actor/day, ≤2 per actor/week, ≤2 per
+category/day, ≤3 per rule/week, and no two adjacent slots sharing a rule or
+category. Weekly history is passed in (`PlanHistory`) so the planner stays a
+pure, testable function. Categories live in `shared/categories.py`.
 
 Weights are env-overridable — no deploy needed to tune:
 

@@ -11,6 +11,7 @@ from typing import Sequence
 from engine.discovery.base import DiscoveryRule, register
 from engine.models import Entity, Insight, Metric
 from engine.shared.slugs import actor_slug
+from engine.shared.sql import sane_year
 
 CURRENT_YEAR = datetime.now().year
 
@@ -21,7 +22,7 @@ class CollaborationShock(DiscoveryRule):
     visual_potential = 0.8   # duo cards render well
 
     def sql(self) -> str:
-        return """
+        return f"""
         WITH shared_years AS (
             SELECT LEAST(am1.actor_id, am2.actor_id)    AS a1_id,
                    GREATEST(am1.actor_id, am2.actor_id) AS a2_id,
@@ -30,7 +31,7 @@ class CollaborationShock(DiscoveryRule):
             JOIN   actor_movies am2 ON am2.movie_id = am1.movie_id
                                    AND am2.actor_id != am1.actor_id
             JOIN   movies m ON m.id = am1.movie_id
-            WHERE  m.release_year IS NOT NULL
+            WHERE  {sane_year("m.release_year")}
             GROUP  BY 1, 2
             UNION ALL
             SELECT LEAST(c1.actor_id, c2.actor_id),
@@ -40,7 +41,7 @@ class CollaborationShock(DiscoveryRule):
             JOIN   "cast" c2 ON c2.movie_id = c1.movie_id
                             AND c2.actor_id != c1.actor_id
             JOIN   movies m ON m.id = c1.movie_id
-            WHERE  m.release_year IS NOT NULL
+            WHERE  {sane_year("m.release_year")}
             GROUP  BY 1, 2
         ),
         best_last AS (
@@ -85,5 +86,6 @@ class CollaborationShock(DiscoveryRule):
                 facts={"last_film_year": r["last_year"],
                        "industry": r["industry1"]},
                 completeness=1.0,
+                confidence=0.9,   # "last shared film" depends on year coverage
             ))
         return out

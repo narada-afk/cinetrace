@@ -43,6 +43,7 @@ class NetworkPower(DiscoveryRule):
                     Metric(key="film_count", value=r["film_count"], unit="films"),
                 ],
                 facts={"industry": r["industry"]},
+                confidence=1.0,   # verified counts from precomputed tables
             )
             for r in rows
         ]

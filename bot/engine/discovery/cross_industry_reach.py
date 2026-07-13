@@ -47,6 +47,7 @@ class CrossIndustryReach(DiscoveryRule):
                 ],
                 facts={"industries": sorted(r["industries"]),
                        "industry": r["home_industry"]},
+                confidence=0.85,  # movies.industry labels are enrichment-derived
             )
             for r in rows
         ]

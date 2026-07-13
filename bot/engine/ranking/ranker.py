@@ -30,7 +30,13 @@ def score_insight(insight: Insight, ctx: RankContext,
         name: round(fn(insight, fp, ctx), 4)
         for name, fn in _FEATURES.items()
     }
-    total = sum(components[k] * w for k, w in config.weights.items())
+    # Final score = interest score × data confidence. Confidence is data
+    # reliability (set by the discovery rule), not interestingness — this is
+    # what stops sparse/inferred data from topping the ranking just because
+    # it produced a surprising value.
+    interest = sum(components[k] * w for k, w in config.weights.items())
+    components["confidence"] = round(insight.confidence, 4)
+    total = interest * insight.confidence
     return RankedInsight(
         insight=insight,
         fingerprint=fp,

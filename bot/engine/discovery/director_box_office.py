@@ -58,5 +58,8 @@ class DirectorBoxOffice(DiscoveryRule):
                 facts={"biggest_hit_title": r["biggest_title"],
                        "films_with_box_office_data": r["films_with_bo"]},
                 completeness=round(min(1.0, 0.5 + bo_coverage / 2), 2),
+                # A "total gross" over films missing box office data understates
+                # reality — reliability scales with coverage
+                confidence=round(min(1.0, 0.3 + bo_coverage * 0.7), 2),
             ))
         return out

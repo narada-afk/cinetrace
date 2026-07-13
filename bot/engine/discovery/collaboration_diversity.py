@@ -44,6 +44,7 @@ class CollaborationDiversity(DiscoveryRule):
                     Metric(key="directors_per_100_films", value=int(r["pct"] or 0), unit="%"),
                 ],
                 facts={"industry": r["industry"]},
+                confidence=0.9,   # ratio derived from two tables (minor assumptions)
             )
             for r in rows
         ]

@@ -31,8 +31,19 @@ def test_score_composes_weights(solo_insight):
     config = EngineConfig()
     ranked = score_insight(solo_insight, RankContext(), config)
     assert 0 <= ranked.score.total <= 1
-    assert set(ranked.score.components) == set(config.weights)
+    # components carry the weighted features plus the confidence multiplier
+    assert set(ranked.score.components) == set(config.weights) | {"confidence"}
     assert ranked.score.weights_version == config.weights_version
+
+
+def test_confidence_multiplies_score(solo_insight):
+    config = EngineConfig()
+    high = score_insight(solo_insight, RankContext(), config)
+    low = score_insight(solo_insight.model_copy(update={"confidence": 0.3}),
+                        RankContext(), config)
+    # same interest, lower confidence → strictly lower final score
+    assert low.score.total < high.score.total
+    assert abs(low.score.total - high.score.total * 0.3) < 1e-6
 
 
 def test_rank_filters_low_completeness(solo_insight):

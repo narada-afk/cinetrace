@@ -43,3 +43,20 @@ NOT_BROKEN = """
 """
 
 SOUTH_INDUSTRIES = "('Telugu', 'Tamil', 'Malayalam', 'Kannada')"
+
+# ── Year sanity ───────────────────────────────────────────────────────────────
+# The movies table contains rows with release_year = 0 (463 at last audit) and
+# other junk values. Every rule that touches years MUST use sane_year() instead
+# of a bare IS NOT NULL — this is the single place the valid range is defined.
+
+MIN_SANE_YEAR = 1900
+
+
+def sane_year(column: str) -> str:
+    """SQL predicate: `column` is a plausible historical release year.
+
+    Rejects NULL, 0, negatives, pre-cinema years and future years
+    (next year allowed — release calendars run ahead).
+    """
+    return (f"({column} IS NOT NULL AND {column} >= {MIN_SANE_YEAR} "
+            f"AND {column} <= EXTRACT(YEAR FROM now())::int + 1)")

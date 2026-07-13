@@ -44,6 +44,7 @@ class HiddenDominance(DiscoveryRule):
                     Metric(key="lead_actor_avg_films", value=int(r["lead_avg"] or 0), unit="films"),
                 ],
                 facts={"role_type": "supporting", "industry": r["industry"]},
+                confidence=0.9,   # role_type labels come from TMDB billing order
             )
             for r in rows
         ]

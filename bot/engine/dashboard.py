@@ -211,6 +211,45 @@ if (an.score_dist){
   </div>`));
 }
 
+// ── Confidence (data reliability, separate from ranking) ─────────────────────
+const cf = an.confidence;
+if (cf){
+  const ch = cf.histogram || {};
+  const ckeys = Object.keys(ch).sort();
+  const cmaxH = Math.max(...Object.values(ch), 1);
+  const perRuleConf = Object.entries(cf.avg_per_rule||{}).map(([k,v]) => ({k, v}));
+  const lowConf = (cf.lowest_conf_samples||[]).map(s =>
+    `<tr><td>${esc(s.who.join(', '))}</td><td>${esc(s.rule)}</td>
+     <td class="num">${Number(s.conf).toFixed(2)}</td><td class="num">${Number(s.score).toFixed(3)}</td></tr>`).join('');
+  app.append($(`<div class="grid" style="margin-top:16px">
+    <div class="card"><h2>Confidence · distribution (mean ${cf.mean})</h2>
+      <div class="hist">${ckeys.map(k=>`<div class="b" style="height:${100*ch[k]/cmaxH}%;background:${CAT[1]}" data-t="conf ${k}: ${ch[k]}"></div>`).join('')}</div>
+      <div class="axis"><span>${ckeys[0]}</span><span>${ckeys[ckeys.length-1]}</span></div>
+      <div class="legend"><span>low-confidence (≤0.7) in top-100: <b style="color:${cf.low_conf_in_top100?'var(--warn)':'var(--good)'}">${cf.low_conf_in_top100}</b></span>
+        <span>low-conf mean score <b>${cf.low_conf_mean_score}</b> vs high-conf <b>${cf.high_conf_mean_score}</b></span></div></div>
+    <div class="card"><h2>Confidence · average per rule</h2>${bars(perRuleConf.sort((a,b)=>a.v-b.v), CAT[2], r=>r.v.toFixed(2))}</div>
+    <div class="card wide"><h2>Confidence · lowest-confidence insights (correctly ranked down)</h2>
+      <table><thead><tr><th>who</th><th>rule</th><th>confidence</th><th>final score</th></tr></thead>
+      <tbody>${lowConf}</tbody></table></div>
+  </div>`));
+}
+
+// ── Rule health (data quality) ────────────────────────────────────────────────
+const rh = (DATA.discovery_stats||{}).rule_health || DATA.rule_health || [];
+if (rh.length){
+  const sev = {healthy:'var(--good)', warning:'var(--warn)', broken:'var(--crit)'};
+  const rows = rh.slice().sort((a,b)=> (a.status==='healthy')-(b.status==='healthy')).map(h =>
+    `<tr><td><span class="status"><span class="dot" style="background:${sev[h.status]||'var(--muted)'}"></span>${esc(h.rule)}</span></td>
+     <td>${esc(h.status)}</td><td class="num">${num(h.rows_scanned)}</td>
+     <td class="num">${num(h.rows_emitted)}</td><td class="num">${h.seconds ?? '—'}s</td>
+     <td>${esc(h.reason || '')}</td></tr>`).join('');
+  const warnCount = rh.filter(h=>h.status!=='healthy').length;
+  app.append($(`<div class="card wide" style="margin-top:16px">
+    <h2>Rule health & data quality ${warnCount?`<span class="pill" style="color:var(--warn)">${warnCount} need attention</span>`:''}</h2>
+    <table><thead><tr><th>rule</th><th>status</th><th>rows scanned</th><th>rows emitted</th><th>time</th><th>reason / remediation</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`));
+}
+
 // ── Diversity ─────────────────────────────────────────────────────────────────
 if (an.diversity_top100){
   const d = an.diversity_top100;
@@ -239,7 +278,10 @@ app.append($(`<div class="grid" style="margin-top:16px">
     [num(gen.hallucinated_number_attempts), 'hallucinations caught', gen.hallucinated_number_attempts ? 'var(--warn)' : null],
     [num(gen.discarded), 'discarded', gen.discarded ? 'var(--crit)' : null],
     [gen.len_mean ? Math.round(gen.len_mean)+' ch' : '—', 'avg tweet length'],
-  ]) + `</div>
+    [num(gen.distinct_opening_prefixes), 'distinct openers'],
+    [num(gen.banned_template_hits), 'template phrasings', gen.banned_template_hits ? 'var(--warn)' : null],
+  ]) + `
+    <div class="legend"><span>most common retry reason: <b>${gen.hallucinated_number_attempts ? 'hallucinated / mis-typed number' : '—'}</b></span></div></div>
 </div>`));
 
 // ── Searchable insight browser ────────────────────────────────────────────────

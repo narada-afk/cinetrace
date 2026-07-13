@@ -51,8 +51,11 @@ class EngineConfig:
         "shortest_path": 45,
     })
 
-    # How many ranked insights to persist per discovery run
-    top_n: int = int(os.getenv("ENGINE_TOP_N", "40"))
+    # How many ranked insights to persist (and hand to the scheduler) per run.
+    # Must stay well above the daily slot count so the diversity-aware planner
+    # draws from a rule-varied pool — the top of the ranking skews toward the
+    # single highest-scoring rule, so a small top_n would starve plan_slots.
+    top_n: int = int(os.getenv("ENGINE_TOP_N", "200"))
 
     # Max insights per actor per day (batch-level diversity)
     max_per_actor_per_day: int = 1

@@ -43,6 +43,7 @@ class LongestCareers(DiscoveryRule):
                 facts={"first_film_year": r["first_film_year"],
                        "last_film_year": r["last_film_year"],
                        "industry": r["industry"]},
+                confidence=1.0,   # spans from actor_stats (clean year data)
             )
             for r in rows
         ]

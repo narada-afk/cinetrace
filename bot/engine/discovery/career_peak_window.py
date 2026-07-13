@@ -10,7 +10,7 @@ from typing import Sequence
 from engine.discovery.base import DiscoveryRule, register
 from engine.models import Entity, Insight, Metric
 from engine.shared.slugs import actor_slug
-from engine.shared.sql import PRIMARY_CREDITS_CTE
+from engine.shared.sql import PRIMARY_CREDITS_CTE, sane_year
 
 
 @register
@@ -25,7 +25,7 @@ class CareerPeakWindow(DiscoveryRule):
             SELECT ac.actor_id, m.release_year, COUNT(*) AS films_in_year
             FROM   all_credits ac
             JOIN   movies m ON m.id = ac.movie_id
-            WHERE  m.release_year IS NOT NULL
+            WHERE  {sane_year("m.release_year")}
             GROUP  BY ac.actor_id, m.release_year
         ),
         windows AS (
@@ -67,6 +67,7 @@ class CareerPeakWindow(DiscoveryRule):
                 facts={"window_years": 5, "industry": r["industry"],
                        "share_of_career_pct": round(
                            100 * int(r["win_films"]) / max(1, r["total_films"]))},
+                confidence=0.9,   # derived window statistic (year-filtered credits)
             )
             for r in rows
         ]

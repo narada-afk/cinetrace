@@ -63,6 +63,20 @@ CREATE TABLE IF NOT EXISTS insight_cooldowns (
     fingerprint    TEXT PRIMARY KEY,
     last_posted_at TIMESTAMPTZ NOT NULL
 );
+
+ALTER TABLE insights ADD COLUMN IF NOT EXISTS confidence NUMERIC;
+
+CREATE TABLE IF NOT EXISTS rule_health (
+    id            BIGSERIAL PRIMARY KEY,
+    run_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    rule          TEXT        NOT NULL,
+    status        TEXT        NOT NULL,   -- healthy | warning | broken
+    reason        TEXT,
+    rows_scanned  INT,
+    rows_emitted  INT,
+    seconds       NUMERIC
+);
+CREATE INDEX IF NOT EXISTS idx_rule_health_run ON rule_health (rule, run_at DESC);
 """
 
 
@@ -85,8 +99,9 @@ def insert_insight(ranked: RankedInsight) -> int:
             cur.execute(
                 """
                 INSERT INTO insights
-                    (rule, fingerprint, payload, score, score_components, weights_version)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                    (rule, fingerprint, payload, score, score_components,
+                     weights_version, confidence)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                 (
@@ -96,6 +111,7 @@ def insert_insight(ranked: RankedInsight) -> int:
                     ranked.score.total,
                     json.dumps(ranked.score.components),
                     ranked.score.weights_version,
+                    ranked.insight.confidence,
                 ),
             )
             return cur.fetchone()[0]
@@ -123,6 +139,40 @@ def recent_fingerprint_counts(days: int = 365) -> dict[str, int]:
                 (days,),
             )
             return dict(cur.fetchall())
+
+
+# ── Rule health ───────────────────────────────────────────────────────────────
+
+def record_rule_health(entries: list[dict]) -> None:
+    """entries: [{rule, status, reason, rows_scanned, rows_emitted, seconds}]"""
+    if not entries:
+        return
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            for e in entries:
+                cur.execute(
+                    """
+                    INSERT INTO rule_health
+                        (rule, status, reason, rows_scanned, rows_emitted, seconds)
+                    VALUES (%(rule)s, %(status)s, %(reason)s,
+                            %(rows_scanned)s, %(rows_emitted)s, %(seconds)s)
+                    """,
+                    e,
+                )
+
+
+def latest_rule_health() -> list[dict]:
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT DISTINCT ON (rule) rule, run_at, status, reason,
+                       rows_scanned, rows_emitted, seconds
+                FROM   rule_health
+                ORDER  BY rule, run_at DESC
+                """
+            )
+            return [dict(r) for r in cur.fetchall()]
 
 
 # ── Cooldowns ─────────────────────────────────────────────────────────────────
@@ -272,6 +322,25 @@ def set_content_telegram_id(item_id: int, message_id: int) -> None:
             )
 
 
+def recent_posted_texts(days: int = 14, limit: int = 20) -> list[str]:
+    """Recently posted/approved tweet texts — fed to the generator as framings
+    to avoid, so the editorial voice doesn't repeat itself."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT text FROM content_items
+                WHERE  platform = 'twitter'
+                  AND  status IN ('approved', 'posted')
+                  AND  created_at > now() - make_interval(days => %s)
+                ORDER  BY created_at DESC
+                LIMIT  %s
+                """,
+                (days, limit),
+            )
+            return [r[0] for r in cur.fetchall()]
+
+
 def actors_used_recently(days: int = 1) -> set[int]:
     """Actor ids referenced by insights whose content was scheduled recently
     (batch-level diversity: max 1 insight per actor per day)."""
@@ -294,3 +363,22 @@ def actors_used_recently(days: int = 1) -> set[int]:
             if e.get("kind") == "actor" and e.get("id"):
                 ids.add(e["id"])
     return ids
+
+
+def rule_counts_recently(days: int = 7) -> dict[str, int]:
+    """rule → number of non-rejected content items scheduled in the window
+    (scheduling diversity: per-rule weekly cap)."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT i.rule, COUNT(*)
+                FROM   content_items ci
+                JOIN   insights i ON i.id = ci.insight_id
+                WHERE  ci.created_at > now() - make_interval(days => %s)
+                  AND  ci.status != 'rejected'
+                GROUP  BY i.rule
+                """,
+                (days,),
+            )
+            return dict(cur.fetchall())

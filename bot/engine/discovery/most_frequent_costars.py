@@ -41,6 +41,7 @@ class MostFrequentCostars(DiscoveryRule):
                 ],
                 metrics=[Metric(key="collab_count", value=r["films"], unit="films")],
                 facts={"industry": r["industry"]},
+                confidence=1.0,   # verified count from actor_collaborations
             )
             for r in rows
         ]

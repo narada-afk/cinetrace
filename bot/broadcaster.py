@@ -229,7 +229,7 @@ async def _generate_daily_schedule_engine(tomorrow: date) -> None:
     from engine.generators import get_generator
     from engine.models import Platform
     from engine.pipeline import run_discovery_pipeline
-    from engine.scheduler.planner import plan_slots
+    from engine.scheduler.planner import PlanHistory, plan_slots
     from telegram_handler import send_insight_for_review
 
     if engine_db.slot_content_exists(Platform.TWITTER, tomorrow):
@@ -237,12 +237,18 @@ async def _generate_daily_schedule_engine(tomorrow: date) -> None:
         return
 
     ranked = run_discovery_pipeline()
-    planned = plan_slots(ranked, n_slots=len(SLOT_HOURS))
+    history = PlanHistory(
+        actor_ids_last_week=engine_db.actors_used_recently(days=7),
+        rule_counts_last_week=engine_db.rule_counts_recently(days=7),
+    )
+    planned = plan_slots(ranked, n_slots=len(SLOT_HOURS), history=history)
     twitter = get_generator(Platform.TWITTER)
+    avoid = engine_db.recent_posted_texts(days=14)
 
     sent = 0
     for slot_hour, r in zip(SLOT_HOURS, planned):
-        item = await twitter.generate(r.insight, insight_id=r.db_id)
+        item = await twitter.generate(r.insight, insight_id=r.db_id,
+                                      avoid_texts=avoid)
         if item is None:
             print(f"[broadcaster] generation/validation failed for slot {slot_hour}h "
                   f"({r.insight.rule}), skipping")

@@ -54,6 +54,11 @@ class Insight(BaseModel):
     metrics: list[Metric]             # primary metric first
     facts: dict[str, Any] = Field(default_factory=dict)  # structured extras only
     completeness: float = 1.0         # 0-1, fraction of optional fields populated
+    # Data reliability, NOT interestingness: 1.0 = verified counts from complete
+    # tables; lower when evidence is sparse, inferred, or heavily filtered.
+    # The ranker multiplies the interest score by confidence so poor data can
+    # never dominate just because it produces surprising values.
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     discovered_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc)
     )

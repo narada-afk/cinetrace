@@ -8,7 +8,7 @@ from typing import Sequence
 from engine.discovery.base import DiscoveryRule, register
 from engine.models import Entity, Insight, Metric
 from engine.shared.slugs import actor_slug
-from engine.shared.sql import PRIMARY_CREDITS_CTE
+from engine.shared.sql import PRIMARY_CREDITS_CTE, sane_year
 
 CURRENT_YEAR = datetime.now().year
 
@@ -25,7 +25,7 @@ class LongestFilmGaps(DiscoveryRule):
             SELECT DISTINCT ac.actor_id, m.release_year
             FROM   all_credits ac
             JOIN   movies m ON m.id = ac.movie_id
-            WHERE  m.release_year IS NOT NULL
+            WHERE  {sane_year("m.release_year")}
         ),
         gaps AS (
             SELECT actor_id, release_year AS gap_end,
@@ -67,6 +67,9 @@ class LongestFilmGaps(DiscoveryRule):
                 facts={"last_film_before_gap": r["gap_start"],
                        "comeback_year": r["gap_end"],
                        "industry": r["industry"]},
+                # A "gap" is inferred from absence of credits — missing
+                # filmography years look identical to a real hiatus.
+                confidence=0.6,
             )
             for r in rows
         ]

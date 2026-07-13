@@ -79,5 +79,8 @@ class ShortestPath(DiscoveryRule):
                        "bridge_actor": r["middle_name"],
                        "industries": [r["industry1"], r["industry2"]],
                        "industry": r["industry1"]},
+                # "never acted together" is absence-of-evidence over two
+                # incomplete credit sources
+                confidence=0.75,
             ))
         return out

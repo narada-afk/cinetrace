@@ -11,7 +11,7 @@ from typing import Sequence
 from engine.discovery.base import DiscoveryRule, register
 from engine.models import Entity, Insight, Metric
 from engine.shared.slugs import actor_slug
-from engine.shared.sql import NOT_BROKEN, PRIMARY_CREDITS_CTE
+from engine.shared.sql import NOT_BROKEN, PRIMARY_CREDITS_CTE, sane_year
 
 
 @register
@@ -27,7 +27,7 @@ class BlockbusterStreaks(DiscoveryRule):
             FROM   all_credits ac
             JOIN   movies m ON m.id = ac.movie_id
             WHERE  m.box_office >= 100
-              AND  m.release_year IS NOT NULL
+              AND  {sane_year("m.release_year")}
               AND  {NOT_BROKEN}
         ),
         streaks AS (
@@ -84,5 +84,7 @@ class BlockbusterStreaks(DiscoveryRule):
                 facts={"threshold_cr": 100, "industry": r["industry"],
                        "box_office_coverage_pct": round(coverage * 100)},
                 completeness=round(min(1.0, 0.4 + coverage * 0.6), 2),
+                # A streak can be broken by a hit we simply lack BO data for
+                confidence=round(min(1.0, 0.3 + coverage * 0.7), 2),
             ))
         return out

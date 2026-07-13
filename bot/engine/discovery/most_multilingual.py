@@ -59,5 +59,7 @@ class MostMultilingual(DiscoveryRule):
                 facts={"languages": sorted(r["languages"] or []),
                        "industry": r["industry"]},
                 completeness=round(min(1.0, 0.4 + coverage * 0.6), 2),
+                # language field is enrichment-dependent; counts are lower bounds
+                confidence=round(min(1.0, 0.3 + coverage * 0.7), 2),
             ))
         return out
