@@ -86,6 +86,10 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+      # Insight Engine: DB-driven discovery → ranking → dedup → LLM copywriting.
+      # Overridable from the host .env; defaults on. Set to "false" to fall back
+      # to the legacy generator/scorer broadcaster path (instant rollback).
+      INSIGHT_ENGINE_ENABLED: ${INSIGHT_ENGINE_ENABLED:-true}
       BOT_TWITTER_HANDLE: ${BOT_TWITTER_HANDLE}
       CINETRACE_BASE_URL: ${CINETRACE_BASE_URL}
       CINETRACE_SCREENSHOT_URL: ${CINETRACE_SCREENSHOT_URL:-http://frontend:3000}
