@@ -9,7 +9,6 @@
  * Capture: domcontentloaded + 1.5s (SSR only)
  */
 
-import { notFound } from 'next/navigation'
 import Image from 'next/image'
 import { searchActors, getActor } from '@/lib/api'
 
@@ -20,19 +19,27 @@ interface PageProps {
 export default async function StatCardPage({ params }: PageProps) {
   const slug = params.slug
 
-  let id: number | string = slug
-  if (!/^\d+$/.test(slug)) {
+  // Try to resolve the slug to a known actor (for the real name spelling).
+  let resolvedName: string | null = null
+  let id: number | string | null = /^\d+$/.test(slug) ? slug : null
+  if (id === null) {
     const nameFromSlug = slug.replace(/-/g, ' ')
     const results = await searchActors(nameFromSlug).catch(() => [] as Awaited<ReturnType<typeof searchActors>>)
-    if (!results.length) notFound()
-    id = results[0].id
+    if (results.length) id = results[0].id
+  }
+  if (id !== null) {
+    const actor = await getActor(id).catch(() => null)
+    if (actor) resolvedName = actor.name
   }
 
-  const actor = await getActor(id).catch(() => null)
-  if (!actor) notFound()
+  // Graceful fallback: a slug we can't resolve (e.g. a director, who isn't in
+  // the actors table) still gets a clean branded card with an initials avatar
+  // instead of a 404 — every tweet must carry an image.
+  const displayName = resolvedName
+    ?? slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 
-  const avatarSlug = actor.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-  const initial    = actor.name.charAt(0).toUpperCase()
+  const avatarSlug = displayName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+  const initial    = displayName.charAt(0).toUpperCase()
 
   return (
     <div
@@ -81,7 +88,7 @@ export default async function StatCardPage({ params }: PageProps) {
           </div>
           <Image
             src={`/avatars/${avatarSlug}.png`}
-            alt={actor.name}
+            alt={displayName}
             fill
             sizes="420px"
             style={{ objectFit: 'cover', objectPosition: 'top center' }}
@@ -164,7 +171,7 @@ export default async function StatCardPage({ params }: PageProps) {
               margin:        0,
             }}
           >
-            {actor.name}
+            {displayName}
           </p>
         </div>
 

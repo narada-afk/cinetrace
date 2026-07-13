@@ -112,6 +112,11 @@ class TwitterGenerator(ContentGenerator):
                        avoid_texts: list[str] | None = None) -> ContentItem | None:
         limit = char_limit or self.default_char_limit
         primary = insight.primary_entity
+        # Card slug: the primary entity's slug, else the first entity that has
+        # one — guarantees every tweet gets a stat-card image, including
+        # director-primary insights (the card renders an initials fallback).
+        card_slug = primary.slug or next(
+            (e.slug for e in insight.entities if e.slug), None)
         profile_url = (
             f"{CINETRACE_BASE_URL}/actors/{primary.slug}" if primary.slug else ""
         )
@@ -151,7 +156,7 @@ class TwitterGenerator(ContentGenerator):
                     insight_id=insight_id,
                     platform=self.platform,
                     text=text,
-                    media_ref=primary.slug,
+                    media_ref=card_slug,
                     model=MODEL,
                     validated=True,
                 )

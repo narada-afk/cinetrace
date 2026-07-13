@@ -41,7 +41,8 @@ class DirectorLoyalty(DiscoveryRule):
                 entities=[
                     Entity(kind="actor", id=r["actor_id"], name=r["actor_name"],
                            slug=actor_slug(r["actor_name"])),
-                    Entity(kind="director", name=r["director_name"]),
+                    Entity(kind="director", name=r["director_name"],
+                           slug=actor_slug(r["director_name"])),
                 ],
                 metrics=[
                     Metric(key="films_together", value=r["dir_films"], unit="films"),

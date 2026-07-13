@@ -11,6 +11,7 @@ from typing import Sequence
 
 from engine.discovery.base import DiscoveryRule, register
 from engine.models import Entity, Insight, Metric
+from engine.shared.slugs import actor_slug
 from engine.shared.sql import NOT_BROKEN, SOUTH_INDUSTRIES
 
 
@@ -50,7 +51,8 @@ class DirectorBoxOffice(DiscoveryRule):
             bo_coverage = r["films_with_bo"] / max(1, r["total_films"])
             out.append(Insight(
                 rule=self.name,
-                entities=[Entity(kind="director", name=r["director"])],
+                entities=[Entity(kind="director", name=r["director"],
+                                 slug=actor_slug(r["director"]))],
                 metrics=[
                     Metric(key="total_gross_cr", value=int(r["total_cr"]), unit="₹Cr"),
                     Metric(key="biggest_hit_cr", value=int(r["biggest_cr"]), unit="₹Cr"),
