@@ -13,7 +13,7 @@
 
 import { notFound } from 'next/navigation'
 import Image from 'next/image'
-import { searchActors, getActor, getActorDirectors, getActorMovies } from '@/lib/api'
+import { searchActors, getActor, getActorDirectors, getActorMovies, toAvatarSlug } from '@/lib/api'
 import type { DirectorCollab, ActorMovie } from '@/lib/api'
 
 interface PageProps {
@@ -56,8 +56,8 @@ export default async function DirectorLoyaltyPage({ params }: PageProps) {
     ? `${firstYear} — ${lastYear}`   // thin-space + em-dash + thin-space
     : null
 
-  // Avatar slug matches toActorSlug() in lib/api.ts
-  const avatarSlug = actor.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+  // Avatar filename slug (no separators) — NOT the dash-based route slug.
+  const avatarSlug = toAvatarSlug(actor.name)
   const initial    = actor.name.charAt(0).toUpperCase()
 
   return (

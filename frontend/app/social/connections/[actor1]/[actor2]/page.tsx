@@ -17,7 +17,7 @@
 
 import { notFound } from 'next/navigation'
 import Image from 'next/image'
-import { searchActors, getActorConnection, toActorSlug } from '@/lib/api'
+import { searchActors, getActorConnection, toAvatarSlug } from '@/lib/api'
 import type { ConnectionPath } from '@/lib/api'
 
 interface PageProps {
@@ -45,7 +45,7 @@ function ActorNode({
   name: string
   isEndpoint: boolean
 }) {
-  const slug    = toActorSlug(name)
+  const slug    = toAvatarSlug(name)  // avatar filename slug (no separators)
   const initial = name.charAt(0).toUpperCase()
   const size    = isEndpoint ? 64 : 52
 

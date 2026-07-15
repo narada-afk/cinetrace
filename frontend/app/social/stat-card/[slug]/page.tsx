@@ -10,7 +10,7 @@
  */
 
 import Image from 'next/image'
-import { searchActors, getActor } from '@/lib/api'
+import { searchActors, getActor, toAvatarSlug } from '@/lib/api'
 
 interface PageProps {
   params: { slug: string }
@@ -38,7 +38,9 @@ export default async function StatCardPage({ params }: PageProps) {
   const displayName = resolvedName
     ?? slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 
-  const avatarSlug = displayName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+  // Avatar files use the no-separator slug (differs from the dash-based route
+  // slug in params.slug); the wrong one 404s and falls back to a bare initial.
+  const avatarSlug = toAvatarSlug(displayName)
   const initial    = displayName.charAt(0).toUpperCase()
 
   return (

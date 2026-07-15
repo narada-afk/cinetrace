@@ -23,6 +23,17 @@ export function toActorSlug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 }
 
+/**
+ * Convert an actor name to the avatar filename slug, e.g. "Raj B Shetty" →
+ * "rajbshetty" for `/avatars/rajbshetty.png`. This strips ALL non-alphanumerics
+ * (no separators) and MUST match ActorAvatar's slug — it differs from
+ * toActorSlug (which keeps dashes for routes). Using the wrong one 404s the
+ * image for any multi-word name and falls back to a bare initial.
+ */
+export function toAvatarSlug(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export interface Actor {
