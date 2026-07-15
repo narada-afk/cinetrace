@@ -92,6 +92,7 @@ export default async function StatCardPage({ params }: PageProps) {
             src={`/avatars/${avatarSlug}.png`}
             alt={displayName}
             fill
+            priority
             sizes="420px"
             style={{ objectFit: 'cover', objectPosition: 'top center' }}
           />
