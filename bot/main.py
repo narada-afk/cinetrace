@@ -538,30 +538,68 @@ async def main():
     _stream_handle = await stream_listener.start_stream(on_actor_tweet, on_signal_tweet)
     print("[main] Twitter stream started (Tier 1 actors + Tier 2 signals)")
 
-    # Watchdog — restart stream thread if it dies (only if stream started successfully)
-    if _stream_handle:
-        async def _stream_watchdog():
-            import threading
-            nonlocal _stream_handle
-            while True:
-                await asyncio.sleep(300)
-                threads = {t.name for t in threading.enumerate()}
-                live = any("stream" in t.lower() or "tweepy" in t.lower() for t in threads)
-                if not live:
-                    print("[watchdog] stream thread dead — restarting")
+    # Watchdog — restart the stream thread if it dies, with a circuit breaker.
+    # The old version restarted every 5 min unconditionally; when the X account
+    # ran out of API credits the stream could never stay up, so it looped —
+    # each restart firing failing get_users/rule calls and bleeding hundreds of
+    # requests/day. Now: healthy → check every 5 min; dead → one restart
+    # attempt, then exponential backoff, and a long (2h) throttle + one-time
+    # alert when the failure is credit/quota exhaustion. Always started so the
+    # stream self-recovers once credits are topped up (no redeploy needed).
+    async def _stream_watchdog():
+        import threading
+        from telegram_handler import send_alert
+        nonlocal _stream_handle
+        HEALTHY_INTERVAL = 300        # 5 min when the stream is up
+        MIN_BACKOFF      = 600        # 10 min after a transient failure
+        MAX_BACKOFF      = 7200       # 2 h cap (also used for credit exhaustion)
+        backoff       = 0
+        credit_alerted = False
+        while True:
+            await asyncio.sleep(backoff or HEALTHY_INTERVAL)
+            threads = {t.name for t in threading.enumerate()}
+            live = any("stream" in t.lower() or "tweepy" in t.lower() for t in threads)
+            if live:
+                if backoff:
+                    print("[watchdog] stream healthy again — resetting backoff")
+                backoff = 0
+                credit_alerted = False
+                continue
+
+            print("[watchdog] stream thread not alive — attempting restart")
+            try:
+                if _stream_handle:
                     try:
-                        if _stream_handle:
-                            try:
-                                _stream_handle.disconnect()
-                            except Exception:
-                                pass
-                            await asyncio.sleep(30)  # let Twitter close the old connection
-                        _stream_handle = await stream_listener.start_stream(on_actor_tweet, on_signal_tweet)
-                        if _stream_handle:
-                            print("[watchdog] stream restarted")
-                    except Exception as e:
-                        print(f"[watchdog] restart failed: {e}")
-        asyncio.create_task(_stream_watchdog())
+                        _stream_handle.disconnect()
+                    except Exception:
+                        pass
+                    await asyncio.sleep(30)  # let Twitter close the old connection
+                _stream_handle = await stream_listener.start_stream(on_actor_tweet, on_signal_tweet)
+            except Exception as e:
+                print(f"[watchdog] restart failed: {e}")
+                _stream_handle = None
+
+            if _stream_handle:
+                print("[watchdog] stream restarted")
+                backoff = 0
+                credit_alerted = False
+            elif stream_listener.credits_depleted():
+                backoff = MAX_BACKOFF   # throttle hard — stop the request bleed
+                print(f"[watchdog] X API credits depleted — throttling restarts to {backoff}s")
+                if not credit_alerted:
+                    credit_alerted = True
+                    try:
+                        await send_alert(
+                            "Twitter stream down: X API credits depleted. Restart attempts "
+                            "throttled to every 2h to stop burning API requests. Top up credits "
+                            "to resume reactive tweets — no redeploy needed."
+                        )
+                    except Exception:
+                        pass
+            else:
+                backoff = min(max(backoff * 2, MIN_BACKOFF), MAX_BACKOFF)
+                print(f"[watchdog] restart failed — backing off {backoff}s")
+    asyncio.create_task(_stream_watchdog())
 
     asyncio.create_task(trends_poller.poll_trends(on_trend))
     print("[main] Trends poller started")
