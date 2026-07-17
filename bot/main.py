@@ -515,15 +515,21 @@ async def main():
         args=[telegram_handler.send_scheduled_for_review],
         trigger="cron", hour=GENERATION_HOUR, minute=0,
         id="daily_schedule_gen", replace_existing=True,
+        misfire_grace_time=3600, coalesce=True,
     )
 
     # Slot posters — 7am, 10am, 1pm, 4pm, 7pm, 10pm IST
+    # misfire_grace_time: the event loop can be busy at the exact cron instant
+    # (e.g. a blocking Playwright capture), so allow the job to still fire up to
+    # an hour late instead of APScheduler's 1s default silently dropping the
+    # slot. coalesce collapses any backlog into a single run.
     for slot_h in SLOT_HOURS:
         scheduler.add_job(
             broadcaster.post_scheduled_slot,
             args=[slot_h],
             trigger="cron", hour=slot_h, minute=0,
             id=f"slot_{slot_h}h", replace_existing=True,
+            misfire_grace_time=3600, coalesce=True,
         )
 
     scheduler.start()
