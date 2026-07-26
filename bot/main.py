@@ -260,6 +260,16 @@ async def on_signal_tweet(tweet, signal: dict):
     if not _cluster_ok(actor["handle"], signal_text):
         return
 
+    # Rate gate BEFORE any X API reads. Reply caps limit posting, but the
+    # context fetch below (get_users_tweets) is metered too — if we're already
+    # rate-limited for this actor we'd never post, so skip the reads entirely.
+    # This is the main defense against reactive-read request bleed during
+    # high-activity windows (signal accounts fire constantly around releases).
+    ok, reason = _rate_ok(actor["handle"])
+    if not ok:
+        print(f"[signal] skipped @{actor['handle']} before fetch: {reason}")
+        return
+
     print(f"[signal] @{signal['handle']} ({signal_role}) → actor: {actor['name']}")
 
     stat_angle      = intelligence.classify_signal_angle(signal_role, signal_text)
@@ -272,12 +282,16 @@ async def on_signal_tweet(tweet, signal: dict):
     target_text  = None
 
     try:
-        user_resp = await loop.run_in_executor(
-            None,
-            lambda: _twitter.get_users(usernames=[actor["handle"]], user_fields=["id"])
-        )
-        if user_resp.data:
-            uid = user_resp.data[0].id
+        # Reuse the user id resolved at stream startup — avoids a get_users
+        # call per signal event. Fall back to the API only on a cache miss.
+        uid = stream_listener.user_id_for_handle(actor["handle"])
+        if not uid:
+            user_resp = await loop.run_in_executor(
+                None,
+                lambda: _twitter.get_users(usernames=[actor["handle"]], user_fields=["id"])
+            )
+            uid = user_resp.data[0].id if user_resp.data else None
+        if uid:
             tweets_resp = await loop.run_in_executor(
                 None,
                 lambda: _twitter.get_users_tweets(

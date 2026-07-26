@@ -101,6 +101,15 @@ def resolve_user_ids() -> tuple[dict[str, dict], dict[str, dict]]:
     signals = _resolve_batch(client, ALL_SIGNAL_HANDLES, SIGNALS_BY_HANDLE, "signal")
     return actors, signals
 
+def user_id_for_handle(handle: str) -> str | None:
+    """Reverse-lookup a resolved user id from the maps built at stream startup,
+    so reactive handlers don't spend a get_users call per event."""
+    h = handle.lower().lstrip("@")
+    for uid, entry in {**_ACTOR_ID_MAP, **_SIGNAL_ID_MAP}.items():
+        if str(entry.get("handle", "")).lower().lstrip("@") == h:
+            return uid
+    return None
+
 def setup_stream_rules(stream: ActorStreamListener, all_user_ids: list[str]):
     existing = stream.get_rules()
     if existing.data:
