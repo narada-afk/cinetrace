@@ -90,6 +90,11 @@ services:
       # Overridable from the host .env; defaults on. Set to "false" to fall back
       # to the legacy generator/scorer broadcaster path (instant rollback).
       INSIGHT_ENGINE_ENABLED: ${INSIGHT_ENGINE_ENABLED:-true}
+      # Reactive layer (filtered stream + reactive replies + trends + reddit).
+      # Default OFF: the filtered stream continuously consumes the metered X
+      # Posts cap, so keeping it off means X API credits are spent only on
+      # scheduled tweeting. Set to "true" in the host .env to re-enable.
+      REACTIVE_ENABLED: ${REACTIVE_ENABLED:-false}
       BOT_TWITTER_HANDLE: ${BOT_TWITTER_HANDLE}
       CINETRACE_BASE_URL: ${CINETRACE_BASE_URL}
       CINETRACE_SCREENSHOT_URL: ${CINETRACE_SCREENSHOT_URL:-http://frontend:3000}

@@ -41,3 +41,11 @@ MAX_TRIGGER_TO_REVIEW_MINUTES  = 45   # maximum wait (actual delay is randomised
 
 CONFIDENCE_AUTO_THRESHOLD     = 101   # 101 = all go to Telegram (100% review mode)
 TREND_POLL_INTERVAL_SECONDS   = 1800  # 30 minutes
+
+# Master switch for the reactive layer (Twitter filtered stream + reactive
+# replies + trends + Reddit monitor). Default OFF so the bot spends X API
+# credits ONLY on scheduled tweeting. The filtered stream continuously pulls
+# every monitored tweet against the metered Posts cap even when idle, so it is
+# the main non-posting consumer — keep this off unless credits are topped up
+# and reactive replies are wanted.
+REACTIVE_ENABLED = os.getenv("REACTIVE_ENABLED", "false").lower() in ("1", "true", "yes")

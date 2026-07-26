@@ -28,6 +28,7 @@ from config import (
     MIN_HOURS_BETWEEN_POSTS, MAX_REPLIES_PER_ACTOR_PER_DAY,
     MAX_REACTIVE_REPLIES_PER_WEEK,
     MIN_TRIGGER_TO_REVIEW_MINUTES, MAX_TRIGGER_TO_REVIEW_MINUTES,
+    REACTIVE_ENABLED,
 )
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -236,6 +237,8 @@ async def post_approved(row: dict):
 # ── Tweet stream handler ──────────────────────────────────────────────────────
 
 async def on_actor_tweet(tweet, actor: dict):
+    if not REACTIVE_ENABLED:
+        return
     await _pipeline(
         tweet_id     = str(tweet.id),
         tweet_text   = tweet.text,
@@ -246,6 +249,8 @@ async def on_actor_tweet(tweet, actor: dict):
 # ── Signal account handler (Tier 2) ──────────────────────────────────────────
 
 async def on_signal_tweet(tweet, signal: dict):
+    if not REACTIVE_ENABLED:
+        return
     signal_text = tweet.text
     signal_name = signal["name"]
     signal_role = signal["role"]
@@ -548,6 +553,18 @@ async def main():
 
     scheduler.start()
     print(f"[main] Broadcaster scheduler started (slots: {SLOT_HOURS}, generation: {GENERATION_HOUR}:00 IST)")
+
+    # ── Reactive layer (opt-in) ──────────────────────────────────────────────
+    # The Twitter filtered stream continuously consumes the metered X Posts cap
+    # (every monitored tweet is delivered 24/7), plus reactive reads. When
+    # REACTIVE_ENABLED is off the bot touches the X API ONLY to post scheduled
+    # tweets — no stream, no reads, no polling.
+    if not REACTIVE_ENABLED:
+        print("[main] Reactive layer DISABLED (REACTIVE_ENABLED=false) — "
+              "X API used only for scheduled posting. Stream/reads/trends/reddit off.")
+        print("[main] All systems running ✓")
+        await asyncio.Event().wait()
+        return
 
     _stream_handle = await stream_listener.start_stream(on_actor_tweet, on_signal_tweet)
     print("[main] Twitter stream started (Tier 1 actors + Tier 2 signals)")
