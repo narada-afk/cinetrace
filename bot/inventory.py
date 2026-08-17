@@ -605,7 +605,9 @@ FACTS: dict[str, list[dict]] = {
 }
 
 # ── Slot schedule (IST) ───────────────────────────────────────────────────────
-SLOT_HOURS      = [7, 10, 13, 16, 19, 22]
+# One tweet a day for now (7 PM IST prime time). Add hours back to this list to
+# increase daily volume — the generator, planner and slot posters all key off it.
+SLOT_HOURS      = [19]
 GENERATION_HOUR = 21
 
 def get_facts(actor_db_name: str) -> list[dict]:
