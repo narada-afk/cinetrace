@@ -55,6 +55,23 @@ async def test_relevant_connection_uses_whitelisted_value_not_llm_value():
 
 
 @pytest.mark.asyncio
+async def test_reasoning_call_logs_real_usage():
+    """record_llm_call must be invoked with the response's real token
+    counts — this is what makes engine.db.trend_llm_usage_summary() report
+    actual spend instead of an estimate."""
+    reply = '{"relevant": false, "fact_key": null, "why_trending": "", "tweet_angle": "", "confidence": 0}'
+    config = TrendConfig()
+    with patch("engine.trends.reasoning._client") as client, \
+         patch("engine.db.record_llm_call") as record:
+        msg = _mock_response(reply)
+        msg.usage = MagicMock(input_tokens=612, output_tokens=38)
+        client.messages.create = AsyncMock(return_value=msg)
+        await find_trend_connection(_CANDIDATE, _RESOLVED, _PROFILE, config)
+
+    record.assert_called_once_with("reasoning", config.model, 612, 38)
+
+
+@pytest.mark.asyncio
 async def test_not_relevant_skips():
     reply = '{"relevant": false, "fact_key": null, "why_trending": "", "tweet_angle": "", "confidence": 0}'
     with patch("engine.trends.reasoning._client") as client:

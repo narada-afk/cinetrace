@@ -164,6 +164,10 @@ async def find_trend_connection(
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
         )
+        if msg.usage:
+            from engine import db as engine_db
+            engine_db.record_llm_call("reasoning", config.model,
+                                      msg.usage.input_tokens, msg.usage.output_tokens)
         text = msg.content[0].text.strip() if msg.content else ""
         if text.startswith("```"):
             text = text.split("```", 2)[1]

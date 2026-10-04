@@ -77,6 +77,19 @@ CREATE TABLE IF NOT EXISTS rule_health (
     seconds       NUMERIC
 );
 CREATE INDEX IF NOT EXISTS idx_rule_health_run ON rule_health (rule, run_at DESC);
+
+-- Real token counts from engine/trends/*.py's two Claude calls (nickname
+-- resolution, trend-relevance reasoning) — so actual spend is a query, not
+-- an estimate. See engine.db.trend_llm_usage_summary().
+CREATE TABLE IF NOT EXISTS trend_llm_calls (
+    id            BIGSERIAL PRIMARY KEY,
+    call_type     TEXT        NOT NULL,   -- 'nickname' | 'reasoning'
+    model         TEXT        NOT NULL,
+    input_tokens  INT         NOT NULL,
+    output_tokens INT         NOT NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_trend_llm_calls_created ON trend_llm_calls (created_at DESC);
 """
 
 
@@ -339,6 +352,60 @@ def recent_posted_texts(days: int = 14, limit: int = 20) -> list[str]:
                 (days, limit),
             )
             return [r[0] for r in cur.fetchall()]
+
+
+# ── Trend-awareness LLM usage ────────────────────────────────────────────────
+# Haiku 4.5 pricing as of this writing: $1.00/MTok input, $5.00/MTok output
+# (https://docs.anthropic.com/en/docs/about-claude/pricing). Update these if
+# pricing changes — they only affect the estimated-cost column below; the
+# stored token counts are the ground truth regardless.
+_HAIKU_INPUT_PER_MTOK  = 1.00
+_HAIKU_OUTPUT_PER_MTOK = 5.00
+
+
+def record_llm_call(call_type: str, model: str, input_tokens: int, output_tokens: int) -> None:
+    """Log one real Claude call's actual token usage. Best-effort — a logging
+    failure must never break the call it's recording."""
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO trend_llm_calls (call_type, model, input_tokens, output_tokens)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    (call_type, model, input_tokens, output_tokens),
+                )
+    except Exception as e:
+        log.warning("failed to record LLM usage (%s): %s", call_type, e)
+
+
+def trend_llm_usage_summary(days: int = 1) -> list[dict[str, Any]]:
+    """Per call_type: call count, token totals, and estimated $ cost at
+    current Haiku pricing, over the trailing window. One row per call_type."""
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT call_type,
+                       COUNT(*)                AS calls,
+                       COALESCE(SUM(input_tokens), 0)  AS input_tokens,
+                       COALESCE(SUM(output_tokens), 0) AS output_tokens
+                FROM   trend_llm_calls
+                WHERE  created_at > now() - make_interval(days => %s)
+                GROUP  BY call_type
+                ORDER  BY call_type
+                """,
+                (days,),
+            )
+            rows = [dict(r) for r in cur.fetchall()]
+    for r in rows:
+        r["estimated_cost_usd"] = round(
+            r["input_tokens"] / 1_000_000 * _HAIKU_INPUT_PER_MTOK
+            + r["output_tokens"] / 1_000_000 * _HAIKU_OUTPUT_PER_MTOK,
+            4,
+        )
+    return rows
 
 
 def count_trend_posts_today(day: date) -> int:

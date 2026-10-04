@@ -77,6 +77,30 @@ async def test_nickname_resolves_via_llm_fallback_then_search():
 
 
 @pytest.mark.asyncio
+async def test_nickname_call_logs_real_usage():
+    """record_llm_call must be invoked with the response's real token
+    counts — this is what makes engine.db.trend_llm_usage_summary() report
+    actual spend instead of an estimate."""
+    with patch("engine.trends.resolver.httpx.AsyncClient") as ac, \
+         patch("engine.trends.resolver._client") as claude, \
+         patch("engine.db.record_llm_call") as record:
+        client = AsyncMock()
+        # lowercase title: step 1 (raw title) is the only search call —
+        # step 2's capitalised-word regex matches nothing, so it never fires
+        client.get = AsyncMock(return_value=_resp(200, []))
+        ac.return_value.__aenter__.return_value = client
+
+        msg = MagicMock()
+        msg.content = [MagicMock(text='{"actor_name": null}')]
+        msg.usage = MagicMock(input_tokens=142, output_tokens=12)
+        claude.messages.create = AsyncMock(return_value=msg)
+
+        await resolve_trend_to_actor("trending now")
+
+    record.assert_called_once_with("nickname", "claude-haiku-4-5-20251001", 142, 12)
+
+
+@pytest.mark.asyncio
 async def test_search_failure_resolves_to_none_not_an_exception():
     """Cinetrace backend unreachable — resolver must degrade to "no match",
     not raise and crash the scheduled run."""

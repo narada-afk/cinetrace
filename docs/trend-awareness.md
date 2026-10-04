@@ -46,6 +46,22 @@ This is deliberately a separate path from the nightly broadcaster's
 touches the other. `post_scheduled_slot` and the discovery-pipeline engine
 path are completely unaffected by any of this.
 
+## Real usage/cost — not an estimate
+
+Both Claude calls (`resolver.py`'s nickname resolution, `reasoning.py`'s
+relevance check) log their actual `response.usage` token counts to a
+`trend_llm_calls` table (best-effort — a logging failure never breaks the
+call it's recording). Check real spend any time:
+
+```bash
+python -m engine.trends.usage_report          # today / 7d / 30d, real tokens + $ at current Haiku pricing
+```
+
+or query `engine.db.trend_llm_usage_summary(days=N)` directly. The dollar
+figure uses a hardcoded Haiku 4.5 price constant in `engine/db.py` — update
+it if Anthropic's pricing changes; the stored token counts are ground
+truth regardless.
+
 ## The daily post cap — the actual cost control
 
 Polling every 30 minutes does **not** mean 48 Twitter posts/day. The

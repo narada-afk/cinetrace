@@ -77,14 +77,21 @@ def _best_exact_match(results: list[dict], query: str) -> dict | None:
     return None
 
 
+_NICKNAME_MODEL = "claude-haiku-4-5-20251001"
+
+
 async def _nickname_to_actor_name(title: str) -> str | None:
     try:
         msg = await _client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=_NICKNAME_MODEL,
             max_tokens=100,
             system=_NICKNAME_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": title}],
         )
+        if msg.usage:
+            from engine import db as engine_db
+            engine_db.record_llm_call("nickname", _NICKNAME_MODEL,
+                                      msg.usage.input_tokens, msg.usage.output_tokens)
         text = msg.content[0].text.strip() if msg.content else ""
         if text.startswith("```"):
             text = text.strip("`").removeprefix("json").strip()
