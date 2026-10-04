@@ -19,6 +19,7 @@ import broadcaster
 import stream_listener
 import trends_poller
 import reddit_monitor
+import trend_realtime
 from actors import BY_HANDLE, ACTORS
 from inventory import SLOT_HOURS, GENERATION_HOUR
 from config import (
@@ -28,8 +29,9 @@ from config import (
     MIN_HOURS_BETWEEN_POSTS, MAX_REPLIES_PER_ACTOR_PER_DAY,
     MAX_REACTIVE_REPLIES_PER_WEEK,
     MIN_TRIGGER_TO_REVIEW_MINUTES, MAX_TRIGGER_TO_REVIEW_MINUTES,
-    REACTIVE_ENABLED,
+    REACTIVE_ENABLED, TREND_POLL_INTERVAL_SECONDS,
 )
+from engine.config import get_trend_config
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -519,6 +521,7 @@ async def main():
     telegram_handler.set_post_callback(post_approved)
     telegram_handler.set_reddit_post_callback(post_reddit_approved)
     telegram_handler.set_reddit_format_callback(format_for_reddit)
+    telegram_handler.set_trend_post_callback(trend_realtime.post_approved_trend_tweet)
     tg_app = telegram_handler.build_app()
     await tg_app.initialize()
     await tg_app.start()
@@ -551,17 +554,34 @@ async def main():
             misfire_grace_time=3600, coalesce=True,
         )
 
+    # Real-time trend poller — independent of REACTIVE_ENABLED below: it never
+    # reads from the X API (only Google's public Trends feed + Cinetrace's own
+    # API), so it carries none of the X-credit cost that gate exists for. Its
+    # own daily post cap (TREND_DAILY_POST_CAP) bounds cost and posting volume
+    # regardless of poll frequency. See docs/trend-awareness.md.
+    if get_trend_config().enabled:
+        scheduler.add_job(
+            trend_realtime.poll_and_maybe_post,
+            trigger="interval", seconds=TREND_POLL_INTERVAL_SECONDS,
+            id="trend_realtime_poll", replace_existing=True,
+            misfire_grace_time=300, coalesce=True, max_instances=1,
+        )
+
     scheduler.start()
     print(f"[main] Broadcaster scheduler started (slots: {SLOT_HOURS}, generation: {GENERATION_HOUR}:00 IST)")
+    if get_trend_config().enabled:
+        print(f"[main] Real-time trend poller started (every {TREND_POLL_INTERVAL_SECONDS}s, "
+              f"cap {get_trend_config().daily_post_cap}/day)")
 
     # ── Reactive layer (opt-in) ──────────────────────────────────────────────
     # The Twitter filtered stream continuously consumes the metered X Posts cap
     # (every monitored tweet is delivered 24/7), plus reactive reads. When
     # REACTIVE_ENABLED is off the bot touches the X API ONLY to post scheduled
-    # tweets — no stream, no reads, no polling.
+    # tweets (and approved real-time trend tweets, above) — no stream, no
+    # reactive reads, no X-trends polling, no Reddit monitor.
     if not REACTIVE_ENABLED:
         print("[main] Reactive layer DISABLED (REACTIVE_ENABLED=false) — "
-              "X API used only for scheduled posting. Stream/reads/trends/reddit off.")
+              "X API used only for scheduled/trend posting. Stream/reactive-reads/reddit off.")
         print("[main] All systems running ✓")
         await asyncio.Event().wait()
         return

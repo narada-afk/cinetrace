@@ -341,6 +341,27 @@ def recent_posted_texts(days: int = 14, limit: int = 20) -> list[str]:
             return [r[0] for r in cur.fetchall()]
 
 
+def count_trend_posts_today(day: date) -> int:
+    """How many trend-driven (rule='trending_now') tweets have already
+    posted on the given day — the real-time poller's daily cap check.
+    Pass an IST-local date (the poller's day boundary), not UTC."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT COUNT(*)
+                FROM   content_items ci
+                JOIN   insights i ON i.id = ci.insight_id
+                WHERE  ci.platform = 'twitter'
+                  AND  ci.status = 'posted'
+                  AND  i.rule = 'trending_now'
+                  AND  ci.updated_at::date = %s
+                """,
+                (day,),
+            )
+            return cur.fetchone()[0]
+
+
 def actors_used_recently(days: int = 1) -> set[int]:
     """Actor ids referenced by insights whose content was scheduled recently
     (batch-level diversity: max 1 insight per actor per day)."""

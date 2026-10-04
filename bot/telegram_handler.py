@@ -17,6 +17,7 @@ _app: Application | None = None
 _post_callback          = None   # injected from main.py — posts to Twitter
 _reddit_post_callback   = None   # injected from main.py — posts to Reddit
 _reddit_format_callback = None   # injected from main.py — generates Reddit draft from Twitter row
+_trend_post_callback    = None   # injected from main.py — posts a trend-driven tweet immediately
 
 def set_post_callback(fn):
     global _post_callback
@@ -29,6 +30,10 @@ def set_reddit_post_callback(fn):
 def set_reddit_format_callback(fn):
     global _reddit_format_callback
     _reddit_format_callback = fn
+
+def set_trend_post_callback(fn):
+    global _trend_post_callback
+    _trend_post_callback = fn
 
 # ── Scheduled tweet review ────────────────────────────────────────────────────
 
@@ -113,6 +118,44 @@ async def send_insight_for_review(item_id: int, header: str, text: str,
         return msg.message_id
     except Exception as e:
         print(f"[telegram] insight review send failed: {e}")
+        return None
+
+# ── Real-time trend tweet review ──────────────────────────────────────────────
+# Unlike send_insight_for_review (posts at the next fixed slot), approving
+# this posts IMMEDIATELY — see _handle_trend_approve below and
+# docs/trend-awareness.md. Separate callback prefix (trend_approve/trend_skip)
+# so this never touches the existing ins_approve/ins_skip behaviour.
+
+async def send_trend_insight_for_review(item_id: int, header: str, text: str,
+                                        screenshot: bytes | None = None) -> int | None:
+    bot = Bot(token=TELEGRAM_BOT_TOKEN)
+    body = f"📈 *Trending Now — Tweet*\n{header}\n\n```\n{text[:700]}\n```"
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("✅ Approve & Post Now", callback_data=f"trend_approve:{item_id}"),
+        InlineKeyboardButton("❌ Skip",                callback_data=f"trend_skip:{item_id}"),
+    ]])
+    try:
+        if screenshot:
+            try:
+                msg = await bot.send_photo(
+                    chat_id=TELEGRAM_CHAT_ID,
+                    photo=io.BytesIO(screenshot),
+                    caption=body,
+                    parse_mode="Markdown",
+                    reply_markup=keyboard,
+                )
+                return msg.message_id
+            except Exception as photo_err:
+                print(f"[telegram] trend photo send failed ({photo_err}), falling back to text")
+        msg = await bot.send_message(
+            chat_id=TELEGRAM_CHAT_ID,
+            text=body,
+            parse_mode="Markdown",
+            reply_markup=keyboard,
+        )
+        return msg.message_id
+    except Exception as e:
+        print(f"[telegram] trend review send failed: {e}")
         return None
 
 # ── Shared header builder ─────────────────────────────────────────────────────
@@ -358,6 +401,38 @@ async def _handle_ins_skip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_reply_markup(reply_markup=None)
     await context.bot.send_message(TELEGRAM_CHAT_ID, "⏭ Insight tweet skipped.")
 
+async def _handle_trend_approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Unlike _handle_ins_approve, this posts immediately — see
+    send_trend_insight_for_review above. Mirrors _handle_approve's
+    immediate-post pattern (asyncio.create_task on the registered callback)."""
+    from engine import db as engine_db
+    query   = update.callback_query
+    await query.answer()
+    item_id = int(query.data.split(":")[1])
+
+    row = engine_db.get_content_item(item_id)
+    if not row:
+        await query.edit_message_reply_markup(reply_markup=None)
+        await context.bot.send_message(TELEGRAM_CHAT_ID, f"⚠️ Item {item_id} not found or already actioned.")
+        return
+
+    engine_db.mark_content_approved(item_id)
+    await query.edit_message_reply_markup(reply_markup=None)
+    await context.bot.send_message(TELEGRAM_CHAT_ID, "✅ Approved — posting to Twitter now...")
+
+    if _trend_post_callback:
+        asyncio.create_task(_trend_post_callback(row))
+
+async def _handle_trend_skip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from engine import db as engine_db
+    query = update.callback_query
+    await query.answer()
+    item_id = int(query.data.split(":")[1])
+
+    engine_db.mark_content_rejected(item_id)
+    await query.edit_message_reply_markup(reply_markup=None)
+    await context.bot.send_message(TELEGRAM_CHAT_ID, "⏭ Trend tweet skipped.")
+
 # ── Posted notification ───────────────────────────────────────────────────────
 
 async def send_alert(message: str) -> None:
@@ -401,5 +476,7 @@ def build_app() -> Application:
     _app.add_handler(CallbackQueryHandler(_handle_sched_skip,        pattern=r"^sched_skip:"))
     _app.add_handler(CallbackQueryHandler(_handle_ins_approve,       pattern=r"^ins_approve:"))
     _app.add_handler(CallbackQueryHandler(_handle_ins_skip,          pattern=r"^ins_skip:"))
+    _app.add_handler(CallbackQueryHandler(_handle_trend_approve,     pattern=r"^trend_approve:"))
+    _app.add_handler(CallbackQueryHandler(_handle_trend_skip,        pattern=r"^trend_skip:"))
 
     return _app

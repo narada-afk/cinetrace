@@ -175,13 +175,16 @@ actor stat-card image; success ⇒ `posted` + cooldown upsert, tweepy failure �
 `failed` + Telegram alert (the slot is not retried automatically — approve a
 regenerated draft or repost manually).
 
-## Trend-aware entity selection
+## Real-time trend-driven tweets
 
-Entity selection for the scheduled tweet can be driven by Google Trends
-instead of pure discovery-pipeline ranking — see `docs/trend-awareness.md`.
-It produces the same `Insight` contract described above and reuses this
-pipeline's generators/approval/posting unchanged; only discovery (what to
-write about) differs. Toggle independently via `TREND_AWARE_ENABLED`.
+A separate real-time poller (not part of this nightly schedule) can post
+trend-driven tweets alongside it, picking entities from Google Trends
+instead of discovery-pipeline ranking — see `docs/trend-awareness.md` and
+`bot/trend_realtime.py`. It produces the same `Insight` contract described
+above and reuses this pipeline's `TwitterGenerator`/validator unchanged;
+only discovery (what to write about) and the posting trigger (immediate on
+approval, not a fixed slot) differ. Toggle independently via
+`TREND_AWARE_ENABLED`.
 
 ## Runbook
 

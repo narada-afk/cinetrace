@@ -68,9 +68,10 @@ class EngineConfig:
 
 @dataclass
 class TrendConfig:
-    """Trend-awareness layer — selects the day's entity from Google Trends
-    instead of the discovery-pipeline ranking. Only takes effect when the
-    insight engine itself is enabled (INSIGHT_ENGINE_ENABLED=true)."""
+    """Trend-awareness layer — runs as its own real-time poller
+    (trend_realtime.py), independent of the nightly discovery-pipeline
+    schedule. Only takes effect when the insight engine itself is enabled
+    (INSIGHT_ENGINE_ENABLED=true). See docs/trend-awareness.md."""
 
     enabled: bool = os.getenv("TREND_AWARE_ENABLED", "true").lower() in ("1", "true", "yes")
 
@@ -81,13 +82,25 @@ class TrendConfig:
     )
     request_timeout_seconds: float = _env_float("TREND_REQUEST_TIMEOUT_SECONDS", 10.0)
 
-    # How many top trends to try (in feed order) before giving up for the day.
-    max_candidates: int = int(os.getenv("TREND_MAX_CANDIDATES", "15"))
+    # How many top trends to try (in feed order) before giving up this poll.
+    # Lower than a once-a-day budget would be — this runs every
+    # TREND_POLL_INTERVAL_SECONDS (config.py), so cost compounds with
+    # frequency, not just with how many candidates one run tries.
+    max_candidates: int = int(os.getenv("TREND_MAX_CANDIDATES", "8"))
 
     # Claude model for the two small reasoning steps (nickname resolution,
     # trend→fact relevance). Deliberately small/cheap — same model used in
     # engine/generators/twitter.py.
     model: str = os.getenv("TREND_MODEL", "claude-haiku-4-5-20251001")
+
+    # Hard ceiling on trend-driven POSTS per day, independent of how often
+    # we poll. Data on X/Twitter growth converges on ~3-5 total tweets/day
+    # for accounts this size (Rival IQ engagement study; OpenTweet's
+    # by-follower-count breakdown puts <10K followers at 2-5/day) — this
+    # account already posts one evergreen scheduled tweet/day, so capping
+    # trend-driven posts at 3 lands total daily volume in that range rather
+    # than flooding the timeline just because trends keep appearing.
+    daily_post_cap: int = int(os.getenv("TREND_DAILY_POST_CAP", "3"))
 
 
 _trend_config: TrendConfig | None = None
