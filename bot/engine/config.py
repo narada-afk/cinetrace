@@ -66,6 +66,40 @@ class EngineConfig:
         return hashlib.sha1(blob.encode()).hexdigest()[:10]
 
 
+@dataclass
+class TrendConfig:
+    """Trend-awareness layer — selects the day's entity from Google Trends
+    instead of the discovery-pipeline ranking. Only takes effect when the
+    insight engine itself is enabled (INSIGHT_ENGINE_ENABLED=true)."""
+
+    enabled: bool = os.getenv("TREND_AWARE_ENABLED", "true").lower() in ("1", "true", "yes")
+
+    # Google's public daily-trends RSS feed — no API key, no scraping.
+    geo: str = os.getenv("TREND_GEO", "IN")
+    rss_url_template: str = os.getenv(
+        "TREND_RSS_URL_TEMPLATE", "https://trends.google.com/trending/rss?geo={geo}"
+    )
+    request_timeout_seconds: float = _env_float("TREND_REQUEST_TIMEOUT_SECONDS", 10.0)
+
+    # How many top trends to try (in feed order) before giving up for the day.
+    max_candidates: int = int(os.getenv("TREND_MAX_CANDIDATES", "15"))
+
+    # Claude model for the two small reasoning steps (nickname resolution,
+    # trend→fact relevance). Deliberately small/cheap — same model used in
+    # engine/generators/twitter.py.
+    model: str = os.getenv("TREND_MODEL", "claude-haiku-4-5-20251001")
+
+
+_trend_config: TrendConfig | None = None
+
+
+def get_trend_config() -> TrendConfig:
+    global _trend_config
+    if _trend_config is None:
+        _trend_config = TrendConfig()
+    return _trend_config
+
+
 _config: EngineConfig | None = None
 
 

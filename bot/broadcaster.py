@@ -216,6 +216,76 @@ async def _capture(actor_db_name: str, section: str,
         print(f"[broadcaster] snapshot failed for {actor_db_name}/{section}: {e}")
         return None
 
+# ── Trend-aware path (TREND_AWARE_ENABLED, requires the insight engine) ─────
+
+async def _generate_daily_schedule_trend_aware(tomorrow: date) -> bool:
+    """Trend-first entity selection: Google Trends -> Cinetrace match -> one
+    LLM reasoning step -> existing Insight/TwitterGenerator/Telegram flow.
+
+    Returns True if a draft was generated (or already existed) for tomorrow,
+    False if nothing trend-worthy was found. False means the caller must
+    SKIP the run — it must NOT fall back to the discovery-pipeline engine
+    path, or the entity selection stops being trend-aware on exactly the
+    days a trend is missing. See docs/trend-awareness.md.
+    """
+    from engine import db as engine_db
+    from engine.config import get_trend_config
+    from engine.generators import get_generator
+    from engine.models import Platform, RankedInsight, Score
+    from engine.shared.fingerprint import canonical_fingerprint
+    from engine.trends.pipeline import discover_trending_insight
+    from telegram_handler import send_insight_for_review
+
+    if engine_db.slot_content_exists(Platform.TWITTER, tomorrow):
+        print(f"[broadcaster] trend-aware: content already exists for {tomorrow}, skipping")
+        return True
+
+    insight = await discover_trending_insight(config=get_trend_config())
+    if insight is None:
+        return False
+
+    ranked = RankedInsight(
+        insight=insight,
+        score=Score(total=insight.confidence, components={}, weights_version="trend-aware"),
+        fingerprint=canonical_fingerprint(insight),
+    )
+    ranked.db_id = engine_db.insert_insight(ranked)
+
+    twitter = get_generator(Platform.TWITTER)
+    avoid   = engine_db.recent_posted_texts(days=14)
+    item    = await twitter.generate(ranked.insight, insight_id=ranked.db_id, avoid_texts=avoid)
+    if item is None:
+        trend_term = insight.facts.get("trend_term", "?")
+        print(f"[broadcaster] trend-aware: copywriting/validation failed for "
+              f"{insight.entities[0].name} (trend={trend_term!r}) — skipping run")
+        return False
+
+    slot_hour = SLOT_HOURS[0]
+    item_id   = engine_db.insert_content_item(item, scheduled_date=tomorrow, slot_hour=slot_hour)
+
+    png = None
+    if item.media_ref:
+        try:
+            png = await ss.capture_section_snapshot(item.media_ref, "stat-card")
+        except Exception as e:
+            print(f"[broadcaster] stat-card capture failed for {item.media_ref}: {e}")
+
+    slot_label = datetime(tomorrow.year, tomorrow.month, tomorrow.day,
+                          slot_hour, 0, tzinfo=IST).strftime("%-I:%M %p IST")
+    header = (
+        f"📈 trending: {insight.facts.get('trend_term', '?')}\n"
+        f"🎬 {insight.entities[0].name} — {insight.facts.get('why_trending', '')}\n"
+        f"🕐 {slot_label}"
+    )
+    msg_id = await send_insight_for_review(
+        item_id=item_id, header=header, text=item.text, screenshot=png)
+    if msg_id:
+        engine_db.set_content_telegram_id(item_id, msg_id)
+
+    print(f"[broadcaster] trend-aware: draft sent to Telegram for {tomorrow} "
+          f"(trend={insight.facts.get('trend_term', '?')!r}, actor={insight.entities[0].name})")
+    return True
+
 # ── Insight-engine path (INSIGHT_ENGINE_ENABLED) ─────────────────────────────
 
 async def _generate_daily_schedule_engine(tomorrow: date) -> None:
@@ -334,8 +404,14 @@ async def generate_daily_schedule(send_for_review_fn) -> None:
     """
     tomorrow = date.today() + timedelta(days=1)
 
-    from engine.config import get_config
+    from engine.config import get_config, get_trend_config
     if get_config().enabled:
+        if get_trend_config().enabled:
+            handled = await _generate_daily_schedule_trend_aware(tomorrow)
+            if not handled:
+                print(f"[broadcaster] trend-aware: no usable trend for {tomorrow} — "
+                      f"skipping scheduled run (no fallback to discovery pipeline)")
+            return
         await _generate_daily_schedule_engine(tomorrow)
         return
 

@@ -175,6 +175,14 @@ actor stat-card image; success ⇒ `posted` + cooldown upsert, tweepy failure �
 `failed` + Telegram alert (the slot is not retried automatically — approve a
 regenerated draft or repost manually).
 
+## Trend-aware entity selection
+
+Entity selection for the scheduled tweet can be driven by Google Trends
+instead of pure discovery-pipeline ranking — see `docs/trend-awareness.md`.
+It produces the same `Insight` contract described above and reuses this
+pipeline's generators/approval/posting unchanged; only discovery (what to
+write about) differs. Toggle independently via `TREND_AWARE_ENABLED`.
+
 ## Runbook
 
 - **Enable**: set `INSIGHT_ENGINE_ENABLED=true` in the bot's env and restart.
