@@ -88,10 +88,19 @@ async def send_scheduled_for_review(row_id: int, slot_label: str,
 # ── Insight-engine content review ─────────────────────────────────────────────
 
 async def send_insight_for_review(item_id: int, header: str, text: str,
+                                  reply_text: str | None = None,
                                   screenshot: bytes | None = None) -> int | None:
-    """Review card for engine content_items — buttons carry ins_approve/ins_skip."""
+    """Review card for engine content_items — buttons carry ins_approve/ins_skip.
+
+    text = the hook tweet; reply_text = the reveal posted as a reply (if any).
+    """
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
-    body = f"🗓 *Scheduled Tweet (Insight Engine)*\n{header}\n\n```\n{text[:700]}\n```"
+    if reply_text:
+        body = (f"🗓 *Scheduled Tweet (Insight Engine)*\n{header}\n\n"
+                f"*Hook:*\n```\n{text[:500]}\n```\n"
+                f"*Reply:*\n```\n{reply_text[:500]}\n```")
+    else:
+        body = f"🗓 *Scheduled Tweet (Insight Engine)*\n{header}\n\n```\n{text[:700]}\n```"
     keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton("✅ Approve", callback_data=f"ins_approve:{item_id}"),
         InlineKeyboardButton("❌ Skip",    callback_data=f"ins_skip:{item_id}"),

@@ -29,36 +29,46 @@ MODEL = "claude-haiku-4-5-20251001"
 SYSTEM_PROMPT = """You are a copywriter for a South Indian cinema analytics account.
 
 You will receive a JSON fact package discovered from a film database.
-Write ONE tweet that expresses ONLY the facts given.
+Write a TWO-PART post that expresses ONLY the facts given:
 
-Hard rules:
+PART 1 — THE HOOK (a standalone tweet):
+- Short lines. One idea per line. White space does the work.
+- Build curiosity with a setup, but WITHHOLD the payoff — hold back the key
+  number, the name, or the twist for Part 2.
+- End on a cliffhanger line, then a final line that is exactly: ↓
+- NO hashtags, NO URL, NO image reference in Part 1.
+- It must make a film fan stop scrolling and want the answer.
+
+PART 2 — THE REVEAL (posted as a reply to the hook):
+- Deliver the payoff: the specific number(s) and the name(s).
+- Short lines again — keep the rhythm.
+- Last lines: 1-3 hashtags on their own line, then the profile URL (if given)
+  alone on the very last line.
+
+Hard rules (both parts):
 - Do not change numbers. Do not invent facts. Do not exaggerate.
-- Do not add any statistic, year, count, film name, or claim not present in the JSON.
-- Only improve readability and curiosity.
+- Do not add any statistic, year, count, film name, or claim not in the JSON.
 - You may compute a year gap/span from year values that ARE in the JSON.
-- Numbers must keep their meaning: a value labelled as a calendar year is a
-  year (write "since 2014" or "in 1986"), never a duration; a film count is
-  films, never years. If unsure how to use a number, leave it out.
+- Numbers keep their meaning: a calendar year is a year ("since 2014"), never a
+  duration; a film count is films, never years. If unsure, leave it out.
+- The primary entity's name must appear somewhere (usually the reveal).
 
-Voice: follow the "editorial_voice" given in the request. All voices are sharp,
-human, understated — a film-obsessed analyst talking to another film-obsessed
-person. No fanboy energy, no AI filler ("Interestingly", "Remarkably").
+Voice: follow the "editorial_voice" in the request. Sharp, human, understated —
+a film-obsessed analyst talking to another. No fanboy energy, no AI filler
+("Interestingly", "Remarkably"). At most one emoji, only if truly jaw-dropping.
 
-BANNED constructions (overused templates — never produce these shapes):
+BANNED constructions (never produce these shapes):
 - "That's not a X — that's a Y"
-- "Let that sink in"
-- "Read that again"
+- "Let that sink in" / "Read that again"
 - "X isn't just Y, it's Z"
-- rhetorical questions as openers
 Also avoid any framing listed under "avoid_phrasings" in the request.
 
-Format:
-- Max {char_limit} characters total.
-- 1-3 hashtags on their own line (derive from entity names/industry only).
-- If a profile URL is provided, it goes alone on the last line.
-- No emoji unless the number is genuinely jaw-dropping (one max).
+LENGTH: each part must be at most {char_limit} characters.
 
-Respond ONLY with the tweet text. No JSON, no explanation."""
+OUTPUT FORMAT — respond with EXACTLY this, nothing else:
+<hook text>
+===REPLY===
+<reply text>"""
 
 # Rotating editorial voices — the account should feel like a small desk of
 # editors, not one template. Chosen deterministically per insight so retries
@@ -140,42 +150,66 @@ class TwitterGenerator(ContentGenerator):
         for attempt in range(2):
             msg = await _client.messages.create(
                 model=MODEL,
-                max_tokens=400,
+                max_tokens=500,
                 system=SYSTEM_PROMPT.format(char_limit=limit),
                 messages=messages,
             )
-            text = msg.content[0].text.strip()
+            raw = msg.content[0].text.strip()
+            hook, reply = _split_parts(raw)
 
-            ok, violations = validate(text, insight)
-            # Style-only soft check: banned rhetorical templates trigger a
-            # rewrite on the first attempt, but never cause a discard —
-            # factual correctness is the only hard gate.
-            style_issue = attempt == 0 and _has_banned_template(text)
-            if ok and not style_issue and len(text) <= limit + 20:
+            violations: list[str] = []
+            if not reply:
+                violations.append(
+                    "missing the ===REPLY=== separator — output the hook, then a "
+                    "line with exactly ===REPLY===, then the reply")
+            # Validate facts across BOTH parts combined (numbers + primary name)
+            combined = f"{hook}\n{reply}".strip()
+            ok, fact_violations = validate(combined, insight)
+            violations += fact_violations
+
+            if len(hook) > limit + 20:
+                violations.append(f"hook is {len(hook)} chars, limit {limit}")
+            if reply and len(reply) > limit + 20:
+                violations.append(f"reply is {len(reply)} chars, limit {limit}")
+
+            # Style-only soft check: banned templates trigger a rewrite on the
+            # first attempt, but never cause a discard — facts are the only gate.
+            style_issue = attempt == 0 and _has_banned_template(combined)
+
+            if not violations and not style_issue:
                 return ContentItem(
                     insight_id=insight_id,
                     platform=self.platform,
-                    text=text,
+                    text=hook,
+                    reply_text=reply,
                     media_ref=card_slug,
                     model=MODEL,
                     validated=True,
                 )
 
-            if len(text) > limit + 20:
-                violations.append(f"tweet is {len(text)} chars, limit {limit}")
             if style_issue and not violations:
                 violations.append(
                     "avoid the 'That's not X — that's Y' / 'isn't just' template; "
                     "rephrase with a different structure")
-            log.warning("attempt %d failed validation for %s: %s",
+            log.warning("attempt %d failed for %s: %s",
                         attempt + 1, insight.rule, violations)
             messages += [
-                {"role": "assistant", "content": text},
+                {"role": "assistant", "content": raw},
                 {"role": "user", "content":
-                    "Your tweet violated these rules — fix and resend only the tweet:\n- "
+                    "Your post violated these rules — fix and resend in the same "
+                    "hook/===REPLY===/reply format, nothing else:\n- "
                     + "\n- ".join(violations)},
             ]
 
         log.error("discarding %s insight %d — validation failed twice",
                   insight.rule, insight_id)
         return None
+
+
+def _split_parts(raw: str) -> tuple[str, str]:
+    """Split the model output into (hook, reply) on the ===REPLY=== marker.
+    Tolerates minor variants (extra =, spaces, case)."""
+    m = re.split(r"\n\s*=+\s*REPLY\s*=+\s*\n", raw, maxsplit=1, flags=re.IGNORECASE)
+    if len(m) == 2:
+        return m[0].strip(), m[1].strip()
+    return raw.strip(), ""

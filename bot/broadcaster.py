@@ -276,6 +276,7 @@ async def _generate_daily_schedule_engine(tomorrow: date) -> None:
             item_id=item_id,
             header=review_header(r, slot_label),
             text=item.text,
+            reply_text=item.reply_text,
             screenshot=png,
         )
         if msg_id:
@@ -300,6 +301,11 @@ async def _post_scheduled_slot_engine(slot_hour: int) -> None:
         print(f"[broadcaster] engine: slot {slot_hour}h not approved (status={row['status']}), skipping")
         return
 
+    reply_text = row.get("reply_text")
+
+    # The stat-card image goes on the REVEAL (the reply) so the hook tweet stays
+    # a clean cliffhanger — the portrait is part of the payoff, not the setup.
+    # When there is no reply, the image rides the single tweet as before.
     media_ids: list[str] | None = None
     if row.get("media_ref"):
         try:
@@ -311,11 +317,33 @@ async def _post_scheduled_slot_engine(slot_hour: int) -> None:
             print(f"[broadcaster] engine: media failed for slot {slot_hour}h: {e}, posting text-only")
 
     try:
-        kwargs: dict = {"text": row["text"]}
-        if media_ids:
-            kwargs["media_ids"] = media_ids
-        resp = _twitter.create_tweet(**kwargs)
+        # 1) Post the hook. Image only here if there is no reply to carry it.
+        hook_kwargs: dict = {"text": row["text"]}
+        if media_ids and not reply_text:
+            hook_kwargs["media_ids"] = media_ids
+        resp = _twitter.create_tweet(**hook_kwargs)
         tweet_id = str(resp.data["id"])
+
+        # 2) Post the reveal as a reply to the hook, carrying the stat-card image.
+        if reply_text:
+            reply_kwargs: dict = {
+                "text": reply_text,
+                "in_reply_to_tweet_id": tweet_id,
+            }
+            if media_ids:
+                reply_kwargs["media_ids"] = media_ids
+            try:
+                reply_resp = _twitter.create_tweet(**reply_kwargs)
+                print(f"[broadcaster] engine: posted reply → {reply_resp.data['id']}")
+            except Exception as re:
+                # Hook is already live; don't fail the whole slot over the reply.
+                print(f"[broadcaster] engine: reply failed for slot {slot_hour}h: {re}")
+                try:
+                    await send_alert(
+                        f"Insight hook posted ({tweet_id}) but the reply failed: {re}")
+                except Exception:
+                    pass
+
         engine_db.mark_content_posted(row["id"], tweet_id)
         print(f"[broadcaster] engine: posted slot {slot_hour}h tweet → {tweet_id}")
     except Exception as e:

@@ -91,7 +91,8 @@ class RankedInsight(BaseModel):
 class ContentItem(BaseModel):
     insight_id: int
     platform: Platform
-    text: str
+    text: str                         # the hook tweet (ends on a cliffhanger)
+    reply_text: Optional[str] = None  # the reveal, posted as a reply to the hook
     media_ref: Optional[str] = None   # e.g. stat-card slug for screenshot
     status: ContentStatus = ContentStatus.NEW
     model: Optional[str] = None       # LLM model id used

@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS insight_cooldowns (
 );
 
 ALTER TABLE insights ADD COLUMN IF NOT EXISTS confidence NUMERIC;
+ALTER TABLE content_items ADD COLUMN IF NOT EXISTS reply_text TEXT;
 
 CREATE TABLE IF NOT EXISTS rule_health (
     id            BIGSERIAL PRIMARY KEY,
@@ -226,13 +227,14 @@ def insert_content_item(item: ContentItem,
             cur.execute(
                 """
                 INSERT INTO content_items
-                    (insight_id, platform, text, media_ref, status,
+                    (insight_id, platform, text, reply_text, media_ref, status,
                      scheduled_date, slot_hour)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (platform, scheduled_date, slot_hour)
                 DO UPDATE SET
                     insight_id = EXCLUDED.insight_id,
                     text       = EXCLUDED.text,
+                    reply_text = EXCLUDED.reply_text,
                     media_ref  = EXCLUDED.media_ref,
                     status     = 'new',
                     error      = NULL,
@@ -241,7 +243,7 @@ def insert_content_item(item: ContentItem,
                 """,
                 (
                     item.insight_id, item.platform.value, item.text,
-                    item.media_ref, item.status.value,
+                    item.reply_text, item.media_ref, item.status.value,
                     scheduled_date, slot_hour,
                 ),
             )
